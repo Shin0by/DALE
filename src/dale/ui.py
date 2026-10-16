@@ -15,6 +15,7 @@ from PySide6.QtGui import (
     QActionGroup,
     QFont,
     QFontDatabase,
+    QIcon,
     QIntValidator,
     QKeySequence,
     QPainterPath,
@@ -1113,6 +1114,7 @@ class MainWindow(QMainWindow):
 
 def configure_application(app):
     app.setApplicationName("DALE")
+    app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "favicon.ico")))
     app.setStyle("Fusion")
     apply_theme(app)
     if sys.platform == "win32" and not QFontDatabase.families():
@@ -1149,6 +1151,7 @@ def main():
             report = {
                 "version": __version__,
                 "window_title": window.windowTitle(),
+                "window_icon_loaded": not window.windowIcon().isNull(),
                 "language": window.language,
                 "foundry_major": window.placement().foundry_major,
                 "window_visible": window.isVisible(),
@@ -1160,6 +1163,9 @@ def main():
             }
             options.smoke_report.write_text(json.dumps(report), encoding="utf-8")
             window.grab().save(str(options.smoke_report.with_suffix(".png")))
+            window.windowIcon().pixmap(256, 256).save(
+                str(options.smoke_report.with_name(options.smoke_report.stem + "-icon.png"))
+            )
             app.quit()
 
         QTimer.singleShot(500, smoke_report)

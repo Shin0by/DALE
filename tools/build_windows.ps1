@@ -11,6 +11,8 @@ $artifactRoot = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'artifacts
 $distributionPath = [System.IO.Path]::GetFullPath((Join-Path $artifactRoot "windows\$Mode"))
 $buildPath = [System.IO.Path]::GetFullPath((Join-Path $artifactRoot "pyinstaller\$Mode"))
 $portablePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot 'DALE'))
+$appAssetPath = Join-Path $projectRoot 'src\dale\assets'
+$appIconPath = Join-Path $appAssetPath 'favicon.ico'
 if ($portablePath -ne ($projectRoot + '\DALE')) { throw 'Unexpected portable destination.' }
 foreach ($targetPath in @($distributionPath, $buildPath)) {
     if (-not $targetPath.StartsWith($artifactRoot + [System.IO.Path]::DirectorySeparatorChar)) {
@@ -25,6 +27,7 @@ try {
     Write-Output ("Building version " + $buildVersion)
     & $projectPython -m PyInstaller --noconfirm --windowed "--$Mode" --noupx `
         --name DALE --paths src --distpath $distributionPath --workpath $buildPath `
+        --icon $appIconPath --add-data "${appAssetPath}:dale/assets" `
         --specpath $buildPath --collect-binaries shapely tools/desktop_entry.py
     if ($LASTEXITCODE -ne 0) { throw 'Windows application build failed.' }
     if ($Mode -eq 'onedir') {
@@ -68,7 +71,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\portable-start.txt') -Destination (Join-Path $portablePath 'START-HERE.txt') -Force
         $sourceFiles = @(
             foreach ($directory in @('src\dale', 'docs', 'tools', 'tests', 'project', '.github')) {
-                Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse | Where-Object { $_.Extension -in @('.py', '.ps1', '.cmd', '.json', '.md', '.txt', '.yml') }
+                Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse | Where-Object { $_.Extension -in @('.py', '.ps1', '.cmd', '.json', '.md', '.txt', '.yml', '.png', '.ico') }
             }
             foreach ($file in @('AGENTS.md', 'README.md', 'pyproject.toml', 'requirements-build.lock', 'requirements-dev.lock', 'tools\build_windows.ps1', 'tools\desktop_entry.py', 'project\index.json', 'project\state.json')) {
                 Get-Item -LiteralPath (Join-Path $projectRoot $file)

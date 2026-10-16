@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dale-map-editor"
-version = "0.3.3"
+version = "0.3.6"
 description = "Local wall-guided transparency editor for Dungeon Alchemist maps"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,6 +23,9 @@ dale = "dale.ui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+dale = ["assets/*.png", "assets/*.ico"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -22,6 +22,7 @@
 - Save portable `.dale` ZIP projects with exact source assets, operations, redo stack, settings, and unfinished closure points. Never commit a user's project archive or source artwork.
 - After every project update, rebuild and refresh the complete portable package at `DALE/` using `tools/build_windows.ps1`. Deliver `DALE/DALE.exe` with its runtime libraries and startup notes. Preserve `DALE/UserData` and user projects. Do not report an update complete while the portable package is stale.
 - Ordinary Windows users launch `DALE/DALE.exe` directly without Python installation or command scripts. Keep the entire portable folder together when moving it. Keep generated runtime binaries out of Git.
+- Use the owner-supplied `src/dale/assets/favicon.ico` unchanged for application/windows and the Windows EXE icon. Preserve `shin0by.png` as the original artwork reference. Include both in package data and portable provenance; do not regenerate or redraw the supplied ICO.
 - English and Russian UI languages must be switchable at runtime, with descriptive translated tooltips for every application action and setting. Persist language and selected Foundry 13/14 version locally and in project settings; retain English technical serialization. Updating one preference must preserve the other.
 - Store geometry and brush coordinates in original image pixels. Preview resolution must never limit export resolution.
 - Keep geometry, import validation, and raster/export logic independent of Qt. Validate them with meaningful tests.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "compact_toolbar_and_persistent_target",
+  "phase": "application_icon_delivery",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -30,7 +30,8 @@
     "Optional project UI fields retain snapping, geometry size, mode, and export selection; older schema-1 archives load with defaults.",
     "Localized hover help covers every application control, including embedded numeric editors, selectors, scrollbars, overflow controls, and menus; keep action names in icon-only tooltips.",
     "Persist selected Foundry major (13/14) and language together in portable UserData/settings.json using merged atomic writes. Project loading restores and remembers its target version.",
-    "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction."
+    "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction.",
+    "Use the owner-supplied favicon.ico unchanged for Qt windows and the Windows EXE icon. Preserve shin0by.png as the original artwork reference and package both formats with source hashes."
   ],
   "validated": [
     {
@@ -140,6 +141,21 @@
       "check": "automatic_revision_policy",
       "result": "Temporary-repository tests verified synchronized revision increments, 999-to-1000 without minor rollover, preservation of unrelated state, and mismatch rejection without writes. Repository checker now enforces version agreement.",
       "command": "python -m pytest -q; python tools/check_repository.py"
+    },
+    {
+      "check": "packaged_compact_ui_and_title",
+      "version": "0.3.3",
+      "result": "Isolated-PATH launch restored Foundry 13 and English preferences; project launch restored the 4-operation archive. Native Windows launch loaded a real 13500x16200 pair. All exited 0 and reported the exact padded application title, 1024x768 minimum, and a single-row footer. CI passed for commit 370e3e2."
+    },
+    {
+      "check": "owner_icon_source_and_qt",
+      "result": "Both owner-supplied assets preserved byte for byte at canonical package paths. Qt application/MainWindow ICO loaded all 16/32/48-pixel representations. The 48-pixel image matches RGBA exactly; smaller images differ by at most one RGB level due to Qt alpha rounding. Existing suite remains 94 passed."
+    },
+    {
+      "check": "embedded_owner_ico",
+      "version": "0.3.5",
+      "result": "Inspected Windows PE RT_GROUP_ICON and RT_ICON resources: all supplied 16/32/48-pixel icon payloads match the owner ICO byte for byte. The bundled runtime ICO also matches its canonical source hash.",
+      "command": "python artifacts/verify_embedded_icon.py"
     }
   ],
   "completed": [
@@ -187,7 +203,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.3",
+  "current_version": "0.3.6",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -195,5 +211,17 @@
     "increment_per_build": 1,
     "major_minor_changes": "explicit owner instruction only",
     "automatic_rollover": false
+  },
+  "application_icon": {
+    "source": "src/dale/assets/favicon.ico",
+    "sha256": "5cbe7ced26b590c27a6ecb2ac459766bda0326baed2e4ad35ab85006c7b50ea1",
+    "sizes": [
+      16,
+      32,
+      48
+    ],
+    "artwork_reference": "src/dale/assets/shin0by.png",
+    "artwork_sha256": "16483efa485a007c86a1fc6cffc872a48e190223cce05d59ae6e31f2df416446",
+    "owner_supplied": true
   }
 }

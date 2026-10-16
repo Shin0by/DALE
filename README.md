@@ -6,6 +6,8 @@ DALE — локальный редактор, который превращае�
 
 The application title is **Dungeon Alchemist Levels Export (v.x.xx.xxx)**. Each Windows build automatically advances only the revision; major and minor versions change only on the owner's explicit instruction.
 
+The owner's supplied ICO is used unchanged for application windows and the Windows executable. Both the ICO and original PNG reference are preserved in [application assets](src/dale/assets/README.md).
+
 ## Development status
 
 Working prototype. Six real Dungeon Alchemist pairs have been inspected and opened, and one 13,500 × 16,200 source image has passed the PNG pipeline check. Verification in the owner's Foundry installation is pending. The workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented. See [the observed export profile](docs/sample-formats.md) for sample findings and current limitations.

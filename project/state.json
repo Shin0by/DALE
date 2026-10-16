@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "updated": "2026-10-16",
+  "phase": "prototype_ready_for_real_samples",
+  "product": "DALE",
+  "communication_language": "ru",
+  "technical_language": "en",
+  "decisions": [
+    "Local desktop application: Python 3.11+, PySide6, Pillow, Shapely.",
+    "JPG + Foundry scene JSON input; original-size RGBA PNG output.",
+    "Use wall contours and manual brushing for the first terrain-removal workflow.",
+    "Temporary closures never enter source or exported Foundry JSON.",
+    "Target 16384 pixels per side; warn above 8192; validate memory before export.",
+    "Support Foundry 13 and 14 as explicit targets; keep raster export common and future scene adapters separate.",
+    "Elevation dropdown: 5-ft presets, custom whole feet; record intent in PNG metadata without claiming automatic Foundry placement.",
+    "Right-button drag pans in all tools, including at fit zoom."
+  ],
+  "validated": [
+    {"check": "unit_and_qt_event_tests", "result": "36 passed", "command": "python -m pytest -q"},
+    {"check": "lint", "result": "passed", "command": "python -m ruff check ."},
+    {"check": "visual_review", "result": "Offscreen synthetic editor screenshot inspected; text, wall overlays, closures, transparency, and elevation controls visible.", "command": "python tools/preview_demo.py"},
+    {"check": "maximum_size_synthetic_export", "dimensions": [16384, 16384], "export_seconds": 3.6, "peak_export_rss_mib": 1090, "result": "RGBA, dimensions, contour alpha, brush alpha, and elevation metadata verified.", "command": "python tools/verify_large_map.py --size 16384"}
+  ],
+  "pending": [
+    {"id": "NEXT-001", "task": "Validate import, scaling, padding, and wall alignment against real owner-provided JPG/JSON pairs in examples/."},
+    {"id": "NEXT-002", "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."},
+    {"id": "NEXT-003", "task": "Add a portable editing-session format with source fingerprints and safe reload."},
+    {"id": "NEXT-004", "task": "Evaluate selected-region masking and edge refinement after real sample review."},
+    {"id": "NEXT-005", "task": "Package a Windows executable after the editing workflow is validated."}
+  ],
+  "limitations": [
+    "No semantic terrain/object segmentation.",
+    "No direct Foundry connection, scene mutation, or multi-floor scene assembly.",
+    "Unknown export variants require explicit adapter work rather than guessed coordinates.",
+    "Editor history is in-memory until persistent sessions are implemented."
+  ]
+}

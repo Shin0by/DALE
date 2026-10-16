@@ -1456,7 +1456,7 @@ def test_sections_scene_settings_and_shared_information_panels(app, language):
     app.processEvents()
     assert window.scene_group.isVisible() and window.scene_levels_group.isVisible()
     assert not window.project_group.isVisible() and not window.settings_group.isVisible()
-    assert not window.left_panel.isVisible()
+    assert window.left_panel.isVisible()
     assert window.view.mode == "Pan"
     assert window.t("Left-drag: pan the scene image.") in window.mode_help.text()
     window.settings_action.trigger()
@@ -1620,6 +1620,11 @@ def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_fac
             *w.findChildren(QComboBox),
             *w.findChildren(QGroupBox),
         ]:
+            # Semantic wall presets are explicitly named walls by the owner.
+            if not isinstance(c, QAction) and (
+                c == w.templates_panel or w.templates_panel.isAncestorOf(c)
+            ):
+                continue
             texts.append(c.toolTip())
             if hasattr(c, "text"):
                 texts.append(c.text())

@@ -19,7 +19,8 @@
     "foundry_export_feasibility": "docs/foundry-export-feasibility.md",
     "foundry_machine_profile": "project/foundry-format-profile.json",
     "foundry_tile_probe": "docs/foundry-tile-format.md",
-    "git_push_skill": "skills/dale-push/SKILL.md"
+    "git_push_skill": "skills/dale-push/SKILL.md",
+    "scene_templates": "docs/scene-templates.md"
   },
   "code": {
     "import_and_coordinates": "src/dale/scene.py",
@@ -53,7 +54,12 @@
     "async_png_bounds": "src/dale/bounds_preview.py",
     "explicit_git_push": "skills/dale-push/scripts/push.py",
     "git_push_guard": ".githooks/pre-push",
-    "git_push_policy_tests": "tests/test_git_push_policy.py"
+    "git_push_policy_tests": "tests/test_git_push_policy.py",
+    "scene_template_model": "src/dale/scene_templates.py",
+    "scene_template_editors": "src/dale/scene_templates_ui.py",
+    "scene_template_translation": "src/dale/scene_template_localization.py",
+    "scene_template_tests": "tests/test_scene_templates.py",
+    "scene_template_ui_tests": "tests/test_scene_templates_ui.py"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git.",
   "build_environment_lock": "requirements-build.lock"

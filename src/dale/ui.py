@@ -79,9 +79,17 @@ from dale.preferences import (
     save_tool_value,
     settings_path,
 )
-from dale.project_io import SCHEMA_VERSION, load_project, read_json_documents, save_project
+from dale.project_io import (
+    SCHEMA_VERSION,
+    load_project,
+    read_json_documents,
+    read_project_templates,
+    save_project,
+)
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
+from dale.scene_templates import SceneTemplates, load_template_file, save_template_file
+from dale.scene_templates_ui import SceneTemplatesPanel
 from dale.session import Session
 from dale.toolbar import (
     SizedToolButton,
@@ -144,6 +152,8 @@ class MainWindow(QMainWindow):
         self.output_directory = load_directory(self.preferences_path, "output")
         self.recent_projects = load_recent_projects(self.preferences_path)
         self.scene_section_active = False
+        self.scene_templates = SceneTemplates()
+        self.saved_templates = self.scene_templates
         self.setWindowTitle(application_title())
         self.resize(1280, 860)
         self.setMinimumSize(1024, 768)
@@ -275,10 +285,13 @@ class MainWindow(QMainWindow):
         project_layout.addWidget(self.project_info_group)
         self.scene_group = QGroupBox("Scene")
         scene_layout = QVBoxLayout(self.scene_group)
-        self.scene_levels_group = QGroupBox("Levels")
-        QVBoxLayout(self.scene_levels_group)
-        self.scene_levels_group.setMinimumHeight(80)
-        scene_layout.addWidget(self.scene_levels_group)
+        scene_layout.setContentsMargins(6, 6, 6, 6)
+        self.templates_panel = SceneTemplatesPanel(self)
+        self.scene_levels_group = self.templates_panel.levels_group
+        self.templates_panel.changed.connect(self.set_scene_templates)
+        self.templates_panel.import_requested.connect(self.import_scene_templates)
+        self.templates_panel.export_requested.connect(self.export_scene_templates)
+        scene_layout.addWidget(self.templates_panel)
         self.sidebar_stack = QStackedWidget()
         self.sidebar_pages = {}
         self.mode_help_labels = {}
@@ -864,6 +877,8 @@ class MainWindow(QMainWindow):
         )
         self.update_project_info()
         self.rebuild_recent_menu()
+        self.templates_panel.language = language
+        self.templates_panel.set_library(self.scene_templates)
         self.update_placement_hint()
         self.update_mode_help()
         self.refresh()
@@ -1011,15 +1026,17 @@ class MainWindow(QMainWindow):
         self.view.raster_diameters[mode] = value
         self.view.viewport().update()
 
-    def select_tool_set(self, key, activate=True):
-        self.scene_section_active = False
+    def select_tool_set(self, key, activate=True, preserve_sidebar=False):
+        if not preserve_sidebar:
+            self.scene_section_active = False
+            self.show_sidebar("project")
         self.left_panel.show()
-        self.show_sidebar("project")
         self.current_tool_set = key
         self.tool_stack.setCurrentIndex({"geometry": 0, "regions": 1, "pixels": 2}[key])
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.update_size_help()
-        self.tool_set_actions[key].setChecked(True)
+        if not self.scene_section_active:
+            self.tool_set_actions[key].setChecked(True)
         if activate:
             self.activate_mode(self.last_tool_modes[key])
 
@@ -1031,10 +1048,68 @@ class MainWindow(QMainWindow):
         self.view.cancel_pending()
         self.scene_section_active = True
         self.levels_action.setChecked(True)
-        self.left_panel.hide()
-        self.activate_mode("Pan", prompt=False)
+        self.left_panel.show()
         self.show_sidebar("scene")
         self.update_mode_help()
+
+    def set_scene_templates(self, library):
+        self.scene_templates = library.validated()
+        self.templates_panel.set_library(self.scene_templates)
+        self.view.set_level_templates(self.scene_templates.levels)
+
+    def import_scene_templates(self):
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            self.t("Import scene templates"),
+            str(self.input_directory or Path.cwd()),
+            self.t("Scene templates or DALE project (*.json *.dale)"),
+        )
+        if not selected:
+            return
+        try:
+            path = Path(selected)
+            library = (
+                read_project_templates(path)
+                if path.suffix.lower() == ".dale"
+                else load_template_file(path)
+            )
+            self.set_scene_templates(self.scene_templates.merge(library))
+            self.remember_directory("input", path.resolve().parent)
+        except Exception as exc:
+            self.warning("Cannot import scene templates", str(exc))
+
+    def export_scene_templates(self):
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            self.t("Export scene templates"),
+            str((self.output_directory or Path.cwd()) / "scene-templates.json"),
+            self.t("Scene template JSON (*.json)"),
+        )
+        if not selected:
+            return False
+        try:
+            path = Path(selected)
+            if path.suffix.lower() != ".json":
+                path = path.with_name(path.name + ".json")
+            protected = [self.project_path] if self.project_path else []
+            if self.view.session:
+                protected.extend(
+                    (self.view.session.source.image_path, self.view.session.source.json_path)
+                )
+            if any(
+                path.resolve() == source.resolve()
+                or (path.exists() and os.path.samefile(path, source))
+                for source in protected
+            ):
+                raise ValueError("Template export cannot overwrite project or source files.")
+            save_template_file(self.scene_templates, path)
+            self.remember_directory("output", path.resolve().parent)
+            if self.view.session is None:
+                self.saved_templates = self.scene_templates
+            return True
+        except Exception as exc:
+            self.warning("Cannot export scene templates", str(exc))
+            return False
 
     def rebuild_recent_menu(self):
         self.recent_menu.clear()
@@ -1229,7 +1304,11 @@ class MainWindow(QMainWindow):
                 else "geometry"
             )
             self.last_tool_modes[key] = mode
-            self.select_tool_set(key, activate=False)
+            self.select_tool_set(
+                key,
+                activate=False,
+                preserve_sidebar=self.scene_section_active or self.settings_action.isChecked(),
+            )
         self.mode_actions[mode].setChecked(True)
         self.view.set_mode(mode)
         if mode == "Select regions" and self.selected_regions is None:
@@ -1319,6 +1398,8 @@ class MainWindow(QMainWindow):
         if self.worker or not self.can_discard():
             return
         self.view.clear_map()
+        self.set_scene_templates(SceneTemplates())
+        self.saved_templates = self.scene_templates
         self.release_json_workspaces()
         if self.loaded_project:
             self.loaded_project.close()
@@ -1349,11 +1430,22 @@ class MainWindow(QMainWindow):
         if self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
             return False
-        if not self.view.session:
+        templates_saved = self.scene_templates == self.saved_templates
+        if not self.view.session and templates_saved:
             return True
-        if self.saved_state is not None and self.document_state() == self.saved_state:
+        if (
+            self.view.session
+            and self.saved_state is not None
+            and self.document_state() == self.saved_state
+            and templates_saved
+        ):
             return True
-        if self.saved_state is None and not self.view.session.operations:
+        if (
+            self.view.session
+            and self.saved_state is None
+            and not self.view.session.operations
+            and templates_saved
+        ):
             return True
         answer = self.question(
             "Save changes?",
@@ -1369,7 +1461,10 @@ class MainWindow(QMainWindow):
 
     def document_state(self):
         session = self.view.session
+        if session is None:
+            return (self.scene_templates.to_bytes(),)
         return (
+            self.scene_templates.to_bytes(),
             tuple(session.operations),
             tuple(session.future),
             session.origin,
@@ -1407,7 +1502,7 @@ class MainWindow(QMainWindow):
 
     def save_project_file(self, checked=False, save_as=False):
         if not self.view.session:
-            return False
+            return self.export_scene_templates()
         if self.view.active_gesture:
             self.information("Finish editing", "Finish the active drag before saving.")
             return False
@@ -1438,10 +1533,11 @@ class MainWindow(QMainWindow):
                     for key, value in self._project_tool_values.items()
                     if key != "artwork_offset_px"
                 )
-            save_project(project_session, path, project_ui)
+            save_project(project_session, path, project_ui, templates=self.scene_templates)
             self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
+            self.saved_templates = self.scene_templates
             self.remember_recent_project(path)
             self.update_project_info()
             self.statusBar().showMessage(self.t("Saved complete project: {path}", path=path), 10000)
@@ -1476,6 +1572,8 @@ class MainWindow(QMainWindow):
             if self.loaded_project:
                 self.loaded_project.close()
             self.loaded_project, loaded = loaded, None
+            self.set_scene_templates(self.loaded_project.templates)
+            self.saved_templates = self.scene_templates
             session, settings = self.loaded_project.session, self.loaded_project.ui_state
             self._project_tool_values = {
                 key: session.contour_offset if key == "artwork_offset_px" else settings[key]

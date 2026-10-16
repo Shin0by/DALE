@@ -16,7 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dale.scene_template_localization import TEMPLATE_RUSSIAN
+
 RUSSIAN = {
+    **TEMPLATE_RUSSIAN,
     "Sections": "Разделы",
     "Scene": "Сцена",
     "Main": "Основное",

@@ -395,6 +395,7 @@ def apply_theme(app):
     for role, color in {
         QPalette.ColorRole.Window: "#2b2b2b",
         QPalette.ColorRole.WindowText: "#dedede",
+        QPalette.ColorRole.PlaceholderText: "#929292",
         QPalette.ColorRole.Base: "#202020",
         QPalette.ColorRole.AlternateBase: "#303030",
         QPalette.ColorRole.Text: "#e5e5e5",

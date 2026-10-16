@@ -18,13 +18,15 @@ from dale import __version__
 from dale.placement import Placement
 from dale.provenance import decode_record, encode_record
 from dale.scene import load_pair, number
+from dale.scene_templates import MAX_TEMPLATE_BYTES, SceneTemplates, read_template_bytes
 from dale.session import Closure, ContourMask, GeometryEdit, Session, Stroke
 
 FORMAT = "dale-project"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 LIMITS = {
     "manifest.json": 64 * 1024,
     "history.json": 64 * 1024 * 1024,
+    "templates.json": MAX_TEMPLATE_BYTES,
     "sources/map.jpg": 1024 * 1024 * 1024,
     "sources/scene.json": 32 * 1024 * 1024,
 }
@@ -43,7 +45,7 @@ def _archive_manifest(archive):
     names = [entry.filename for entry in entries]
     if len(names) != len(set(names)) or "manifest.json" not in names:
         raise ValueError(
-            "Project archive must contain exactly the four expected members "
+            "Project archive must contain exactly the five expected members "
             "and declared JSON files."
         )
     if archive.getinfo("manifest.json").file_size > LIMITS["manifest.json"]:
@@ -84,7 +86,7 @@ def _archive_manifest(archive):
         expected[member] = LIMITS["sources/scene.json"]
     if "sources/scene.json" not in members or set(names) != set(expected):
         raise ValueError(
-            "Project archive must contain exactly the four expected members "
+            "Project archive must contain exactly the five expected members "
             "and declared JSON files."
         )
     for entry in entries:
@@ -109,6 +111,19 @@ def read_json_documents(path: Path):
     """Read the declared JSON catalog without extracting or decoding the scene image."""
     with zipfile.ZipFile(path) as archive:
         return _read_json_documents(archive, _archive_manifest(archive))
+
+
+def _read_templates(archive, manifest):
+    payload = archive.read("templates.json")
+    if hashlib.sha256(payload).hexdigest() != manifest.get("sha256", {}).get("templates.json"):
+        raise ValueError("Project checksum mismatch: templates.json.")
+    return read_template_bytes(payload)
+
+
+def read_project_templates(path: Path):
+    """Read shared definitions without decoding/extracting image, geometry or history."""
+    with zipfile.ZipFile(path) as archive:
+        return _read_templates(archive, _archive_manifest(archive))
 
 
 def _hash(path):
@@ -212,7 +227,13 @@ def _json_bytes(value):
     )
 
 
-def save_project(session: Session, destination: Path, ui_state: dict | None = None):
+def save_project(
+    session: Session,
+    destination: Path,
+    ui_state: dict | None = None,
+    *,
+    templates: SceneTemplates | None = None,
+):
     destination = destination.resolve()
     sources = (session.source.image_path, session.source.json_path)
     if destination in (path.resolve() for path in sources) or (
@@ -228,6 +249,9 @@ def save_project(session: Session, destination: Path, ui_state: dict | None = No
         "ui": ui_state or {},
     }
     history_bytes = _json_bytes(history)
+    template_bytes = (templates or SceneTemplates()).validated().to_bytes()
+    if len(template_bytes) > MAX_TEMPLATE_BYTES:
+        raise ValueError("Scene templates exceed the 2 MiB limit.")
     if len(history_bytes) > LIMITS["history.json"]:
         raise ValueError("Editing history exceeds the 64 MiB project limit.")
     manifest = {
@@ -240,6 +264,7 @@ def save_project(session: Session, destination: Path, ui_state: dict | None = No
             "sources/map.jpg": _hash(sources[0]),
             "sources/scene.json": _hash(sources[1]),
             "history.json": hashlib.sha256(history_bytes).hexdigest(),
+            "templates.json": hashlib.sha256(template_bytes).hexdigest(),
         },
     }
     documents = (
@@ -266,6 +291,7 @@ def save_project(session: Session, destination: Path, ui_state: dict | None = No
             with zipfile.ZipFile(stream, "w", allowZip64=True) as archive:
                 archive.writestr("manifest.json", _json_bytes(manifest), zipfile.ZIP_DEFLATED)
                 archive.writestr("history.json", history_bytes, zipfile.ZIP_DEFLATED)
+                archive.writestr("templates.json", template_bytes, zipfile.ZIP_DEFLATED)
                 for member, path in zip(
                     ("sources/map.jpg", "sources/scene.json"), sources, strict=True
                 ):
@@ -293,6 +319,7 @@ class LoadedProject:
     session: Session
     ui_state: dict
     workspace: tempfile.TemporaryDirectory
+    templates: SceneTemplates
 
     def close(self):
         self.workspace.cleanup()
@@ -401,6 +428,7 @@ def load_project(path: Path) -> LoadedProject:
         with zipfile.ZipFile(path) as archive:
             manifest = _archive_manifest(archive)
             documents = _read_json_documents(archive, manifest)
+            templates = _read_templates(archive, manifest)
             for member in ("sources/map.jpg", "sources/scene.json", "history.json"):
                 destination = root / Path(member).name
                 with archive.open(member) as source, destination.open("wb") as target:
@@ -445,7 +473,7 @@ def load_project(path: Path) -> LoadedProject:
         known_ids = set(catalog) | set(references)
         if any(parent not in known_ids for record in catalog.values() for parent in record.parents):
             raise ValueError("Line provenance contains an unknown parent.")
-        return LoadedProject(session, _load_ui(history.get("ui", {})), workspace)
+        return LoadedProject(session, _load_ui(history.get("ui", {})), workspace, templates)
     except Exception:
         workspace.cleanup()
         raise

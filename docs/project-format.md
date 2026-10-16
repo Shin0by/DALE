@@ -1,14 +1,14 @@
-# DALE project schema 2
+# DALE project schema 3
 
-Only schema 2 is supported; older/unknown formats are rejected without migrations.
+Only schema 3 is supported; older/unknown formats are rejected without migrations.
 
 ## Members and limits
-Required ZIP members: manifest.json, history.json, sources/map.jpg, sources/scene.json.
+Required ZIP members: manifest.json, history.json, templates.json, sources/map.jpg, sources/scene.json.
 Additional JSON members must be declared at sources/json/<id>.json. Reject unexpected/duplicate/encrypted members and traversal paths.
 
-Limits: manifest 64 KiB; history 64 MiB; JPG 1 GiB; each JSON 32 MiB; catalog 1-100 entries, 128 MiB combined JSON. IDs match [A-Za-z0-9_-]{1,64}. Required source ID: source. SHA-256 covers every payload; saves are atomic.
+Limits: manifest 64 KiB; history 64 MiB; templates 2 MiB; JPG 1 GiB; each JSON 32 MiB; catalog 1-100 entries, 128 MiB combined JSON. IDs match [A-Za-z0-9_-]{1,64}. Required source ID: source. SHA-256 covers every payload; saves are atomic.
 
-Manifest fields: format=dale-project, schema_version=2, app_version, image_name, scene_name, sha256 map, json_documents array. Each document has id, name, kind (original/updated), member. The source member is sources/scene.json; additional IDs map to sources/json/<id>.json.
+Manifest fields: format=dale-project, schema_version=3, app_version, image_name, scene_name, sha256 map, json_documents array. Each document has id, name, kind (original/updated), member. The source member is sources/scene.json; additional IDs map to sources/json/<id>.json.
 
 Updated JSON generation is future work. Additional declared documents already round-trip and appear in the JSON import chooser. Selecting JSON does not load package JPG/history.
 
@@ -31,3 +31,7 @@ The application's global_tool_settings preference controls numeric-tool preceden
 
 Remember choice and two input/output directories are portable preferences, not project paths. Retired modes, unfinished-draft migration, shared-size fallbacks, export-region aliases, and component-selection migrations are unsupported.
 Rotate regions is a persisted current tool mode; rotation uses ordinary wheel, not Alt-wheel in Move regions. Wall visibility is restored independently of active selection.
+
+## Shared scene definitions
+
+Required templates.json uses dale-scene-templates schema1, independent of geometry/history/UI and numeric-tool scope. It holds level definitions and wall presets, not instances. Level bounds are nullable whole feet; null lower/upper means negative/positive infinity. Preserve names, RGB, visibility and preset properties. Hash and validate the payload before loading. read_project_templates reads only manifest and this member, never source images or history; standalone JSON export uses the same payload. See [scene templates](scene-templates.md). Schema2 archives are unsupported, with no migration.

@@ -95,7 +95,7 @@ def test_archive_rejects_unexpected_path_without_extracting(pair_factory, tmp_pa
     path = tmp_path / "bad.dale"
     save_project(Session(pair_factory()), path)
     _rewrite(path, lambda members: members.update({"../escaped.txt": b"no"}))
-    with pytest.raises(ValueError, match="four expected"):
+    with pytest.raises(ValueError, match="five expected"):
         load_project(path)
     assert not (tmp_path.parent / "escaped.txt").exists()
 

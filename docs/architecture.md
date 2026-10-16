@@ -1,6 +1,6 @@
 # Architecture and decisions
 
-Current owner decisions supersede earlier UI/format choices. .dale schema 2 only; no backward compatibility.
+Current owner decisions supersede earlier UI/format choices. .dale schema 3 only; no backward compatibility.
 
 ## ADR-001: local editor
 Python 3.11+, PySide6, Pillow, Shapely, psutil; PyInstaller directory bundle. Core import/geometry/provenance/transforms/history/export are independent of Qt.
@@ -17,7 +17,7 @@ Python 3.11+, PySide6, Pillow, Shapely, psutil; PyInstaller directory bundle. Co
 | canvas.py | Rendering/pointer/modifier input; no file dialogs. |
 | raster.py | Reduced preview and chronological alpha, cancellable stripe PNG. |
 | overlay_export.py | Current cell/component cutouts, exact bicubic alpha bounds/cache, clamping and staged manifest. |
-| project_io.py | Bounded checksummed schema-2 ZIP and multiple JSON catalog. |
+| project_io.py | Bounded checksummed schema-3 ZIP and multiple JSON catalog. |
 | preferences.py | Atomic merged language/version/related choice/input-output folders. |
 | toolbar.py / localization.py | Drawn icons, embedded numeric buttons, theme/bilingual help. |
 | ui.py | Dialogs, sets/selection, JSON catalog, persistence/export worker. |
@@ -46,7 +46,7 @@ Required isolation, pending NEXT-009: freeze membership before the transform. Do
 ## ADR-005: ancestry and project format
 Source identity is exact JSON SHA-256 plus original /walls/index, preserving skipped zero-length array positions; optional Foundry ID need not be unique. Working edges have persistent ID, parents, root source references, origin. Splits/clones get child IDs, merges union parents, new contacts inherit incident parents, detached lines become editor roots. Moves/extensions preserve identity. Deleted ancestors remain in snapshot catalogs. Contact nodes expose line/parent/source records.
 
-Schema 2 requires lineage and JSON catalog. Older/unknown versions rejected; no migrations or historical-coordinate ancestry inference. See project-format.md. JSON import lists every declared package document without decoding/extracting its JPG. Current archives preserve additional documents; automatic generation of updated Foundry JSON is future work.
+Schema 3 requires lineage, JSON catalog and hashed templates.json. Older/unknown versions rejected; no migrations or historical-coordinate ancestry inference. See project-format.md. JSON import lists every declared package document without decoding/extracting its JPG. Current archives preserve additional documents; automatic generation of updated Foundry JSON is future work.
 
 ## ADR-006: separate bounded exports
 All-regions exports current connected components; explicit selection exports cells. The left Artwork offset (-4096..4096 source pixels, stored as contour_offset) expands/contracts retained JPG pixels relative to lines. It is the only margin control: no automatic 3px guard or global transparent-padding setting.
@@ -62,7 +62,7 @@ placement.json is a DALE coordinate manifest, not native Foundry import. Foundry
 ## ADR-007: compact localized UI
 File/Edit/About menus own general commands. Three adjacent top panels: Sections (text Contours/Regions/Raster), Scene (text Levels), Main (36x36 icon-only Hand/Clear selection/Fit/Show contours/Settings). Menu/toolbar Clear selection share one QAction and shortcut. One left column contains the active toolbar directly in an unframed stack, without the former nested wrapper/frame: 48x48 icons and 48x72 independent numeric tools. Snapping only in Contours. Minimum 1024x768; no footer or default map tooltip.
 
-Right pages are mutually exclusive: Project nests Regions and File information; Scene contains an empty Levels group reserved for future controls; Settings orders target, language, global-scope checkbox and explanation. Every page owns an identical 240px Information group at the bottom. Update all copies from one contextual-help source, including actual enabled QAction shortcuts. Levels cancels previews, hides left editing tools and activates Pan without changing geometry/raster. Settings toggles its page and returns to the active scene/project page. Editing section selection returns to Project. Native floor controls/export are not implemented by this placeholder.
+Right pages are mutually exclusive: Project nests Regions and File information; Scene contains reusable Levels and Wall presets; Settings orders target, language, global-scope checkbox and explanation. Every page owns an identical 240px Information group at the bottom. Update all copies from one contextual-help source, including actual enabled QAction shortcuts. Levels cancels previews while preserving the visible left toolbar and active editing mode; geometry/raster stay unchanged. Settings toggles its page and returns to the active scene/project page. Editing section selection returns to Project. The scene template library has add/edit/delete, whole-foot nullable level bounds, RGB/visibility and dynamic wall preset settings. Placed semantic assignment/native export remains future work. See scene-templates.md.
 
 File > Recent projects always exists, including an empty-state entry. Store at most10 unique absolute .dale paths from successful saves/opens, newest first, in merged portable preferences. Missing paths stay listed but disabled with explanatory path help. Opening an entry runs ordinary save/discard/cancel first. Clear list preserves files. Do not store archive extraction paths. Refresh dynamic menu translations on language switches. Rotate regions help documents wheel and tool-button right-click; all controls retain localized gestures/shortcuts. No-op auto-close remains Close-only; geometry changes require Cancel/Yes.
 

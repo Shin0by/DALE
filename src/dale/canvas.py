@@ -8,7 +8,7 @@ from itertools import pairwise
 from PIL import Image
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from PySide6.QtWidgets import QGraphicsItemGroup, QGraphicsScene, QGraphicsView
 from shapely.geometry import GeometryCollection, LineString
 from shapely.ops import unary_union
 
@@ -74,6 +74,8 @@ class MapView(QGraphicsView):
     def __init__(self):
         super().__init__()
         self.setScene(QGraphicsScene(self))
+        self.level_groups = {}
+        self.level_templates = ()
         self.setMouseTracking(True)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
@@ -145,10 +147,23 @@ class MapView(QGraphicsView):
         self.render_timer.setInterval(35)
         self.render_timer.timeout.connect(self.update_image)
 
+    def set_level_templates(self, levels):
+        self.level_templates = tuple(levels)
+        identifiers = {level.id for level in levels}
+        for identifier in set(self.level_groups) - identifiers:
+            self.scene().removeItem(self.level_groups.pop(identifier))
+        for level in levels:
+            if level.id not in self.level_groups:
+                group = QGraphicsItemGroup()
+                self.scene().addItem(group)
+                self.level_groups[level.id] = group
+            self.level_groups[level.id].setVisible(level.visible)
+
     def assign(self, session, preview):
         self.cancel_pending()
         self.session, self.preview = session, preview
         self.raster_key = None
+        self.level_groups.clear()
         self.scene().clear()
         self.item = self.scene().addPixmap(pixmap(preview))
         self.item.setTransform(
@@ -156,6 +171,7 @@ class MapView(QGraphicsView):
                 session.source.size[0] / preview.width, session.source.size[1] / preview.height
             )
         )
+        self.set_level_templates(self.level_templates)
         self.image_rect = QRectF(0, 0, *session.source.size)
         # Navigation space must extend beyond the image, including at fit zoom.
         margin_x = max(session.source.size[0] * 4, 4096)
@@ -176,6 +192,8 @@ class MapView(QGraphicsView):
 
     def clear_map(self):
         self.cancel_pending()
+        self.level_groups.clear()
+        self.level_templates = ()
         self.scene().clear()
         self.session = self.preview = self.item = self.working_geometry = self.analysis = None
         self.geometry_key = None

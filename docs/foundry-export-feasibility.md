@@ -28,7 +28,7 @@ The target version selector must select an explicit serializer/capability profil
 
 | Layer | Proposed responsibility | Current state |
 | --- | --- | --- |
-| Immutable source catalog | Exact original bytes, hash and original array pointers; additional updated snapshots separately | Present in schema-2 `.dale`. |
+| Immutable source catalog | Exact original bytes, hash and original array pointers; additional updated snapshots separately | Present in schema-3 `.dale`. |
 | Source semantic records | Ordered wall endpoints, all restrictions, thresholds, door/animation/audio, flags and source document identity | Raw scene is retained, but no typed editable semantic model. |
 | Working geometry and lineage | Persistent edge/parent/source graph, edits and contact references | Implemented; sufficient to locate source metadata, not to resolve semantic conflicts. |
 | Semantic map model | Floors, wall properties, ordered Region shapes, behavior graph, asset transforms, per-version extensions | Proposed. |

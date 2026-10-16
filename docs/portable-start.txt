@@ -7,7 +7,11 @@ File > JSON loads a scene JSON directly or selects one from a DALE project docum
 Old project formats are not supported.
 Menus: File / Edit / About. File > Recent projects remembers ten opened/saved projects.
 Top: Sections (Contours / Regions / Raster), Scene (Levels), Main (square icons).
-Main > Settings opens its separate right page. Levels opens the empty scene-level page.
+Main > Settings opens its separate right page. Levels opens level and wall-preset definitions.
+Scene keeps left tools visible. Add/Delete buttons manage cards; double-click edits; eyes hide levels.
+Level heights are whole feet: empty bottom/top means -/+infinity. RGB offers16 colors/full palette.
+Import/Export templates transfers definitions only, including import from another current .dale.
+Project format is3; older projects are unsupported. Without a scene, Save exports template JSON.
 Project nests Regions, then File information. Each right page has the same bottom Information.
 The left editing toolbar has a single frame.
 The global-settings checkbox follows Language. Bottom Information shows active gestures
@@ -43,7 +47,12 @@ Preserve projects during updates. Open editors retain their version until restar
 Escape отменяет. Если автозамыкание ничего не меняет, в окне есть только «Закрыть».
 Меню: Файл / Правка / О программе. Файл > Последние проекты хранит десять проектов.
 Сверху: Разделы (Контуры / Области / Растр), Сцена (Уровни), Основное (иконки).
-Шестерёнка открывает отдельную правую панель настроек. Уровни — пустую панель сцены.
+Шестерёнка открывает панель настроек. Уровни — шаблоны этажей и пресеты стен.
+Слева инструменты остаются видимыми. Добавить/Удалить управляют карточками; двойной клик меняет их.
+Высоты — целые футы, включая0. Пустой низ/верх — минус/плюс бесконечность. Цвет:16 вариантов/RGB.
+Глазик скрывает содержимое уровня. Пресеты стен не имеют высоты; поля меняются по выбранным режимам.
+Импорт/экспорт шаблонов переносит только общие настройки, в том числе из другого проекта .dale.
+Формат проекта3; старые проекты не поддерживаются. Без сцены сохранение выгружает JSON шаблонов.
 В Проекте — Области и Данные файла. Внизу каждой правой панели одинаковая Информация.
 Слева одна рамка панели инструментов.
 Галочка глобальных настроек следует за языком. Нижняя Информация показывает

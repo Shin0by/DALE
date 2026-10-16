@@ -10,7 +10,8 @@
 | Upper-floor overlay | floor overlay | Cropped native-resolution PNG with transparent terrain, aligned to the base map using recorded placement coordinates. |
 | Terrain | ground, relief, рельеф, земля | Outdoor ground/background the owner wants to remove. It is a visual category, not a guaranteed field in the JSON. |
 | Source wall | original line | Wall segment read from the source JSON, including door/window segments. Not the visible wall artwork itself. |
-| Closure | temporary line, virtual closure | Editor-only polyline joining source walls to create closed mask regions. Never a new Foundry wall. |
+| Closure | temporary line, virtual closure | Legacy editor-only polyline retained in project history. Its former multi-click UI tool is retired; edit it with ordinary point/line tools. Never a new Foundry wall. |
+| Auto-close | Автозамыкание | Cursor tool tracing reachable geometry and extending existing lines along their vectors to intersections. Uses its own screen-pixel distance; creates no standalone connectors. |
 | Closed face | enclosed region | Polygon formed by noded source walls and temporary closures. |
 | Remove outside | keep interiors | Make pixels outside the union of closed faces transparent. |
 | Remove inside | keep exterior | Make pixels inside the union of closed faces transparent. |

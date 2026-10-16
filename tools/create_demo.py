@@ -21,7 +21,7 @@ def create_demo(directory: Path):
         ((700, 200), (700, 650)),
         ((700, 650), (200, 650)),
         ((200, 650), (200, 500)),
-        ((200, 350), (200, 200)),  # Deliberate gap for the Closure tool.
+        ((200, 350), (200, 200)),  # Deliberate gap for manual repair or Auto-close.
         ((850, 250), (1050, 250)),
         ((1050, 250), (1050, 450)),
         ((1050, 450), (850, 450)),

@@ -81,6 +81,14 @@ def test_independent_eraser_sizes_reject_out_of_range_archives(
         load_project(path)
 
 
+@pytest.mark.parametrize("distance", [0, 257, 1.5])
+def test_auto_close_distance_rejects_invalid_archives(pair_factory, tmp_path, distance):
+    path = tmp_path / "invalid-auto-close.dale"
+    save_project(Session(pair_factory()), path, {"auto_close_distance_px": distance})
+    with pytest.raises(ValueError, match="tool sizes"):
+        load_project(path)
+
+
 def test_archive_checksum_rejects_corrupted_history(pair_factory, tmp_path):
     path = tmp_path / "bad.dale"
     save_project(Session(pair_factory()), path)

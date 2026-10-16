@@ -16,6 +16,41 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Auto-close": "Автозамыкание",
+    "Auto-close distance (px)": "Дальность автоприлипания (px)",
+    "Ctrl+wheel: change the auto-close distance.": (
+        "Ctrl + колесо: изменить дальность автоприлипания."
+    ),
+    "Independent distance in screen pixels; ordinary snapping is unchanged.": (
+        "Собственная дальность в экранных пикселях; обычное прилипание настраивается отдельно."
+    ),
+    (
+        "Hover to trace connected lines and valid continuations. White edges show affected lines; "
+        "dashed lines preview extensions. Click to extend existing lines "
+        "along their directions in one undo step."
+    ): (
+        "Наведите курсор, чтобы проследить связанные линии и допустимые продолжения. "
+        "Белый кант показывает затрагиваемые линии, пунктир — будущие продолжения. "
+        "Клик удлиняет существующие линии по их направлениям до пересечения одним шагом отмены."
+    ),
+    "No eligible gaps here. Increase the auto-close distance or draw a new line.": (
+        "Здесь нет подходящих зазоров. Увеличьте дальность автоприлипания "
+        "или нарисуйте новую линию."
+    ),
+    "Finish or cancel the active gesture first.": "Завершите текущий жест или отмените его.",
+    "No enclosed region exists. Use Auto-close for nearby gaps or New line to draw a boundary.": (
+        "Нет замкнутых областей. Используйте «Автозамыкание» для близких зазоров "
+        "или «Новую линию» для построения контура."
+    ),
+    (
+        "{count} unresolved segments remain. They may be gaps or unused/internal lines.\n"
+        "Apply the mask to the closed regions anyway? "
+        "Choose No to repair with Auto-close or New line."
+    ): (
+        "Осталось незамкнутых отрезков: {count}. Это могут быть зазоры или лишние линии.\n"
+        "Применить маску к замкнутым областям? Выберите «Нет», чтобы исправить контур "
+        "инструментами «Автозамыкание» или «Новая линия»."
+    ),
     "Shortcut: {keys}": "Горячие клавиши: {keys}",
     "Escape: cancel the current gesture.": "Escape: отменить текущий жест.",
     "Ctrl+wheel: change this value.": "Ctrl + колесо: изменить это значение.",
@@ -145,7 +180,8 @@ RUSSIAN = {
     ),
     (
         "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
-        "Ctrl+wheel: active tool size\nAlt-click: free closure corner\n\n"
+        "Ctrl+wheel: active tool size\n\n"
+        "Auto-close: hover to trace, click to extend\nWhite edges: affected lines\n"
         "New line: press, drag, release\nEdit points: click line, drag circle\n"
         "Double-click circle: delete\nGeometry erasers: drag the circle\n"
         "Escape: cancel current gesture\n\n"
@@ -153,7 +189,8 @@ RUSSIAN = {
         "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
     ): (
         "Правая кнопка: перемещение\nКолесо: масштаб у курсора\n"
-        "Ctrl + колесо: размер инструмента\nAlt + клик: угол замыкания\n\n"
+        "Ctrl + колесо: размер инструмента\n\n"
+        "Автозамыкание: навести, кликнуть для продления\nБелый кант: затрагиваемые линии\n"
         "Новая линия: нажать, тянуть, отпустить\nТочки: клик по линии, тянуть кружок\n"
         "Двойной клик: удалить точку\nЛастик геометрии: тяните круг\n"
         "Escape: отменить текущий жест\n\n"
@@ -165,9 +202,6 @@ RUSSIAN = {
     ),
     "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors.": (
         "Радиус прилипания в экранных пикселях при любом масштабе. Сначала вершины, затем линии."
-    ),
-    "Snap the first/last click to a wall; Alt-click adds free corners.": (
-        "Первый и последний клик привязываются к стене; Alt + клик добавляет свободный угол."
     ),
     "Press for the first point, drag, release for the second. Snap now or when moving points.": (
         "Нажатие задаёт первую точку, отпускание — вторую. "
@@ -191,20 +225,6 @@ RUSSIAN = {
     ),
     "Click near a wall within the configured snap distance.": (
         "Щёлкните рядом со стеной в пределах установленного радиуса прилипания."
-    ),
-    (
-        "{count} unresolved segments remain. They may be gaps or unused/internal lines.\n"
-        "Apply the mask to the closed regions anyway? Choose No to repair with Closure."
-    ): (
-        "Осталось незамкнутых отрезков: {count}. Это могут быть зазоры или лишние линии.\n"
-        "Применить маску к замкнутым областям? Выберите «Нет», чтобы исправить контур."
-    ),
-    (
-        "No enclosed region exists. Use Closure to connect original walls: "
-        "click to snap, Alt-click for corners, click to snap the end."
-    ): (
-        "Нет замкнутых областей. Соедините стены: клик привязывает начало, "
-        "Alt + клик добавляет углы, последний клик привязывает конец."
     ),
     "Floor overlay editor": "Редактор этажей",
     "Editing": "Редактирование",
@@ -238,15 +258,6 @@ RUSSIAN = {
         "Foundry 14: назначьте PNG нужному уровню сцены на высоте {height}"
         " футов и настройте диапазон высот и видимость."
     ),
-    (
-        "{count} unresolved segments remain (orange). They may be gaps or "
-        "unused/internal lines.\nApply the mask to the closed regions anywa"
-        "y? Choose No to repair with Closure."
-    ): (
-        "Осталось незамкнутых отрезков: {count} (оранжевые). Это могут быт"
-        "ь зазоры или лишние внутренние линии.\nПрименить маску к замкнутым"
-        " областям? Выберите «Нет», чтобы сначала замкнуть контур."
-    ),
     ("Click within 14 screen pixels of an original cyan wall."): (
         "Щёлкните рядом с исходной голубой стеной: в пределах 14 экранных пикселей."
     ),
@@ -265,7 +276,6 @@ RUSSIAN = {
     "Export PNGs": "Экспорт PNG",
     "File": "Файл",
     "Pan": "Перемещение",
-    "Closure": "Замкнуть контур",
     "Edit points": "Точки",
     "Erase": "Ластик",
     "Restore": "Восстановление",
@@ -296,22 +306,6 @@ RUSSIAN = {
         "й: добавленные линии\nФиолетовый: соединения зазоров\nЗелёный: гран"
         "ица с отступом"
     ),
-    (
-        "Right-drag: pan in every tool\nWheel: zoom at cursor\n\nClosure:\nCli"
-        "ck: snap start/end\nCtrl/Alt-click: free corner\nEscape: cancel\n\nEd"
-        "it points:\nClick line: insert point\nDrag circle: move\nDouble-clic"
-        "k circle: delete\nCircles keep their screen size.\n\nErase/Restore: "
-        "drag to paint\nBrush size: original pixels\n\nCtrl+S: save complete "
-        "project\nPNG: cropped regions + 3 px guard."
-    ): (
-        "Правая кнопка + движение: перемещение\nКолесо: масштаб у курсора\n\n"
-        "Замыкание:\nКлик: привязать начало/конец\nCtrl/Alt + клик: добавить"
-        " угол\nEscape: отменить ввод\n\nТочки:\nКлик по линии: добавить точку"
-        "\nТянуть кружок: переместить\nДвойной клик: удалить точку\nРазмер кр"
-        "ужков не зависит от масштаба.\n\nЛастик/восстановление: рисуйте мыш"
-        "ью\nРазмер кисти — в исходных пикселях\n\nCtrl+S: сохранить весь про"
-        "ект\nPNG: отдельные контуры + 3 px запаса"
-    ),
     ("Load a source JPG and matching wall JSON."): (
         "Загрузить исходную карту JPG и JSON с разметкой стен."
     ),
@@ -326,9 +320,6 @@ RUSSIAN = {
     ),
     ("Drag to move the map. Right-drag works in every tool."): (
         "Перемещайте карту мышью. Правая кнопка работает во всех инструментах."
-    ),
-    ("Snap the first/last click to a wall; Ctrl/Alt-click adds free corners."): (
-        "Первый и последний клик привязываются к стене; Ctrl/Alt + клик добавляет свободный угол."
     ),
     "Click a line to insert; drag a fixed-size circle to move; double-click it to delete.": (
         "Клик по линии добавляет точку; тяните кружок для перемещения, два"
@@ -393,27 +384,11 @@ RUSSIAN = {
     "Saved complete project: {path}": "Проект сохранён: {path}",
     "Finish editing": "Завершите редактирование",
     "Finish the active drag before saving.": "Завершите перетаскивание перед сохранением.",
-    "Finish closure": "Завершите контур",
-    ("Finish the closure or cancel it with Escape."): (
-        "Завершите линию или отмените её клавишей Escape."
-    ),
     "Close a boundary first": "Сначала замкните контур",
-    (
-        "No enclosed region exists. Use Closure to connect original walls:"
-        " click to snap, Ctrl/Alt-click for corners, click to snap the end"
-        "."
-    ): (
-        "Нет замкнутых областей. Соедините стены инструментом замыкания: к"
-        "лик привязывает начало, Ctrl/Alt + клик добавляет углы, последний"
-        " клик привязывает конец."
-    ),
     "Review open contours": "Проверьте незамкнутые контуры",
     "Review contour offset": "Проверьте отступ контура",
     ("No enclosed area remains. Reduce the inward offset or close a boundary."): (
         "Замкнутая область исчезла. Уменьшите отступ внутрь или замкните контур."
-    ),
-    ("Finish or cancel the active stroke/closure first."): (
-        "Сначала завершите или отмените текущую линию или мазок."
     ),
     "Invalid elevation": "Некорректная высота",
     "Export separate PNGs with 3 px edge guard": "Экспорт отдельных PNG с запасом 3 px",

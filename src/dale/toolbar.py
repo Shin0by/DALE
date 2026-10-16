@@ -101,8 +101,17 @@ def tool_icon(name):
     elif name == "Show walls":
         painter.drawRoundedRect(QRectF(3, 7, 18, 11), 6, 6)
         circle(12, 12.5, 3)
-    elif name in ("New line", "Edit points", "Closure"):
-        points = [(4, 18), (12, 6), (20, 14)] if name == "Closure" else [(4, 18), (20, 6)]
+    elif name == "Auto-close":
+        painter.drawPolyline(
+            QPolygonF([QPointF(4, 9), QPointF(4, 19), QPointF(20, 19), QPointF(20, 9)])
+        )
+        painter.setPen(QPen(QColor("#58d9ec"), 1.8, Qt.PenStyle.DashLine))
+        line((4, 9), (20, 9))
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.8))
+        line((9, 4), (12, 7))
+        line((12, 7), (15, 4))
+    elif name in ("New line", "Edit points"):
+        points = [(4, 18), (20, 6)]
         if name == "Edit points":
             points.insert(1, (12, 12))
         painter.drawPolyline(QPolygonF([QPointF(*p) for p in points]))
@@ -343,12 +352,18 @@ class SizedToolButton(QToolButton):
         )
 
     def set_help(self, language):
+        tool_name = self.defaultAction().property("dale_tooltip_parts")[0]
+        auto_close = tool_name == "Auto-close"
         parts = [
             *self.defaultAction().property("dale_tooltip_parts"),
-            "Line eraser diameter (px)"
-            if self.defaultAction().property("dale_tooltip_parts")[0] == "Erase lines"
-            else "Vertex eraser diameter (px)",
-            "This tool keeps its own diameter in screen pixels.",
+            {
+                "Erase lines": "Line eraser diameter (px)",
+                "Erase vertices": "Vertex eraser diameter (px)",
+                "Auto-close": "Auto-close distance (px)",
+            }[tool_name],
+            "Independent distance in screen pixels; ordinary snapping is unchanged."
+            if auto_close
+            else "This tool keeps its own diameter in screen pixels.",
         ]
         for control in (self, self.editor(), self.editor().lineEdit()):
             control.setProperty("dale_tooltip_parts", parts)
@@ -360,7 +375,9 @@ class SizedToolButton(QToolButton):
             parts = [
                 self.defaultAction().property("dale_tooltip_parts")[0],
                 description,
-                "Ctrl+wheel: change this tool's diameter.",
+                "Ctrl+wheel: change the auto-close distance."
+                if auto_close
+                else "Ctrl+wheel: change this tool's diameter.",
             ]
             button.setProperty("dale_tooltip_parts", parts)
             button.setToolTip("\n".join(translate(part, language) for part in parts))

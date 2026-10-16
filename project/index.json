@@ -40,7 +40,8 @@
     "portable_preferences": "src/dale/preferences.py",
     "toolbar_icons_and_style": "src/dale/toolbar.py",
     "build_revision": "tools/bump_revision.py",
-    "application_icon_asset": "src/dale/assets/favicon.ico"
+    "application_icon_asset": "src/dale/assets/favicon.ico",
+    "directional_auto_close": "src/dale/autoclose.py"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git.",
   "build_environment_lock": "requirements-build.lock"

@@ -61,7 +61,7 @@ from dale.preferences import (
 from dale.project_io import load_project, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
-from dale.session import Session
+from dale.session import Closure, Session
 from dale.toolbar import (
     NumericToolTile,
     SizedToolButton,
@@ -208,7 +208,8 @@ class MainWindow(QMainWindow):
         sidebar.addWidget(self.diagnostics)
         help_text = QLabel(
             "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
-            "Ctrl+wheel: active tool size\nAlt-click: free closure corner\n\n"
+            "Ctrl+wheel: active tool size\n\n"
+            "Auto-close: hover to trace, click to extend\nWhite edges: affected lines\n"
             "New line: press, drag, release\nEdit points: click line, drag circle\n"
             "Double-click circle: delete\nGeometry erasers: drag the circle\n"
             "Escape: cancel current gesture\n\n"
@@ -291,19 +292,31 @@ class MainWindow(QMainWindow):
             item.triggered.connect(handler)
             if shortcut:
                 item.setShortcut(shortcut)
-            if title in GEOMETRY_ERASERS:
+            if title in (*GEOMETRY_ERASERS, "Auto-close"):
                 editor = ToolSpinBox()
-                editor.setRange(1, 512)
-                editor.setValue(self.view.geometry_diameters[title])
-                editor.valueChanged.connect(
-                    lambda value, mode=title: self.set_geometry_brush(mode, value)
-                )
+                if title == "Auto-close":
+                    editor.setRange(1, 256)
+                    editor.setValue(self.view.auto_close_distance)
+                    editor.valueChanged.connect(self.set_auto_close_distance)
+                    self.auto_close_control = editor
+                else:
+                    editor.setRange(1, 512)
+                    editor.setValue(self.view.geometry_diameters[title])
+                    editor.valueChanged.connect(
+                        lambda value, mode=title: self.set_geometry_brush(mode, value)
+                    )
                 tile = SizedToolButton(editor, item)
-                self.geometry_eraser_tiles[title] = tile
+                if title == "Auto-close":
+                    self.auto_close_tile = tile
+                else:
+                    self.geometry_eraser_tiles[title] = tile
                 bar.addWidget(tile)
             else:
                 bar.addAction(item)
-            if bar.orientation() == Qt.Orientation.Vertical and title not in GEOMETRY_ERASERS:
+            if bar.orientation() == Qt.Orientation.Vertical and title not in (
+                *GEOMETRY_ERASERS,
+                "Auto-close",
+            ):
                 bar.widgetForAction(item).setFixedSize(48, 48)
             return item
 
@@ -343,7 +356,7 @@ class MainWindow(QMainWindow):
         self.mode_actions = {}
         for bar, names in (
             (categories, ("Pan",)),
-            (geometry, ("Edit points", "New line", "Closure", "Erase lines", "Erase vertices")),
+            (geometry, ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")),
             (pixels, ("Erase", "Restore")),
         ):
             for mode in names:
@@ -397,7 +410,12 @@ class MainWindow(QMainWindow):
                 "Export separate cropped PNGs with a 3 px guard and a placement manifest."
             ),
             "Pan": "Drag to move the map. Right-drag works in every tool.",
-            "Closure": "Snap the first/last click to a wall; Alt-click adds free corners.",
+            "Auto-close": (
+                "Hover to trace connected lines and valid continuations. "
+                "White edges show affected lines; "
+                "dashed lines preview extensions. Click to extend existing lines "
+                "along their directions in one undo step."
+            ),
             "New line": (
                 "Press for the first point, drag, release for the second. "
                 "Snap now or when moving points."
@@ -435,7 +453,6 @@ class MainWindow(QMainWindow):
                     [item.text(), description] if item.property("dale_icon_only") else [description]
                 )
                 if item.text() in (
-                    "Closure",
                     "New line",
                     "Edit points",
                     "Erase lines",
@@ -446,6 +463,8 @@ class MainWindow(QMainWindow):
                     parts.append("Escape: cancel the current gesture.")
                 if item.text() in ("Erase", "Restore", *GEOMETRY_ERASERS):
                     parts.append("Ctrl+wheel: change this tool's diameter.")
+                if item.text() == "Auto-close":
+                    parts.append("Ctrl+wheel: change the auto-close distance.")
                 item.setProperty("dale_tooltip_parts", parts)
                 item.setToolTip("\n".join(parts))
             display_key = item.property("dale_display_key")
@@ -591,6 +610,7 @@ class MainWindow(QMainWindow):
         self.size_tile.setVisible(self.current_tool_set == "pixels")
         for tile in self.geometry_eraser_tiles.values():
             tile.set_help(self.language)
+        self.auto_close_tile.set_help(self.language)
         title = (
             "Restore brush diameter (px)"
             if self.last_tool_modes["pixels"] == "Restore"
@@ -617,10 +637,15 @@ class MainWindow(QMainWindow):
             (self.brush_control, self.view.diameter),
             (self.geometry_brush_control, self.view.geometry_diameters["Erase lines"]),
             (self.vertex_brush_control, self.view.geometry_diameters["Erase vertices"]),
+            (self.auto_close_control, self.view.auto_close_distance),
         ):
             control.blockSignals(True)
             control.setValue(value)
             control.blockSignals(False)
+
+    def set_auto_close_distance(self, value):
+        self.view.auto_close_distance = value
+        self.view.update_hover()
 
     def set_snapping(self, enabled):
         self.view.snap_enabled = enabled
@@ -646,6 +671,7 @@ class MainWindow(QMainWindow):
                     self.brush_control,
                     self.geometry_brush_control,
                     self.vertex_brush_control,
+                    self.auto_close_control,
                     self.snap_distance,
                     self.gap_tolerance,
                     self.contour_offset,
@@ -693,13 +719,13 @@ class MainWindow(QMainWindow):
 
     def can_discard(self):
         if self.view.active_gesture:
-            self.information("Finish editing", "Finish or cancel the active stroke/closure first.")
+            self.information("Finish editing", "Finish or cancel the active gesture first.")
             return False
         if not self.view.session:
             return True
         if self.saved_state is not None and self.document_state() == self.saved_state:
             return True
-        if self.saved_state is None and not self.view.session.operations and not self.view.pending:
+        if self.saved_state is None and not self.view.session.operations:
             return True
         answer = self.question(
             "Save changes?",
@@ -723,7 +749,6 @@ class MainWindow(QMainWindow):
             session.contour_offset,
             self.version.currentIndex(),
             self.elevation.currentText(),
-            tuple(self.view.pending),
         )
 
     def ui_state(self):
@@ -737,7 +762,7 @@ class MainWindow(QMainWindow):
             "show_walls": self.view.show_walls,
             "zoom": self.view.transform().m11(),
             "center": [center.x(), center.y()],
-            "pending_closure": self.view.pending,
+            "auto_close_distance_px": self.view.auto_close_distance,
             "language": self.language,
             "snap_enabled": self.view.snap_enabled,
             "snap_distance_px": self.view.snap_distance,
@@ -813,6 +838,7 @@ class MainWindow(QMainWindow):
             self.brush_control.setValue(settings["brush_diameter"])
             self.geometry_brush_control.setValue(settings["line_eraser_diameter"])
             self.vertex_brush_control.setValue(settings["vertex_eraser_diameter"])
+            self.auto_close_control.setValue(settings["auto_close_distance_px"])
             self.snap_distance.setValue(settings["snap_distance_px"])
             self.snap_action.setChecked(settings["snap_enabled"])
             self.view.snap_enabled = settings["snap_enabled"]
@@ -822,11 +848,14 @@ class MainWindow(QMainWindow):
             self.view.show_walls = settings["show_walls"]
             self.select_tool_set(settings["tool_set"], activate=False)
             self.activate_mode(settings["mode"])
-            self.view.pending = list(settings["pending_closure"])
+            # Retired tool drafts become ordinary editable paths without losing redo.
+            legacy_draft = settings["pending_closure"]
+            if len(legacy_draft) >= 2:
+                session.operations.append(Closure(legacy_draft))
             self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
             self.view.centerOn(*settings["center"])
             self.project_path = path
-            self.saved_state = self.document_state()
+            self.saved_state = None if len(legacy_draft) >= 2 else self.document_state()
             self.info.setText(
                 f"{path.name}\n{session.source.size[0]:,} × {session.source.size[1]:,} px"
             )
@@ -1008,15 +1037,12 @@ class MainWindow(QMainWindow):
     def mask(self, mode):
         if not self.view.session:
             return
-        if self.view.pending:
-            self.information("Finish closure", "Finish the closure or cancel it with Escape.")
-            return
         analysis = self.view.analysis
         if not analysis.faces:
             self.information(
                 "Close a boundary first",
-                "No enclosed region exists. Use Closure to connect original walls: "
-                "click to snap, Alt-click for corners, click to snap the end.",
+                "No enclosed region exists. Use Auto-close for nearby gaps "
+                "or New line to draw a boundary.",
             )
             return
         if (
@@ -1027,7 +1053,7 @@ class MainWindow(QMainWindow):
                     "{count} unresolved segments remain. "
                     "They may be gaps or unused/internal lines.\n"
                     "Apply the mask to the closed regions anyway? "
-                    "Choose No to repair with Closure.",
+                    "Choose No to repair with Auto-close or New line.",
                     count=len(analysis.unresolved),
                 ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -1047,8 +1073,8 @@ class MainWindow(QMainWindow):
     def export(self):
         if not self.view.session or self.worker:
             return
-        if self.view.pending or self.view.active_gesture:
-            self.information("Finish editing", "Finish or cancel the active stroke/closure first.")
+        if self.view.active_gesture:
+            self.information("Finish editing", "Finish or cancel the active gesture first.")
             return
         try:
             placement = self.placement()
@@ -1161,6 +1187,8 @@ def main():
                 "window_title": window.windowTitle(),
                 "window_icon_loaded": not window.windowIcon().isNull(),
                 "geometry_eraser_diameters": window.view.geometry_diameters,
+                "auto_close_distance_px": window.view.auto_close_distance,
+                "editing_mode": window.view.mode,
                 "language": window.language,
                 "foundry_major": window.placement().foundry_major,
                 "window_visible": window.isVisible(),

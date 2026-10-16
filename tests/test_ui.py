@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from dale.canvas import HANDLE_DIAMETER, MapView
 from dale.editing import vertices
-from dale.project_io import load_project
+from dale.project_io import load_project, save_project
 from dale.raster import load_preview
 from dale.session import Closure, Session, Stroke
 from dale.ui import MainWindow
@@ -34,7 +34,7 @@ def isolated_preferences(monkeypatch, tmp_path):
         "Pan",
         "Erase",
         "Restore",
-        "Closure",
+        "Auto-close",
         "Edit points",
         "New line",
         "Erase lines",
@@ -65,34 +65,75 @@ def test_right_drag_pans_in_every_mode_without_editing(app, pair_factory, mode, 
     view.close()
 
 
-def test_closure_click_modifiers_and_escape(app, pair_factory):
-    source = pair_factory(walls=[{"c": [10, 20, 60, 20]}, {"c": [60, 20, 60, 270]}])
+@pytest.mark.parametrize("zoom", [2, 5])
+def test_auto_close_hover_click_and_undo_extend_existing_lines(app, pair_factory, zoom):
+    source = pair_factory(
+        size=(300, 200),
+        walls=[
+            {"c": [20, 20, 120, 20]},
+            {"c": [120, 20, 120, 120]},
+            {"c": [120, 120, 20, 120]},
+            {"c": [20, 120, 20, 26]},
+            {"c": [200, 20, 240, 20]},
+        ],
+    )
     view = MapView()
-    view.resize(500, 700)
+    view.resize(600, 500)
     view.show()
     view.assign(Session(source), load_preview(source))
-    view.set_mode("Closure")
+    original = view.session.geometry()
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(80, 60)
+    view.auto_close_distance = 6 * zoom
+    view.snap_enabled = False  # This tool has its own independent distance.
+    view.set_mode("Auto-close")
     app.processEvents()
-
-    def click(point, modifiers=Qt.KeyboardModifier.NoModifier):
-        QTest.mouseClick(
-            view.viewport(), Qt.MouseButton.LeftButton, modifiers, view.mapFromScene(*point)
-        )
-
-    click((30, 21))
-    assert len(view.pending) == 1
-    assert view.pending[0][1] == 20
-    click((15, 130), Qt.KeyboardModifier.AltModifier)
-    click((25, 220), Qt.KeyboardModifier.AltModifier)
-    click((59, 250))
-    assert isinstance(view.session.operations[0], Closure)
-    assert len(view.session.operations[0].points) == 4
-    assert view.session.operations[0].points[-1][0] == 60
-    click((30, 20))
-    QTest.keyClick(view, Qt.Key.Key_Escape)
-    assert not view.pending
+    point = view.mapFromScene(70, 20)
+    QTest.mouseMove(view.viewport(), point)
+    assert len(view.auto_close_plan.segments) == 4
+    assert view.auto_close_plan.extensions == (((20, 26), (20, 20)),)
+    assert not view.hover_path.isEmpty()
+    assert not view.auto_join_path.isEmpty()
+    assert not view.session.operations
+    image = view.viewport().grab().toImage()
+    sample = view.mapFromScene(90, 20)
+    colors = [image.pixelColor(sample.x(), sample.y() + dy).name() for dy in range(-3, 4)]
+    assert any(colors[i : i + 3] == ["#ffffff", "#ff0000", "#ffffff"] for i in range(5))
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
     assert len(view.session.operations) == 1
+    assert len(view.session.walls) == len(original.walls)
+    assert view.session.walls[3] == ((20, 120), (20, 20))
+    assert view.analysis.faces == 1
+    assert not view.auto_close_plan.extensions
+    view.session.undo()
+    view.refresh()
+    assert view.session.geometry() == original
     view.close()
+
+
+def test_retired_closure_draft_loads_as_editable_geometry_and_retains_redo(
+    app, pair_factory, tmp_path
+):
+    session = Session(pair_factory())
+    session.add(Stroke(((20, 30), (30, 40)), 3))
+    session.add(Stroke(((25, 35),), 1, restore=True))
+    session.undo()
+    path = tmp_path / "legacy.dale"
+    draft = ((10, 20), (30, 40), (60, 20))
+    save_project(session, path, {"mode": "Closure", "pending_closure": draft})
+    window = MainWindow()
+    assert "Closure" not in window.mode_actions
+    assert window.load_project_file(path)
+    assert window.view.mode == "New line"
+    assert window.view.session.operations == [*session.operations, Closure(draft)]
+    assert window.view.session.future == session.future
+    assert window.saved_state is None
+    assert window.save_project_file()
+    with load_project(path) as loaded:
+        assert loaded.session.operations == window.view.session.operations
+        assert loaded.session.future == session.future
+        assert not loaded.ui_state["pending_closure"]
+    window.close()
 
 
 def test_brush_drag_is_one_undo_step(app, pair_factory):
@@ -249,21 +290,20 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     first.set_snapping(False)
     first.version.setCurrentIndex(1)
     first.view.session.add(Stroke(((20, 30), (30, 40)), 3))
-    first.view.pending = [(10, 20), (30, 40)]
-    first.view.set_mode("Closure")
-    first.view.pending = [(10, 20), (30, 40)]
+    first.auto_close_control.setValue(31)
+    first.activate_mode("Auto-close")
     first.project_path = tmp_path / "ui-session.dale"
     assert first.save_project_file()
     assert first.can_discard()
     second = MainWindow()
     assert second.load_project_file(first.project_path)
     assert second.view.session.operations == first.view.session.operations
-    assert second.view.pending == first.view.pending
     assert second.gap_tolerance.value() == 3
     assert second.contour_offset.value() == 2
     assert second.placement().elevation_ft == 17
     assert second.placement().foundry_major == 13
-    assert second.view.mode == "Closure"
+    assert second.view.mode == "Auto-close"
+    assert second.view.auto_close_distance == 31
     assert second.language == "en"
     assert second.view.geometry_diameter == 37
     assert second.view.geometry_diameters == {"Erase lines": 37, "Erase vertices": 61}
@@ -272,7 +312,8 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert not second.view.snap_enabled
     assert second.can_discard()
     with load_project(first.project_path) as project:
-        assert project.ui_state["pending_closure"] == ((10, 20), (30, 40))
+        assert not project.ui_state["pending_closure"]
+        assert project.ui_state["auto_close_distance_px"] == 31
         assert "junction_policy" not in project.ui_state
     first.close()
     second.close()
@@ -434,6 +475,13 @@ def test_ctrl_wheel_resizes_tools_globally_without_zooming_or_changing_language(
     wheel(window.info)
     assert window.view.geometry_diameter > 24
     assert window.vertex_brush_control.value() == window.view.geometry_diameter
+    assert window.view.geometry_diameters["Erase lines"] == line_size
+    window.mode_actions["Auto-close"].trigger()
+    radius = window.view.auto_close_distance
+    wheel(window.info)
+    assert window.view.auto_close_distance == radius + 1
+    assert window.auto_close_control.value() == radius + 1
+    assert window.view.snap_distance == 14
     assert window.view.geometry_diameters["Erase lines"] == line_size
     assert window.language == "ru"
     wheel(window.snap_distance)

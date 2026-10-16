@@ -187,6 +187,19 @@ def move_vertex(geometry: GeometryEdit, point: Point, destination: Point) -> Geo
     return GeometryEdit(tuple((a, b) for a, b in walls if not _same(a, b)), tuple(closures))
 
 
+def extend_lines(geometry: GeometryEdit, extensions: tuple[Segment, ...]) -> GeometryEdit:
+    """Move free ends simultaneously, then node their destinations into target lines."""
+    destinations = dict(extensions)
+    walls = tuple((destinations.get(a, a), destinations.get(b, b)) for a, b in geometry.walls)
+    closures = tuple(
+        tuple(destinations.get(point, point) for point in path) for path in geometry.closures
+    )
+    for destination in sorted(set(destinations.values())):
+        walls = tuple(_split_at(walls, destination))
+        closures = tuple(tuple(_expanded_path(path, destination)) for path in closures)
+    return GeometryEdit(walls, closures)
+
+
 def delete_vertex(geometry: GeometryEdit, point: Point) -> GeometryEdit:
     walls, neighbors = [], set()
     for a, b in _split_at(geometry.walls, point):

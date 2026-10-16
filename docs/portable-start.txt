@@ -17,7 +17,11 @@ Each eraser button is 1.5 times normal height; click its number to type a size.
 Their independent diameters are saved in .dale projects.
 Pixel size and Snapping (px) remain left tiles with numbers and minus/plus buttons.
 Hover over controls for localized help, tool names, and applicable hotkeys.
-Ctrl+wheel changes tool size; Alt-click adds a free closure corner.
+Auto-close traces related lines: white edges show the affected group.
+Its embedded number/arrows and Ctrl+wheel set its independent extension limit.
+Click extends existing lines along their vectors to intersections in one undo step.
+Dashed continuations preview the repair; no standalone connectors are created.
+Use New line for larger gaps. The former Closure tool and Alt-click are retired.
 Closed contours are cyan, open contours pure RGB (255, 0, 0) red.
 Lines are 3 screen pixels: black edges around a 1-pixel color center.
 Minimum window: 1024 x 768. The footer uses one row.
@@ -46,7 +50,11 @@ Ctrl+S сохраняет исходники, изменения и истори
 Независимые диаметры сохраняются в проектах .dale.
 Размер пиксельной кисти и Прилипание (px) — слева, с числом и минус/плюс.
 Подсказки элементов поясняют назначение, название инструмента и его горячие клавиши.
-Ctrl + колесо меняет размер инструмента, Alt + клик добавляет угол замыкания.
+Автозамыкание трассирует линии: белый кант показывает затрагиваемую группу.
+Число, стрелки в кнопке и Ctrl + колесо задают собственную дальность продления.
+Клик удлиняет существующие линии по векторам до пересечения одним шагом отмены.
+Пунктир показывает продолжения; отдельные соединительные отрезки не создаются.
+Для больших зазоров есть Новая линия. Прежние Замыкание и Alt + клик удалены.
 Замкнутые контуры голубые, незамкнутые красные с RGB (255, 0, 0).
 Линии — 3 пикселя: чёрные края вокруг цветного центра в 1 пиксель.
 Минимум окна: 1024 x 768. Футер занимает один ряд.

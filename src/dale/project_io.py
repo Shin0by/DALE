@@ -179,6 +179,8 @@ def _load_ui(value):
         raise ValueError("Invalid project UI settings.")
     placement = Placement(value.get("foundry_major", 14), value.get("elevation_ft", 5))
     mode = value.get("mode", "Pan")
+    if mode == "Closure":
+        mode = "New line"
     tool_set = value.get("tool_set", "geometry")
     language = value.get("language", "ru")
     brush = number(value.get("brush_diameter", 40), "Brush diameter")
@@ -190,11 +192,12 @@ def _load_ui(value):
         value.get("vertex_eraser_diameter", geometry_diameter), "Vertex eraser diameter"
     )
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
+    auto_distance = number(value.get("auto_close_distance_px", 14), "Auto-close distance")
     export_region = value.get("export_region", -1)
     zoom = number(value.get("zoom", 1), "Viewport zoom")
     if mode not in (
         "Pan",
-        "Closure",
+        "Auto-close",
         "Edit points",
         "Erase",
         "Restore",
@@ -215,6 +218,8 @@ def _load_ui(value):
             for diameter in (geometry_diameter, line_diameter, vertex_diameter)
         )
         or not 0 <= snap_distance <= 256
+        or auto_distance != int(auto_distance)
+        or not 1 <= auto_distance <= 256
     ):
         raise ValueError("Invalid project tool sizes or snap distance.")
     if type(export_region) is not int or not -1 <= export_region < 100_000:
@@ -233,6 +238,7 @@ def _load_ui(value):
         "line_eraser_diameter": int(line_diameter),
         "vertex_eraser_diameter": int(vertex_diameter),
         "snap_distance_px": int(snap_distance),
+        "auto_close_distance_px": int(auto_distance),
         "snap_enabled": snap_enabled,
         "export_region": export_region,
         "show_walls": bool(value.get("show_walls", True)),

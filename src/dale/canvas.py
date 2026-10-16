@@ -10,6 +10,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
+from dale.autoclose import AutoCloseIndex, AutoClosePlan
 from dale.editing import (
     add_line,
     delete_vertex,
@@ -18,15 +19,16 @@ from dale.editing import (
     hit_vertex,
     insert_vertex,
     move_vertex,
+    project,
     snap_point,
     vertices,
 )
 from dale.geometry import analyze_regions, offset_region
 from dale.raster import render_preview
-from dale.session import Closure, GeometryEdit, Stroke
+from dale.session import Stroke
 
 HANDLE_DIAMETER = 10
-GEOMETRY_TOOLS = ("Edit points", "New line", "Closure", "Erase lines", "Erase vertices")
+GEOMETRY_TOOLS = ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")
 GEOMETRY_ERASERS = ("Erase lines", "Erase vertices")
 
 
@@ -76,7 +78,12 @@ class MapView(QGraphicsView):
         self.geometry_diameters = {mode: 24 for mode in GEOMETRY_ERASERS}
         self.snap_distance = 14
         self.snap_enabled = True
-        self.pending = []
+        self.auto_close_distance = 14
+        self.auto_close_index = None
+        self.auto_close_key = None
+        self.auto_close_plan = AutoClosePlan()
+        self.hover_path = QPainterPath()
+        self.auto_join_path = QPainterPath()
         self.stroke = []
         self.cursor_point = None
         self.snap = None
@@ -131,12 +138,14 @@ class MapView(QGraphicsView):
     def fit_map(self):
         if self.session:
             self.fitInView(self.image_rect, Qt.AspectRatioMode.KeepAspectRatio)
+            self.update_hover()
 
     def clear_map(self):
         self.cancel_pending()
         self.scene().clear()
         self.session = self.preview = self.item = self.working_geometry = self.analysis = None
         self.geometry_key = None
+        self.auto_close_index = self.auto_close_key = None
         self.walls = ()
         self.image_rect = QRectF()
         self.selected_path = QPainterPath()
@@ -179,6 +188,7 @@ class MapView(QGraphicsView):
                 except ValueError:
                     pass  # The mask action reports an offset that erases all enclosed areas.
             self.geometry_key = key
+            self.update_hover()
         if render_image:
             self.update_image()
         else:
@@ -203,11 +213,15 @@ class MapView(QGraphicsView):
         self.setCursor(
             Qt.CursorShape.OpenHandCursor if mode == "Pan" else Qt.CursorShape.CrossCursor
         )
+        self.update_hover()
         self.viewport().update()
 
     def cancel_pending(self):
         self.render_timer.stop()
-        self.pending, self.stroke, self.snap = [], [], None
+        self.stroke, self.snap = [], None
+        self.auto_close_plan = AutoClosePlan()
+        self.hover_path = QPainterPath()
+        self.auto_join_path = QPainterPath()
         was_editing = self.edit_preview is not None
         self.edit_preview = self.drag_base = self.drag_original = self.drag_vertex = None
         self.drag_offset = None
@@ -223,8 +237,45 @@ class MapView(QGraphicsView):
     def _inside(self, point):
         return self.image_rect.contains(QPointF(*point))
 
-    def _snapped(self, point):
-        return snap_point(GeometryEdit(self.walls), point, self._snap_tolerance())
+    def update_hover(self):
+        self.auto_close_plan = AutoClosePlan()
+        edges = ()
+        if self.session and self.cursor_point:
+            geometry = self.edit_preview or self.session.geometry()
+            if self.mode == "Auto-close":
+                tolerance = self.auto_close_distance / max(self.transform().m11(), 1e-9)
+                key = geometry, tolerance
+                if self.auto_close_key != key:
+                    self.auto_close_index = AutoCloseIndex(geometry, tolerance)
+                    self.auto_close_key = key
+                self.auto_close_plan = self.auto_close_index.at(self.cursor_point)
+                edges = self.auto_close_plan.segments
+            elif self.mode in ("Edit points", "New line"):
+                point = self.snap or self.cursor_point
+                vertex = hit_vertex(geometry, point, self._handle_tolerance())
+                all_edges = (
+                    *geometry.walls,
+                    *(edge for path in geometry.closures for edge in pairwise(path)),
+                )
+                if vertex is not None:
+                    edges = tuple(
+                        edge
+                        for edge in all_edges
+                        if math.dist(project(vertex, edge)[0], vertex) <= 1e-7
+                    )
+                else:
+                    hit = hit_edge(geometry, point, self._handle_tolerance() * 0.7)
+                    if hit:
+                        edges = (
+                            geometry.walls[hit.path_index]
+                            if hit.kind == "wall"
+                            else geometry.closures[hit.path_index][
+                                hit.edge_index : hit.edge_index + 2
+                            ],
+                        )
+        self.hover_path = line_path(edges)
+        self.auto_join_path = line_path(self.auto_close_plan.extensions)
+        self.viewport().update()
 
     def _snap_tolerance(self):
         return self.snap_distance / max(self.transform().m11(), 1e-9) if self.snap_enabled else 0
@@ -244,6 +295,11 @@ class MapView(QGraphicsView):
         self.geometry_diameters[mode] = value
 
     def resize_tool(self, steps):
+        if self.mode == "Auto-close":
+            self.auto_close_distance = max(1, min(256, self.auto_close_distance + round(steps)))
+            self.size_changed.emit()
+            self.update_hover()
+            return
         attribute = "geometry_diameter" if self.mode in GEOMETRY_ERASERS else "diameter"
         if self.mode not in (*GEOMETRY_ERASERS, "Erase", "Restore"):
             return
@@ -314,6 +370,18 @@ class MapView(QGraphicsView):
             return super().mousePressEvent(event)
         point = self._point(event)
         self.cursor_point = point
+        if self.mode == "Auto-close":
+            self.update_hover()
+            if self.auto_close_plan.extensions:
+                self.session.add(self.auto_close_plan.apply(self.session.geometry()))
+                self.changed.emit()
+                self.refresh(render_image=False)
+            else:
+                self.message.emit(
+                    "No eligible gaps here. Increase the auto-close distance or draw a new line."
+                )
+            event.accept()
+            return
         if self.mode == "Edit points":
             self._begin_point_edit(point)
             event.accept()
@@ -332,23 +400,7 @@ class MapView(QGraphicsView):
             return
         if not self._inside(point):
             return
-        if self.mode == "Closure":
-            free = event.modifiers() & Qt.KeyboardModifier.AltModifier
-            if self.pending and free:
-                self.pending.append(point)
-            else:
-                snap = self._snapped(point)
-                if snap is None:
-                    self.message.emit("Click near a wall within the configured snap distance.")
-                    return
-                if not self.pending:
-                    self.pending = [snap]
-                elif math.dist(self.pending[-1], snap) > 1e-6:
-                    self.session.add(Closure(tuple(self.pending + [snap])))
-                    self.pending = []
-                    self.changed.emit()
-            self.viewport().update()
-        elif self.mode in ("Erase", "Restore"):
+        if self.mode in ("Erase", "Restore"):
             self.stroke = [point]
             self.update_image()
         event.accept()
@@ -361,10 +413,16 @@ class MapView(QGraphicsView):
                 self.horizontalScrollBar().value() - round(delta.x())
             )
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - round(delta.y()))
+            self.cursor_point = self._point(event)
+            self.update_hover()
             event.accept()
             return
         point = self._point(event)
         self.cursor_point = point
+        if self.mode == "Auto-close" and self.session:
+            self.update_hover()
+            event.accept()
+            return
         if self.mode in GEOMETRY_ERASERS and self.session:
             if self.drag_base is not None and event.buttons() & Qt.MouseButton.LeftButton:
                 self._erase_geometry(point)
@@ -375,6 +433,7 @@ class MapView(QGraphicsView):
             self.snap = snap_point(self.session.geometry(), point, self._snap_tolerance())
             if self.line_start is not None:
                 self.line_end = self._line_anchor(point)
+            self.update_hover()
             self.viewport().update()
             event.accept()
             return
@@ -390,10 +449,11 @@ class MapView(QGraphicsView):
                     if vertex is not None
                     else Qt.CursorShape.CrossCursor
                 )
+                self.update_hover()
                 self.viewport().update()
             event.accept()
             return
-        self.snap = self._snapped(point) if self.mode == "Closure" and self.session else None
+        self.snap = None
         if self.stroke and event.buttons() & Qt.MouseButton.LeftButton:
             if math.dist(self.stroke[-1], point) >= max(0.5, self.diameter / 10):
                 self.stroke.append(point)
@@ -409,6 +469,8 @@ class MapView(QGraphicsView):
             self.setCursor(
                 Qt.CursorShape.OpenHandCursor if self.mode == "Pan" else Qt.CursorShape.CrossCursor
             )
+            self.cursor_point = self._point(event)
+            self.update_hover()
             event.accept()
             return
         if self.drag_base is not None and event.button() == Qt.MouseButton.LeftButton:
@@ -494,7 +556,15 @@ class MapView(QGraphicsView):
             after = self.mapToScene(event.position().toPoint())
             delta = after - before
             self.translate(delta.x(), delta.y())
+            self.cursor_point = self._point(event)
+            self.update_hover()
         event.accept()
+
+    def leaveEvent(self, event):
+        if not self.active_gesture and not self.panning:
+            self.cursor_point = None
+            self.update_hover()
+        super().leaveEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -520,11 +590,11 @@ class MapView(QGraphicsView):
                 result.setDashPattern([6 / width, 4 / width])
             return result
 
-        def outlined(draw, color, dashed=False):
+        def outlined(draw, color, dashed=False, backing="#000000"):
             painter.save()
             # Keep crisp device-pixel edges and an exact-color central pixel.
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            painter.setPen(pen("#000000", 3, dashed))
+            painter.setPen(pen(backing, 3, dashed))
             draw()
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(pen(color, 1, dashed))
@@ -545,9 +615,20 @@ class MapView(QGraphicsView):
             path(self.original_path, "#58d9ec")
             path(self.warning_path, "#ff0000")
             path(self.offset_path, "#58d9ec", True)
-        if self.pending:
-            points = self.pending + ([self.snap or self.cursor_point] if self.cursor_point else [])
-            path(line_path(pairwise(points)), "#ff0000", True)
+            if not self.hover_path.isEmpty():
+                painter.save()
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                painter.setPen(pen("#ffffff", 3))
+                painter.drawPath(self.hover_path)
+                # Restore existing center colors without overwriting the white edges.
+                painter.setPen(pen("#58d9ec", 1))
+                painter.drawPath(self.original_path)
+                painter.setPen(pen("#ff0000", 1))
+                painter.drawPath(self.warning_path)
+                painter.restore()
+            outlined(lambda: painter.drawPath(self.auto_join_path), "#ff0000", True, "#ffffff")
+        if self.cursor_point and self.mode == "Auto-close":
+            circle(self.cursor_point, self.auto_close_distance / self.transform().m11(), "#ffffff")
         if self.line_start is not None:
             path(line_path(((self.line_start, self.line_end),)), "#ff0000")
             painter.setBrush(QColor("#effbff"))

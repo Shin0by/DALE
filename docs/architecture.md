@@ -65,6 +65,8 @@ The owner's later instruction supersedes the original full-canvas default. Expor
 
 After every project update, run `tools/build_windows.ps1` and refresh root `DALE/` with the complete directory bundle, startup note, and source SHA-256 build provenance. Preserve `UserData` and user files during refresh. Never commit generated runtimes or user projects. The package runs without external Python and can be copied as a whole.
 
+Skip copying identical runtime files. When only the executable is locked by an open editor, move that old executable into an ignored, uniquely named artifacts folder before copying the new one; do not terminate the process or discard its edits. An open editor continues its current version until restarted. Changed locked runtime libraries still require the editor to close before deployment can finish.
+
 Keep technical documentation and serialized field names English; switch UI actions, tooltips, guidance, and dialogs between English and Russian at runtime. Russian is the initial default. Persist the choice beside the portable executable and in project preferences. Unknown low-level import/ZIP/library diagnostics can remain English technical detail; application-owned user flows are translated.
 
 ## ADR-002: Foundry version and elevation are placement intent

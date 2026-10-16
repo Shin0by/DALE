@@ -10,7 +10,7 @@ Prepare aligned floor assets for a Foundry VTT map: one complete ground-level im
 
 | ID | Requirement | Acceptance criterion |
 | --- | --- | --- |
-| FR-001 | Import a JPG/JPEG and its Foundry scene JSON. | Decode the image, validate supported JSON fields, show dimensions and actionable errors, and retain original files unchanged. |
+| FR-001 | Import a JPG/JPEG and its Foundry scene JSON. | After image selection, automatically use a sibling JSON with the same stem (for example `floor.jpg` + `floor.json`); show the JSON picker only when that file is absent. Decode/validate normally, surface invalid matching JSON as an import error, and retain original files unchanged. |
 | FR-002 | Display the map with wall lines from JSON. | Support zoom, pan, fit-to-view, and a wall visibility toggle; walls remain aligned in image coordinates. |
 | FR-003 | Remove ground using wall-defined regions. | Offer Remove outside and Remove inside with a source-aligned transparency preview. No closed face must produce a repair prompt, not an empty accidental export. |
 | FR-004 | Diagnose open contours. | Highlight unresolved segments; explain that a temporary closure can form a usable region. Require explicit review before applying a mask when unresolved geometry remains. |

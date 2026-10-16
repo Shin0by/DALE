@@ -19,7 +19,8 @@
     "Edit points uses fixed 10-screen-pixel circular handles, pointing-hand hover, insertion spacing of one diameter, shared-node movement, and undoable junction deletion.",
     "Self-contained ZIP .dale projects preserve exact sources, operations and redo, placement, geometry, viewport, language/tool state, and unfinished closures.",
     "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
-    "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default."
+    "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
+    "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow."
   ],
   "validated": [
     {
@@ -98,6 +99,11 @@
         16200
       ],
       "language": "ru"
+    },
+    {
+      "check": "automatic_json_pairing",
+      "version": "0.2.1",
+      "result": "Qt Open pair checks passed for automatic same-stem JSON loading without a second picker, fallback selection when absent, and cancellation preserving the active session. The full existing suite remains 75 passed."
     }
   ],
   "completed": [

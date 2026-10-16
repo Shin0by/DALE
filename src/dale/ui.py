@@ -543,15 +543,18 @@ class MainWindow(QMainWindow):
         )
         if not image_path:
             return
-        json_path, _ = QFileDialog.getOpenFileName(
-            self,
-            self.t("Open matching Foundry JSON"),
-            str(Path(image_path).with_suffix(".json")),
-            self.t("JSON files (*.json)"),
-        )
-        if not json_path:
-            return
-        self.load_sources(Path(image_path), Path(json_path))
+        json_path = Path(image_path).with_suffix(".json")
+        if not json_path.is_file():
+            selected, _ = QFileDialog.getOpenFileName(
+                self,
+                self.t("Open matching Foundry JSON"),
+                str(json_path),
+                self.t("JSON files (*.json)"),
+            )
+            if not selected:
+                return
+            json_path = Path(selected)
+        self.load_sources(Path(image_path), json_path)
 
     def load_sources(self, image_path: Path, json_path: Path):
         try:

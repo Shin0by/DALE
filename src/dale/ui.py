@@ -49,7 +49,7 @@ from shapely.geometry import Point as ShapePoint
 
 from dale import __version__, application_title
 from dale.autoclose import AutoCloseIndex
-from dale.canvas import GEOMETRY_ERASERS, MapView, line_path
+from dale.canvas import GEOMETRY_ERASERS, REGION_TOOLS, MapView
 from dale.geometry import offset_region, open_contour_count
 from dale.localization import (
     DesktopTranslator,
@@ -391,7 +391,7 @@ class MainWindow(QMainWindow):
         for bar, names in (
             (categories, ("Pan",)),
             (geometry, ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")),
-            (region_tools, ("Select regions", "Move regions")),
+            (region_tools, REGION_TOOLS),
             (pixels, ("Erase", "Restore")),
         ):
             for mode in names:
@@ -401,8 +401,15 @@ class MainWindow(QMainWindow):
                 modes.addAction(item)
                 self.mode_actions[mode] = item
         self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
-        self.move_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.move_button.customContextMenuRequested.connect(lambda: self.configure_region_move())
+        self.rotate_button = region_tools.widgetForAction(self.mode_actions["Rotate regions"])
+        for mode, button in (
+            ("Move regions", self.move_button),
+            ("Rotate regions", self.rotate_button),
+        ):
+            button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            button.customContextMenuRequested.connect(
+                lambda point, m=mode: self.configure_region_move(m)
+            )
         action(categories, "Fit", self.view.fit_map, "F")
         self.walls_action = action(categories, "Show walls", self.toggle_walls)
         self.walls_action.setCheckable(True)
@@ -479,9 +486,14 @@ class MainWindow(QMainWindow):
             ),
             "Move regions": (
                 "Drag selected region contours. Ctrl+wheel: scale. "
-                "Alt+wheel: rotate by 0.1 degrees "
-                "around their common center. Raster pixels stay unchanged. "
+                "Raster pixels stay unchanged. "
                 "Right-click: configure connected lines. Escape: cancel the current gesture."
+            ),
+            "Rotate regions": (
+                "Wheel: rotate selected contours by 0.1 degrees per notch "
+                "around their common center. "
+                "Wheel up rotates clockwise; wheel down reverses. Raster pixels stay unchanged. "
+                "Right-click: configure connected lines. Each notch is one undo step."
             ),
             "Export selected regions": "Export only the highlighted regions as separate PNGs.",
             "Export padding (px)": (
@@ -500,7 +512,10 @@ class MainWindow(QMainWindow):
             "Undo": "Undo the last complete stroke, mask, or geometry edit.",
             "Redo": "Redo the last undone edit.",
             "Fit": "Show the complete source map.",
-            "Show walls": "Show or hide wall and contour overlays.",
+            "Show walls": (
+                "Show all walls or hide inactive geometry. "
+                "Selected regions and highlighted lines remain visible."
+            ),
         }
         for item in self.findChildren(QAction):
             if item.text() in tips:
@@ -606,8 +621,7 @@ class MainWindow(QMainWindow):
             index = AutoCloseIndex(self.view.session.geometry(), tolerance)
             plan = index.all()
             self.view.auto_close_review = True
-            self.view.hover_path = line_path(plan.segments)
-            self.view.auto_join_path = line_path(plan.extensions)
+            self.view.highlight_edges(plan.segments, plan.extensions)
             self.view.viewport().update()
             try:
                 self.confirm_auto_close(plan)
@@ -713,18 +727,22 @@ class MainWindow(QMainWindow):
         for tile in self.sized_tools.values():
             tile.set_help(self.language)
 
-    def configure_region_move(self):
+    def configure_region_move(self, mode="Move regions"):
         dialog = QMessageBox(
             QMessageBox.Icon.Question,
-            self.t("Move regions"),
-            self.t("Move all connected lines?"),
+            self.t(mode),
+            self.t(
+                "Rotate all connected lines?"
+                if mode == "Rotate regions"
+                else "Move all connected lines?"
+            ),
             parent=self,
         )
         dialog.setObjectName("regionMoveConfiguration")
         dialog.setInformativeText(
             self.t(
                 "Yes includes lines connected within the snapping distance. "
-                "No moves only selected boundaries. Right-click this tool to reopen this dialog."
+                "No affects only selected boundaries. Right-click this tool to reopen this dialog."
             )
         )
         remember = QCheckBox(self.t("Remember choice"), dialog)
@@ -734,8 +752,8 @@ class MainWindow(QMainWindow):
         remember.setChecked(self.remembered_move_related is not None)
         dialog.setCheckBox(remember)
         for key, tip in (
-            ("Yes", "Move selected boundaries and related lines."),
-            ("No", "Move only selected region boundaries."),
+            ("Yes", "Transform selected boundaries and related lines."),
+            ("No", "Transform only selected region boundaries."),
             ("Cancel", "Cancel without changing geometry. Escape: cancel."),
         ):
             button = dialog.addButton(getattr(QMessageBox.StandardButton, key))
@@ -754,12 +772,12 @@ class MainWindow(QMainWindow):
         return True
 
     def activate_mode(self, mode, prompt=True):
-        if mode == "Move regions" and prompt:
+        if mode in ("Move regions", "Rotate regions") and prompt:
             if not self.selected_regions:
                 self.activate_mode("Select regions")
                 self.information("Select regions", "Select at least one closed region on the map.")
                 return
-            if self.remembered_move_related is None and not self.configure_region_move():
+            if self.remembered_move_related is None and not self.configure_region_move(mode):
                 self.mode_actions[self.view.mode].setChecked(True)
                 return
         if mode != "Pan":
@@ -767,7 +785,7 @@ class MainWindow(QMainWindow):
                 "pixels"
                 if mode in ("Erase", "Restore")
                 else "regions"
-                if mode in ("Select regions", "Move regions")
+                if mode in REGION_TOOLS
                 else "geometry"
             )
             self.last_tool_modes[key] = mode
@@ -814,8 +832,8 @@ class MainWindow(QMainWindow):
             event.type() == QEvent.Type.Wheel
             and isinstance(watched, QWidget)
             and watched.window() == self
-            and self.view.mode == "Move regions"
-            and event.modifiers() & Qt.KeyboardModifier.AltModifier
+            and self.view.mode == "Rotate regions"
+            and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
         ):
             steps = event.angleDelta().y() / 120
             if steps:
@@ -1265,9 +1283,7 @@ class MainWindow(QMainWindow):
             regions = ()
         key = tuple(polygon.wkb for polygon in regions)
         if key != self.region_key:
-            self.selected_regions = (
-                () if self.view.mode in ("Select regions", "Move regions") else None
-            )
+            self.selected_regions = () if self.view.mode in REGION_TOOLS else None
             self.view.region_pivot = None
             self.region_key = key
         self.regions = regions
@@ -1551,6 +1567,7 @@ def main():
                 "auto_close_distance_px": window.view.auto_close_distance,
                 "global_close_distance_px": window.global_close_control.value(),
                 "tool_set": window.current_tool_set,
+                "show_walls": window.view.show_walls,
                 "selected_regions": window.selected_regions,
                 "export_padding_px": window.export_padding_control.value(),
                 "raster_diameters": window.view.raster_diameters,

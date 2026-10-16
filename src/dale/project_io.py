@@ -331,6 +331,7 @@ def _load_ui(value):
         "Erase vertices",
         "Select regions",
         "Move regions",
+        "Rotate regions",
     ):
         raise ValueError("Invalid project editing mode.")
     if (

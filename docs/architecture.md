@@ -39,7 +39,7 @@ Eraser hover/deletion share hit tests; swept circles prevent missed edges. Ordin
 ## ADR-004: selected cells and transforms
 Expose minimum polygonized cells separately from mask union. Toggle smallest covering cell; neighboring cells remain independent. Fill continuous closed QPainterPath rings translucent cyan.
 
-Move regions freezes a geometry plan. Related-line mode uses indexed transitive reachability within snap tolerance. Without related lines detach branches and retain shared walls for stationary neighbors. Drag translates, Ctrl-wheel scales 5%, Alt-wheel rotates 0.1 degree per notch. Common bounding-box center remains fixed through scaling/rotation, moves with translation. Undo/redo stores geometry only; raster/masks stay fixed. Yes/No/Cancel dialog, optional remembered choice; right-click reopens; loading never prompts.
+Move regions freezes a geometry plan. Related-line mode uses indexed transitive reachability within snap tolerance. Without related lines detach branches and retain shared walls for stationary neighbors. Move regions drag translates and Ctrl-wheel scales 5%. A separate Rotate regions mode consumes plain wheel for 0.1 degree clockwise/counterclockwise rotation per notch without view zoom. Both modes share related-line settings/right-click configuration and persist their active mode. Remove the Alt-wheel rotation handler. Common bounding-box center remains fixed through scaling/rotation, moves with translation. Undo/redo stores geometry only; raster/masks stay fixed. Yes/No/Cancel dialog, optional remembered choice; right-click reopens; loading never prompts.
 
 ## ADR-005: ancestry and project format
 Source identity is exact JSON SHA-256 plus original /walls/index, preserving skipped zero-length array positions; optional Foundry ID need not be unique. Working edges have persistent ID, parents, root source references, origin. Splits/clones get child IDs, merges union parents, new contacts inherit incident parents, detached lines become editor roots. Moves/extensions preserve identity. Deleted ancestors remain in snapshot catalogs. Contact nodes expose line/parent/source records.
@@ -54,7 +54,7 @@ placement.json is a DALE coordinate manifest, not native Foundry import. Foundry
 ## ADR-007: compact localized UI
 Two text-only top rows; Contours/Regions/Raster, one left column. 48x48 icons; 48x72 numeric tools with independent captions/arrows. Snapping only in Contours. Right Information/Settings replace footer; minimum 1024x768. No default map tooltip; all controls describe actual shortcuts/modifiers.
 
-Closed cyan/open pure red RGB(255,0,0). Black 3px backing + colored 1px center; white hover edges. Fixed 10-screen-pixel handles.
+Closed cyan/open pure red RGB(255,0,0). Black 3px backing + colored 1px center; white hover edges. Fixed 10-screen-pixel handles. Walls off suppresses all base geometry/offsets and inactive handles regardless of mode. Selected cells remain visible only in region tools. Hover previews carry a separate unresolved subpath, so white-edged drawing never restores all base centerlines. Explicit new-line/snap/drag/repair previews remain visible as active geometry.
 
 ## ADR-008: identity and portable delivery
 Title Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>). Every build invocation advances revision once, including failed attempts; major/minor only owner direction. Supplied ICO unchanged in Qt/PE.

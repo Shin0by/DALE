@@ -7,12 +7,13 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QTransform, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QListWidget, QMessageBox
+from shapely.affinity import rotate
 
-from dale.canvas import HANDLE_DIAMETER, MapView
+from dale.canvas import GEOMETRY_TOOLS, HANDLE_DIAMETER, REGION_TOOLS, MapView
 from dale.editing import vertices
 from dale.project_io import JsonDocument, load_project, save_project
 from dale.raster import load_preview
@@ -43,6 +44,7 @@ def isolated_preferences(monkeypatch, tmp_path):
         "Erase vertices",
         "Select regions",
         "Move regions",
+        "Rotate regions",
     ],
 )
 @pytest.mark.parametrize("zoomed", [False, True])
@@ -258,10 +260,11 @@ def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
     original = window.view.session.geometry()
     original_pixels = window.view.item.pixmap().toImage()
 
-    def choose(yes, remember):
+    def choose(yes, remember, rotation=False):
         dialog = app.activeModalWidget()
         assert dialog.objectName() == "regionMoveConfiguration"
         assert "Правый клик" in dialog.informativeText()
+        assert ("Вращать" if rotation else "Перемещать") in dialog.text()
         dialog.checkBox().setChecked(remember)
         assert dialog.checkBox().toolTip()
         QTest.mouseClick(
@@ -290,10 +293,11 @@ def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
     assert ((180, 130), (200, 130)) in view.session.walls
     pivot = view.region_pivot
     shape = view.region_polygons[0]
-    for modifiers, expected_area in (
-        (Qt.KeyboardModifier.ControlModifier, shape.area * 1.05**2),
-        (Qt.KeyboardModifier.AltModifier, shape.area * 1.05**2),
+    for mode, modifiers, expected_area in (
+        ("Move regions", Qt.KeyboardModifier.ControlModifier, shape.area * 1.05**2),
+        ("Rotate regions", Qt.KeyboardModifier.NoModifier, shape.area * 1.05**2),
     ):
+        window.activate_mode(mode)
         wheel = QWheelEvent(
             QPointF(200, 150),
             QPointF(200, 150),
@@ -309,15 +313,15 @@ def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
         assert view.region_pivot == pivot
     assert len(view.session.operations) == 3
     assert view.item.pixmap().toImage() == original_pixels
-    QTimer.singleShot(0, lambda: choose(True, True))
-    window.move_button.customContextMenuRequested.emit(QPoint(20, 20))
+    QTimer.singleShot(0, lambda: choose(True, True, rotation=True))
+    window.rotate_button.customContextMenuRequested.emit(QPoint(20, 20))
     assert view.move_related and window.remembered_move_related
     window.project_path = tmp_path / "moving.dale"
     assert window.save_project_file()
     second = MainWindow()
     assert second.remembered_move_related is True
     assert second.load_project_file(window.project_path)  # No question during restoration.
-    assert second.view.mode == "Move regions" and second.view.move_related
+    assert second.view.mode == "Rotate regions" and second.view.move_related
     assert len(second.selected_regions) == 1
     assert second.view.session.geometry().lineage == view.session.geometry().lineage
     second.close()
@@ -419,7 +423,8 @@ def test_whole_map_close_uses_its_own_distance_and_one_confirmed_undo_step(app, 
 
 
 @pytest.mark.parametrize("mode", ["Erase lines", "Erase vertices"])
-def test_geometry_erasers_preview_exact_targets_in_white(app, pair_factory, mode):
+@pytest.mark.parametrize("show_walls", [False, True])
+def test_geometry_erasers_preview_exact_targets_in_white(app, pair_factory, mode, show_walls):
     source = pair_factory(
         size=(220, 200),
         walls=[
@@ -434,10 +439,14 @@ def test_geometry_erasers_preview_exact_targets_in_white(app, pair_factory, mode
     view.setTransform(QTransform.fromScale(2, 2))
     view.centerOn(110, 100)
     view.set_mode(mode)
+    view.show_walls = show_walls
     view.cursor_point = (100, 100) if mode == "Erase lines" else (100, 50)
     view.update_hover()
     assert not view.session.operations
     image = view.viewport().grab().toImage()
+    if not show_walls:
+        source_color = view.item.pixmap().toImage().pixelColor(0, 0).name()
+        assert image.pixelColor(view.mapFromScene(160, 130)).name() == source_color
     if mode == "Erase lines":
         assert view.hover_path.boundingRect().left() == 100
         assert view.hover_path.boundingRect().right() == 100
@@ -449,6 +458,126 @@ def test_geometry_erasers_preview_exact_targets_in_white(app, pair_factory, mode
         sample = view.mapFromScene(100, 50)
         assert image.pixelColor(sample).name() == "#ffffff"
     view.close()
+
+
+@pytest.mark.parametrize("mode", ["Pan", *GEOMETRY_TOOLS, *REGION_TOOLS, "Erase", "Restore"])
+def test_walls_off_hides_inactive_lines_and_handles_in_every_tool(app, pair_factory, mode):
+    source = pair_factory(
+        size=(220, 200),
+        walls=[
+            {"c": [20, 20, 100, 20]},
+            {"c": [100, 20, 100, 100]},
+            {"c": [100, 100, 20, 100]},
+            {"c": [20, 100, 20, 20]},
+            {"c": [140, 20, 200, 20]},
+            {"c": [200, 20, 200, 100]},
+            {"c": [200, 100, 140, 100]},
+            {"c": [140, 100, 140, 20]},
+            {"c": [30, 140, 100, 140]},
+        ],
+    )
+    view = MapView()
+    view.resize(600, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(110, 100)
+    view.set_mode(mode)
+    view.show_walls = False
+    source_color = view.item.pixmap().toImage().pixelColor(0, 0).name()
+
+    def image_color(point):
+        return view.viewport().grab().toImage().pixelColor(view.mapFromScene(*point)).name()
+
+    for point in ((60, 20), (20, 20), (170, 20), (140, 20), (60, 140)):
+        assert image_color(point) == source_color
+    if mode in REGION_TOOLS:
+        view.selected_path.addRect(QRectF(20, 20, 80, 80))
+        assert image_color((60, 20)) == "#58d9ec"
+        assert image_color((60, 60)) != source_color
+        assert image_color((170, 20)) == source_color
+    elif mode == "Edit points":
+        view.cursor_point = (60, 20)
+        view.update_hover()
+        assert image_color((60, 20)) == "#58d9ec"
+        assert image_color((170, 20)) == source_color
+        assert image_color((140, 20)) == source_color
+        view.cursor_point = None
+        view.update_hover()
+        assert image_color((60, 20)) == source_color
+    view.show_walls = True
+    assert image_color((170, 20)) == "#58d9ec"
+    assert image_color((60, 140)) == "#ff0000"
+    view.close()
+
+
+def test_rotate_button_uses_plain_wheel_without_zoom_and_keeps_move_alt_free(
+    app, pair_factory, tmp_path
+):
+    window = MainWindow()
+    window.show()
+    source = pair_factory()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select regions")
+    window.toggle_region_at((30, 100))
+    window.remembered_move_related = False
+    original = window.view.session.geometry()
+    image = window.view.item.pixmap().toImage()
+    QTest.mouseClick(window.rotate_button, Qt.MouseButton.LeftButton)
+    assert window.view.mode == "Rotate regions"
+    assert window.current_tool_set == "regions"
+    for language, token in (("ru", "Колесо"), ("en", "Wheel"), ("ru", "Колесо")):
+        window.set_language(language, persist=False)
+        assert token in window.rotate_button.toolTip()
+        assert "Alt" not in window.rotate_button.toolTip()
+        assert "Alt" not in window.move_button.toolTip()
+    view = window.view
+    zoom = view.transform().m11()
+    original_shape = view.region_polygons[0]
+    for delta in (120, -120):
+        wheel = QWheelEvent(
+            QPointF(100, 100),
+            QPointF(100, 100),
+            QPoint(),
+            QPoint(0, delta),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        app.sendEvent(view.viewport(), wheel)
+        assert view.transform().m11() == zoom
+        assert view.region_polygons[0].area == pytest.approx(original_shape.area)
+        expected = rotate(original_shape, 0.1 if delta > 0 else 0, origin="center")
+        assert view.region_polygons[0].hausdorff_distance(expected) < 1e-7
+    assert len(view.session.operations) == 2
+    assert view.region_polygons[0].hausdorff_distance(original_shape) < 1e-8
+    assert view.item.pixmap().toImage() == image
+    window.project_path = tmp_path / "rotate-mode.dale"
+    assert window.save_project_file()
+    second = MainWindow()
+    assert second.load_project_file(window.project_path)
+    assert second.view.mode == "Rotate regions" and second.rotate_button.isChecked()
+    second.close()
+    window.activate_mode("Move regions")
+    before = view.session.geometry()
+    wheel = QWheelEvent(
+        QPointF(100, 100),
+        QPointF(100, 100),
+        QPoint(),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.AltModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    app.sendEvent(view.viewport(), wheel)
+    assert view.session.geometry() == before and len(view.session.operations) == 2
+    window.history(False)
+    window.history(False)
+    assert view.session.geometry() == original
+    window.saved_state = window.document_state()
+    window.close()
 
 
 def test_auto_close_without_possible_changes_explains_and_disables_yes(app, pair_factory):

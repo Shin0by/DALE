@@ -9,6 +9,8 @@ from PIL import Image
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
+from shapely.geometry import GeometryCollection, LineString
+from shapely.ops import unary_union
 
 from dale.autoclose import AutoCloseIndex, AutoClosePlan
 from dale.editing import (
@@ -32,6 +34,7 @@ from dale.session import Stroke
 HANDLE_DIAMETER = 10
 GEOMETRY_TOOLS = ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")
 GEOMETRY_ERASERS = ("Erase lines", "Erase vertices")
+REGION_TOOLS = ("Select regions", "Move regions", "Rotate regions")
 
 
 def pixmap(image: Image.Image) -> QPixmap:
@@ -89,6 +92,9 @@ class MapView(QGraphicsView):
         self.auto_close_plan = AutoClosePlan()
         self.auto_close_review = False
         self.hover_path = QPainterPath()
+        self.hover_warning_path = QPainterPath()
+        self.highlighted_edges = ()
+        self.warning_geometry = GeometryCollection()
         self.hover_edge = None
         self.eraser_vertices = ()
         self.auto_join_path = QPainterPath()
@@ -192,6 +198,9 @@ class MapView(QGraphicsView):
                 )
             )
             self.warning_path = line_path(self.analysis.unresolved)
+            self.warning_geometry = unary_union(
+                [LineString(edge) for edge in self.analysis.unresolved]
+            )
             self.join_path = line_path(self.analysis.joins)
             self.offset_path = QPainterPath()
             if self.session.contour_offset and self.analysis.faces:
@@ -241,6 +250,8 @@ class MapView(QGraphicsView):
         self.stroke, self.snap = [], None
         self.auto_close_plan = AutoClosePlan()
         self.hover_path = QPainterPath()
+        self.hover_warning_path = QPainterPath()
+        self.highlighted_edges = ()
         self.auto_join_path = QPainterPath()
         was_editing = self.edit_preview is not None
         self.edit_preview = self.drag_base = self.drag_original = self.drag_vertex = None
@@ -346,9 +357,25 @@ class MapView(QGraphicsView):
                                 hit.edge_index : hit.edge_index + 2
                             ],
                         )
-        self.hover_path = line_path(edges)
-        self.auto_join_path = line_path(self.auto_close_plan.extensions)
+        self.highlight_edges(edges, self.auto_close_plan.extensions)
         self.viewport().update()
+
+    def highlight_edges(self, edges, extensions=()):
+        edges = self.highlighted_edges = tuple(edges)
+        self.hover_path = line_path(edges)
+        active = unary_union([LineString(edge) for edge in edges])
+        unresolved = active.intersection(self.warning_geometry)
+        self.hover_warning_path = QPainterPath()
+
+        def append(shape):
+            if shape.geom_type == "LineString":
+                self.hover_warning_path.addPath(line_path(pairwise(shape.coords)))
+            elif hasattr(shape, "geoms"):
+                for part in shape.geoms:
+                    append(part)
+
+        append(unresolved)
+        self.auto_join_path = line_path(extensions)
 
     def _snap_tolerance(self):
         return self.snap_distance / max(self.transform().m11(), 1e-9) if self.snap_enabled else 0
@@ -724,7 +751,10 @@ class MapView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def wheelEvent(self, event):
-        if self.mode == "Move regions" and event.modifiers() & Qt.KeyboardModifier.AltModifier:
+        if (
+            self.mode == "Rotate regions"
+            and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
             steps = event.angleDelta().y() / 120
             if steps:
                 self.transform_regions(angle=(round(steps) or (1 if steps > 0 else -1)) / 10)
@@ -829,26 +859,27 @@ class MapView(QGraphicsView):
                 lambda: painter.drawEllipse(QPointF(*point), radius, radius), color, backing=backing
             )
 
-        if self.show_walls or self.mode in (*GEOMETRY_TOOLS, "Select regions", "Move regions"):
+        if self.show_walls or self.mode in REGION_TOOLS:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(88, 217, 236, 64))
             painter.drawPath(self.selected_path)
             painter.setBrush(Qt.BrushStyle.NoBrush)
+            path(self.selected_path, "#58d9ec")
+        if self.show_walls:
             path(self.original_path, "#58d9ec")
             path(self.warning_path, "#ff0000")
             path(self.offset_path, "#58d9ec", True)
-            if not self.hover_path.isEmpty():
-                painter.save()
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-                painter.setPen(pen("#ffffff", 3))
-                painter.drawPath(self.hover_path)
-                # Restore existing center colors without overwriting the white edges.
-                painter.setPen(pen("#58d9ec", 1))
-                painter.drawPath(self.original_path)
-                painter.setPen(pen("#ff0000", 1))
-                painter.drawPath(self.warning_path)
-                painter.restore()
-            outlined(lambda: painter.drawPath(self.auto_join_path), "#ff0000", True, "#ffffff")
+        if not self.hover_path.isEmpty():
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setPen(pen("#ffffff", 3))
+            painter.drawPath(self.hover_path)
+            painter.setPen(pen("#58d9ec", 1))
+            painter.drawPath(self.hover_path)
+            painter.setPen(pen("#ff0000", 1))
+            painter.drawPath(self.hover_warning_path)
+            painter.restore()
+        outlined(lambda: painter.drawPath(self.auto_join_path), "#ff0000", True, "#ffffff")
         if self.cursor_point and self.mode == "Auto-close":
             circle(self.cursor_point, self.auto_close_distance / self.transform().m11(), "#ffffff")
         if self.line_start is not None:
@@ -875,7 +906,13 @@ class MapView(QGraphicsView):
         if self.mode in ("Edit points", "New line", "Erase vertices") and self.working_geometry:
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
             painter.setBrush(QColor("#effbff"))
+            active_points = {
+                *self.eraser_vertices,
+                *(p for edge in self.highlighted_edges for p in edge),
+            }
             for vertex in vertices(self.working_geometry):
+                if not self.show_walls and vertex not in active_points:
+                    continue
                 targeted = vertex in self.eraser_vertices
                 painter.setBrush(QColor("#ffffff" if targeted else "#effbff"))
                 circle(vertex, radius, "#183244", "#ffffff" if targeted else "#000000")

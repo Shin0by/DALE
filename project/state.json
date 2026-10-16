@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "region_editing_provenance_and_json_catalog",
+  "phase": "dedicated_rotation_and_active_geometry_visibility",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -14,12 +14,13 @@
     "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
     "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
     "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
-    "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales, Alt-wheel rotates 0.1 degree around stable shared pivot; raster and mask snapshots stay fixed.",
+    "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales; a separate Rotate regions button uses plain wheel at 0.1 degree per notch around stable shared pivot; raster and mask snapshots stay fixed.",
     "Separate PNGs retain mandatory 3px artwork guard plus optional transparent padding; clamp every crop to JPG. Signed contour offset remains source-pixel geometry.",
     "Portable merged preferences retain language, Foundry version, related-line choice, independent input/output folders shared across file types. Never persist extraction directories.",
     "Current .dale JSON catalog preserves original and additional updated documents. Generation of updated Foundry JSON remains future work.",
     "Chat Russian, technical text English, bilingual UI/tooltips with actual shortcuts; no private example uploads.",
-    "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels."
+    "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels.",
+    "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines."
   ],
   "validated": [
     {
@@ -195,6 +196,11 @@
       "check": "canonical_archive_asset_lifetimes",
       "result": "Canonicalized workspace roots before ownership checks. Regression tests exercise aliased paths for both archived JPG retention and imported JSON retention. The first remote CI exposed unresolved workspace aliases; the fix passes 163 local tests.",
       "command": "python -m pytest -q"
+    },
+    {
+      "check": "plain_wheel_rotation_and_active_only_walls",
+      "result": "179 tests pass, ruff clean. Qt checks cover rotation button/plain wheel/direction/no zoom/common center/undo/project restore/right-click configuration, right-drag in Rotate regions, hidden inactive geometry in all 11 tools, selected-cell exceptions and white eraser previews with Walls off. Audited 84 controls RU/EN/RU and inspected 1024x768 screenshots.",
+      "command": "python -m pytest -q; python artifacts/verify_current_ui.py; python artifacts/verify_rotation_visibility.py"
     }
   ],
   "completed": [
@@ -243,7 +249,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.13",
+  "current_version": "0.3.14",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",

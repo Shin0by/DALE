@@ -39,3 +39,4 @@
 | Minimum cell | selected region | Smallest polygonized closed face containing the cursor; independent of touching neighbors. |
 | Extra export padding | additional box margin | Transparent space beyond mandatory 3px; every bound is clipped to source JPG. |
 | JSON catalog | document list | Declared immutable original/updated JSON members within a current .dale package. |
+| Rotate regions | Вращение областей | Separate Regions tool; ordinary wheel rotates geometry 0.1 degree per notch about common center. |

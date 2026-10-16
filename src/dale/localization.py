@@ -43,6 +43,15 @@ RUSSIAN = {
         "Неподдерживаемый формат или версия проекта DALE. Старые проекты не поддерживаются."
     ),
     "Move regions": "Перемещение областей",
+    "Rotate regions": "Вращение областей",
+    "Rotate all connected lines?": "Вращать все связанные линии?",
+    (
+        "Show all walls or hide inactive geometry. "
+        "Selected regions and highlighted lines remain visible."
+    ): (
+        "Показать все стены или скрыть неактивную разметку. "
+        "Выбранные области и подсвеченные линии остаются видимыми."
+    ),
     "Move all connected lines?": "Перемещать все связанные линии?",
     "Remember choice": "Запомнить выбор",
     (
@@ -50,28 +59,36 @@ RUSSIAN = {
     ): "Запомнить выбор между запусками. Правый клик по инструменту открывает этот вопрос снова.",
     (
         "Yes includes lines connected within the snapping distance. "
-        "No moves only selected boundaries. Right-click this tool to reopen this dialog."
+        "No affects only selected boundaries. Right-click this tool to reopen this dialog."
     ): (
         "«Да» включает связанные линии в пределах допуска прилипания. "
-        "«Нет» перемещает только выбранные контуры. "
+        "«Нет» меняет только выбранные контуры. "
         "Правый клик по кнопке инструмента снова открывает это окно."
     ),
-    "Move selected boundaries and related lines.": (
-        "Перемещать выбранные контуры и связанные линии."
+    "Transform selected boundaries and related lines.": (
+        "Изменять выбранные контуры и связанные линии."
     ),
-    "Move only selected region boundaries.": "Перемещать только контуры выбранных областей.",
+    "Transform only selected region boundaries.": "Изменять только контуры выбранных областей.",
     "Preferences could not be written.": "Не удалось сохранить настройки.",
     "PNG: none (selection outside the source map)": (
         "PNG: нет (выделение за пределами исходной карты)"
     ),
     (
-        "Drag selected region contours. Ctrl+wheel: scale. Alt+wheel: rotate by 0.1 degrees "
-        "around their common center. Raster pixels stay unchanged. "
+        "Drag selected region contours. Ctrl+wheel: scale. Raster pixels stay unchanged. "
         "Right-click: configure connected lines. Escape: cancel the current gesture."
     ): (
         "Тяните выбранные контуры для перемещения. Ctrl+колесо: масштабирование. "
-        "Alt+колесо: вращение с шагом 0,1° вокруг общего центра. Растр остаётся на месте. "
+        "Растр остаётся на месте. "
         "Правый клик: настройка связанных линий. Escape: отменить текущий жест."
+    ),
+    (
+        "Wheel: rotate selected contours by 0.1 degrees per notch around their common center. "
+        "Wheel up rotates clockwise; wheel down reverses. Raster pixels stay unchanged. "
+        "Right-click: configure connected lines. Each notch is one undo step."
+    ): (
+        "Колесо: вращение выбранных контуров с шагом 0,1° вокруг общего центра. "
+        "Вверх — по часовой стрелке, вниз — обратно. Растр остаётся на месте. "
+        "Правый клик: настройка связанных линий. Каждый шаг колеса можно отменить."
     ),
     ("Information"): ("Информация"),
     ("Settings"): ("Настройки"),

@@ -92,6 +92,12 @@ def tool_icon(name):
             ((12, 21), (15, 18)),
         ]:
             line(a, b)
+    elif name == "Rotate regions":
+        painter.drawArc(QRectF(4, 4, 16, 16), 40 * 16, 280 * 16)
+        line((18, 17), (18, 12))
+        line((18, 17), (23, 16))
+        painter.setBrush(QColor("#58d9ec"))
+        circle(12, 12, 2)
     elif name == "Fit":
         for x, y, sx, sy in ((3, 3, 1, 1), (21, 3, -1, 1), (3, 21, 1, -1), (21, 21, -1, -1)):
             line((x, y + sy * 5), (x, y))

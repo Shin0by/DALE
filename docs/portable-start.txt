@@ -10,7 +10,9 @@ Right-drag pans; wheel zooms. Hover help explains tools and shortcuts.
 Sizes/tolerances are inside tool buttons; Ctrl+wheel changes them.
 Auto-close and Close all contours show white previews and Cancel / Yes confirmation.
 Regions selects individual cells. Move regions drags geometry only; Ctrl+wheel scales;
-Alt+wheel rotates 0.1 degree around common center. Right-click reopens related-line options.
+Select Rotate regions, then ordinary wheel rotates 0.1 degree around common center.
+Right-click either transform tool to configure related lines.
+Walls off hides inactive lines/handles; only selection and current tool highlights stay visible.
 Raster Erase/Restore have independent diameters. Save stores sources, history, redo, ancestry.
 Input/output folders are remembered independently.
 Separate PNGs include mandatory 3px guard plus optional transparent padding, clamped to JPG.
@@ -28,7 +30,8 @@ JSON заменяет разметку JPG: обычный JSON или выбо�
 Размеры и допуски встроены в кнопки; Ctrl+колесо меняет их.
 Автозамыкание и Замкнуть всю карту показывают белый кант и подтверждение Отмена / Да.
 Области выбираются по отдельности. Перемещение меняет только контуры:
-Ctrl+колесо — масштабирование, Alt+колесо — вращение по 0,1° вокруг общего центра.
+Ctrl+колесо — масштабирование. Кнопка Вращение областей — обычное колесо по 0,1°.
+При выключенных Стенах видны только выбранные области и активная подсветка.
 Правый клик по инструменту снова открывает вопрос о связанных линиях.
 Ластик и восстановление растра имеют собственные диаметры.
 Проект хранит исходники, историю, повтор и происхождение линий.

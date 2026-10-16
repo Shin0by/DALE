@@ -26,3 +26,4 @@ History stores origin, gap_tolerance, contour_offset, operations, redo, UI. All 
 Current UI stores tool set/mode, language, Foundry target, viewport/wall visibility, independent eraser/brush sizes, snap enablement/distance, local/global auto-close tolerance, selected cell indices, extra padding, active related-line choice.
 
 Remember choice and two input/output directories are portable preferences, not project paths. Retired modes, unfinished-draft migration, shared-size fallbacks, export-region aliases, and component-selection migrations are unsupported.
+Rotate regions is a persisted current tool mode; rotation uses ordinary wheel, not Alt-wheel in Move regions. Wall visibility is restored independently of active selection.

@@ -1,7 +1,11 @@
+import math
+
 import pytest
 
 from dale.editing import (
+    add_circle,
     add_line,
+    circle_points,
     delete_vertex,
     erase_geometry,
     hit_edge,
@@ -12,6 +16,78 @@ from dale.editing import (
 )
 from dale.geometry import open_contour_count
 from dale.session import Closure, GeometryEdit, Session
+
+
+@pytest.mark.parametrize(
+    "diameter,count",
+    [
+        (0.1, 4),
+        (1, 4),
+        (1.01, 6),
+        (2, 6),
+        (2.01, 8),
+        (3, 8),
+        (5, 8),
+        (5.01, 10),
+        (10, 12),
+        (15, 16),
+        (20, 20),
+        (100, 84),
+    ],
+)
+def test_circular_contour_vertex_density_uses_map_cells(diameter, count):
+    radius = diameter * 150
+    points = circle_points((100, 200), radius, 300)
+    assert len(points) == count + 1 and points[0] == points[-1]
+    assert len(set(points[:-1])) == count
+    assert all(math.dist(p, (100, 200)) == pytest.approx(radius) for p in points)
+    assert circle_points((100, 200), radius, 300) == points
+
+
+@pytest.mark.parametrize(
+    "radius,cell",
+    [(0, 100), (-1, 100), (float("nan"), 100), (10, 0), (True, 100), (10, float("inf"))],
+)
+def test_circular_contour_rejects_invalid_dimensions(radius, cell):
+    with pytest.raises(ValueError, match="Circle"):
+        circle_points((0, 0), radius, cell)
+
+
+def test_circle_contact_keeps_source_parents_and_is_one_undoable_geometry(pair_factory):
+    source = pair_factory(size=(400, 400), walls=[{"c": [0, 0, 200, 0]}], grid={"size": 100})
+    before = source.json_path.read_bytes()
+    session = Session(source)
+    original = session.geometry()
+    circle = add_circle(original, (100, 50), 50, source.cell_pixels)
+    assert len(circle.walls) == 6  # Four polygon edges and two pieces of the source wall.
+    assert all(record.parents == (original.lineage[0].id,) for record in circle.lineage[:2])
+    contacting = [record for record in circle.lineage[2:] if record.sources]
+    assert len(contacting) == 2
+    assert all(record.sources == original.lineage[0].sources for record in contacting)
+    assert add_circle(circle, (100, 50), 50, 100) == circle
+    session.add(circle)
+    assert session.analysis().faces == 1
+    session.undo()
+    assert session.geometry() == original
+    session.redo()
+    assert session.geometry().lineage == circle.lineage
+    assert source.json_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "grid,expected",
+    [(300, 300), ({"size": 300}, 300), (None, 100), ({"size": 0}, 100), ({"size": True}, 100)],
+)
+def test_circle_uses_imported_grid_or_explicit_pixel_fallback(pair_factory, grid, expected):
+    assert pair_factory(grid=grid).cell_pixels == expected
+
+
+def test_circle_density_scales_with_source_grid_and_has_a_safe_vertex_cap(pair_factory):
+    source = pair_factory(size=(200, 200), width=400, height=400, grid={"size": 100})
+    assert source.cell_pixels == 50
+    assert len(circle_points((100, 100), 25, source.cell_pixels)) == 5
+    assert len(circle_points((0, 0), 16000, 1)) == 4097
+    assert len(circle_points((0, 0), 16000, 1e-300)) == 4097
 
 
 def test_insert_drag_and_remove_wall_vertex_preserves_its_neighbors():

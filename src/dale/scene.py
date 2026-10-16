@@ -63,6 +63,16 @@ class SceneInput:
     warnings: tuple[str, ...]
     wall_sources: tuple[SourceWall, ...] = ()
 
+    @property
+    def cell_pixels(self) -> float:
+        """Grid size in source pixels; absent/invalid grid uses 100 source pixels."""
+        grid = self.raw.get("grid")
+        value = grid.get("size") if isinstance(grid, dict) else grid
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            return 100.0
+        pixels = value * min(self.size[i] / self.scene_size[i] for i in (0, 1))
+        return pixels if math.isfinite(pixels) and pixels > 0 else 100.0
+
     def image_walls(self, origin: Point = (0.0, 0.0)) -> tuple[Segment, ...]:
         sx = self.size[0] / self.scene_size[0]
         sy = self.size[1] / self.scene_size[1]

@@ -326,6 +326,7 @@ def _load_ui(value):
         "Erase",
         "Restore",
         "New line",
+        "New circle",
         "Erase lines",
         "Erase vertices",
         "Select regions",

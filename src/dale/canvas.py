@@ -14,7 +14,9 @@ from shapely.ops import unary_union
 
 from dale.autoclose import AutoCloseIndex, AutoClosePlan
 from dale.editing import (
+    add_circle,
     add_line,
+    circle_points,
     delete_vertex,
     erase_geometry,
     geometry_targets,
@@ -32,7 +34,14 @@ from dale.region_transform import plan_region_transform
 from dale.session import Stroke
 
 HANDLE_DIAMETER = 10
-GEOMETRY_TOOLS = ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")
+GEOMETRY_TOOLS = (
+    "Edit points",
+    "New line",
+    "New circle",
+    "Auto-close",
+    "Erase lines",
+    "Erase vertices",
+)
 GEOMETRY_ERASERS = ("Erase lines", "Erase vertices")
 REGION_TOOLS = ("Select regions", "Move regions", "Rotate regions")
 
@@ -122,6 +131,8 @@ class MapView(QGraphicsView):
         self.axis_constrained = False
         self.line_start = None
         self.line_end = None
+        self.circle_center = None
+        self.circle_radius = self.circle_adjustment = 0.0
         self.region_polygons = ()
         self.region_pivot = None
         self.move_related = False
@@ -262,6 +273,8 @@ class MapView(QGraphicsView):
             self.selected_path = self.region_original_path
         self.region_drag_start = self.region_plan = self.region_original_path = None
         self.line_start = self.line_end = self.geometry_stroke = None
+        self.circle_center = None
+        self.circle_radius = self.circle_adjustment = 0.0
         if was_editing:
             self.refresh(render_image=False)
         self.viewport().update()
@@ -386,6 +399,7 @@ class MapView(QGraphicsView):
             bool(self.stroke)
             or self.drag_base is not None
             or self.line_start is not None
+            or self.circle_center is not None
             or self.region_drag_start is not None
         )
 
@@ -408,6 +422,14 @@ class MapView(QGraphicsView):
         self.geometry_diameters[mode] = value
 
     def resize_tool(self, steps):
+        if self.mode == "New circle":
+            if self.circle_center is not None:
+                self.circle_adjustment += steps / max(self.transform().m11(), 1e-9)
+                self.circle_radius = max(
+                    0, math.dist(self.circle_center, self.cursor_point) + self.circle_adjustment
+                )
+                self.viewport().update()
+            return
         if self.mode == "Move regions":
             self.transform_regions(scale=1.05**steps)
             return
@@ -577,6 +599,13 @@ class MapView(QGraphicsView):
             self.viewport().update()
             event.accept()
             return
+        if self.mode == "New circle":
+            self.circle_center = point
+            self.circle_radius = self.circle_adjustment = 0.0
+            self.snap = None
+            self.viewport().update()
+            event.accept()
+            return
         if self.mode in GEOMETRY_ERASERS:
             self.drag_original = self.drag_base = self.session.geometry()
             self.edit_preview = self.drag_base
@@ -604,6 +633,13 @@ class MapView(QGraphicsView):
             return
         point = self._point(event)
         self.cursor_point = point
+        if self.circle_center is not None:
+            self.circle_radius = max(
+                0, math.dist(self.circle_center, point) + self.circle_adjustment
+            )
+            self.viewport().update()
+            event.accept()
+            return
         if self.mode == "Move regions" and self.region_drag_start is not None:
             self._preview_region_move(point)
             event.accept()
@@ -662,6 +698,23 @@ class MapView(QGraphicsView):
             )
             self.cursor_point = self._point(event)
             self.update_hover()
+            event.accept()
+            return
+        if self.circle_center is not None and event.button() == Qt.MouseButton.LeftButton:
+            center = self.circle_center
+            radius = max(0, math.dist(center, self._point(event)) + self.circle_adjustment)
+            self.circle_center = None
+            self.circle_radius = self.circle_adjustment = 0.0
+            if radius >= 1 / max(self.transform().m11(), 1e-9):
+                try:
+                    original = self.session.geometry()
+                    geometry = add_circle(original, center, radius, self.session.source.cell_pixels)
+                    if geometry != original:
+                        self.session.add(geometry)
+                        self.changed.emit()
+                except ValueError as exc:
+                    self.message.emit(str(exc))
+            self.refresh(render_image=False)
             event.accept()
             return
         if self.region_drag_start is not None and event.button() == Qt.MouseButton.LeftButton:
@@ -888,6 +941,15 @@ class MapView(QGraphicsView):
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
             for point in (self.line_start, self.line_end):
                 circle(point, radius, "#ff0000")
+        if self.circle_center is not None:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            if self.circle_radius > 0:
+                points = circle_points(
+                    self.circle_center, self.circle_radius, self.session.source.cell_pixels
+                )
+                path(line_path(pairwise(points)), "#58d9ec")
+            painter.setBrush(QColor("#effbff"))
+            circle(self.circle_center, HANDLE_DIAMETER / 2 / self.transform().m11(), "#58d9ec")
         if self.axis_constrained and self.drag_vertex is not None:
             reach = max(self.session.source.size)
             a = tuple(p - reach * v for p, v in zip(self.drag_vertex, self.drag_axis, strict=True))

@@ -125,6 +125,11 @@ def tool_icon(name):
         if name == "New line":
             line((17, 18), (23, 18))
             line((20, 15), (20, 21))
+    elif name == "New circle":
+        circle(12, 12, 9)
+        painter.setBrush(QColor("#58d9ec"))
+        circle(12, 12, 2)
+        line((12, 12), (19, 7))
     elif name in ("Erase", "Restore", "Erase lines", "Erase vertices"):
         painter.drawPolygon(
             QPolygonF(

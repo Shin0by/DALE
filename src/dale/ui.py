@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
@@ -234,6 +235,7 @@ class MainWindow(QMainWindow):
             lambda index: self.set_language("en" if index == 0 else "ru")
         )
         form.addRow("Target", self.version)
+        form.addRow("Language", self.language_control)
         self.global_tools_control = QCheckBox("Store settings globally")
         self.global_tools_control.setChecked(self.use_global_tool_settings)
         self.global_tools_control.setToolTip(
@@ -247,16 +249,19 @@ class MainWindow(QMainWindow):
         global_note.setWordWrap(True)
         global_note.setToolTip(self.global_tools_control.toolTip())
         form.addRow(global_note)
-        form.addRow("Language", self.language_control)
         self.settings_group = QGroupBox("Settings")
         self.settings_group.setLayout(form)
         self.project_group = QGroupBox("Project")
         project_layout = QVBoxLayout(self.project_group)
-        for label in (self.info, self.map_info, self.diagnostics, self.feedback_label):
-            project_layout.addWidget(label)
         self.regions_group = QGroupBox("Regions")
         regions_layout = QVBoxLayout(self.regions_group)
         regions_layout.addWidget(self.region_control)
+        self.project_info_group = QGroupBox("File information")
+        file_layout = QVBoxLayout(self.project_info_group)
+        for label in (self.info, self.map_info, self.diagnostics, self.feedback_label):
+            file_layout.addWidget(label)
+        project_layout.addWidget(self.regions_group)
+        project_layout.addWidget(self.project_info_group)
         self.information_group = QGroupBox("Information")
         information_layout = QVBoxLayout(self.information_group)
         self.mode_help = QLabel()
@@ -271,7 +276,6 @@ class MainWindow(QMainWindow):
         sidebar = QVBoxLayout()
         self.sidebar_layout = sidebar
         sidebar.addWidget(self.project_group)
-        sidebar.addWidget(self.regions_group)
         sidebar.addWidget(self.settings_group)
         sidebar.addStretch()
         sidebar.addWidget(self.information_group)
@@ -301,12 +305,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.statusBar().hide()
         self.statusBar().messageChanged.connect(self.feedback_label.setText)
-        general = make_toolbar(self, "General")
-        categories = make_toolbar(self, "Tool sets", new_row=True)
+        self.menuBar().setToolTip("Application menus.")
+        self.file_menu = self.menuBar().addMenu("File")
+        self.edit_menu = self.menuBar().addMenu("Edit")
+        self.about_menu = self.menuBar().addMenu("About")
+        for menu, tip in (
+            (self.file_menu, "Open, save, export regions, close, and exit."),
+            (self.edit_menu, "Undo, redo, and clear selection."),
+            (self.about_menu, "Application name, version, and purpose."),
+        ):
+            menu.setToolTipsVisible(True)
+            menu.setToolTip(tip)
+        categories = make_toolbar(self, "Tool sets")
+        self.tool_set_toolbar = categories
         geometry = make_toolbar(self, "Contours", vertical=True)
         region_tools = make_toolbar(self, "Regions", vertical=True)
         pixels = make_toolbar(self, "Raster", vertical=True)
-        self.toolbars = (general, categories, geometry, region_tools, pixels)
+        self.toolbars = (categories, geometry, region_tools, pixels)
         self.geometry_eraser_tiles = {}
         self.sized_tools = {}
         for bar in (geometry, region_tools, pixels):
@@ -323,6 +338,8 @@ class MainWindow(QMainWindow):
                 "Auto-close": "Auto-close contours",
                 "Edit points": "Edit contour points",
                 "New line": "New contour line",
+                "New circle": "New circular contour",
+                "Export PNGs": "Export regions as PNGs",
                 "Erase lines": "Erase contour lines",
                 "Erase vertices": "Erase contour points",
                 "Snapping (px)": "Contour snapping (px)",
@@ -334,10 +351,11 @@ class MainWindow(QMainWindow):
             }.get(title)
             if display:
                 item.setProperty("dale_display_key", display)
-            if bar.orientation() == Qt.Orientation.Vertical:
+            vertical = isinstance(bar, QToolBar) and bar.orientation() == Qt.Orientation.Vertical
+            if vertical:
                 item.setIcon(tool_icon(title))
                 item.setProperty("dale_icon_only", True)
-            if bar in (general, categories):
+            if bar == categories:
                 item.setProperty(
                     "dale_display_key",
                     {
@@ -403,7 +421,7 @@ class MainWindow(QMainWindow):
                 bar.addWidget(tile)
             else:
                 bar.addAction(item)
-                if bar.orientation() == Qt.Orientation.Vertical:
+                if vertical:
                     bar.widgetForAction(item).setFixedSize(48, 48)
             return item
 
@@ -420,31 +438,44 @@ class MainWindow(QMainWindow):
         self.tool_set_actions["geometry"].setChecked(True)
         categories.addSeparator()
 
-        action(general, "Open pair", self.open_pair, "Ctrl+I")
-        action(general, "JSON", self.open_json)
-        action(general, "Open project", self.open_project, QKeySequence.StandardKey.Open)
-        action(general, "Save project", self.save_project_file, QKeySequence.StandardKey.Save)
-        save_as = action(
-            general,
+        action(self.file_menu, "Open pair", self.open_pair, "Ctrl+I")
+        action(self.file_menu, "JSON", self.open_json)
+        action(self.file_menu, "Open project", self.open_project, QKeySequence.StandardKey.Open)
+        self.file_menu.addSeparator()
+        action(
+            self.file_menu, "Save project", self.save_project_file, QKeySequence.StandardKey.Save
+        )
+        action(
+            self.file_menu,
             "Save project as…",
             lambda: self.save_project_file(save_as=True),
             QKeySequence.StandardKey.SaveAs,
         )
-        self.menuBar().setToolTip("Project file menu.")
-        file_menu = self.menuBar().addMenu("File")
-        file_menu.setToolTipsVisible(True)
-        file_menu.addAction(save_as)
-        action(general, "Close map", self.close_document)
-        self.export_action = action(general, "Export PNGs", self.export, "Ctrl+E")
-        general.addSeparator()
-        action(general, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo)
-        action(general, "Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo)
+        self.file_menu.addSeparator()
+        self.export_action = action(self.file_menu, "Export PNGs", self.export, "Ctrl+E")
+        action(self.file_menu, "Close map", self.close_document)
+        self.file_menu.addSeparator()
+        action(self.file_menu, "Exit", self.close, "Ctrl+Q")
+        action(self.edit_menu, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo)
+        action(self.edit_menu, "Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo)
+        self.edit_menu.addSeparator()
+        action(self.about_menu, "About DALE…", self.show_about)
         modes = QActionGroup(self)
         modes.setExclusive(True)
         self.mode_actions = {}
         for bar, names in (
             (categories, ("Pan",)),
-            (geometry, ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")),
+            (
+                geometry,
+                (
+                    "Edit points",
+                    "New line",
+                    "New circle",
+                    "Auto-close",
+                    "Erase lines",
+                    "Erase vertices",
+                ),
+            ),
             (region_tools, REGION_TOOLS),
             (pixels, ("Erase", "Restore")),
         ):
@@ -457,6 +488,7 @@ class MainWindow(QMainWindow):
         self.clear_selection_action = action(
             categories, "Clear selection", self.clear_selection, "Ctrl+Shift+A"
         )
+        self.edit_menu.addAction(self.clear_selection_action)
         self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
         self.rotate_button = region_tools.widgetForAction(self.mode_actions["Rotate regions"])
         for mode, button in (
@@ -495,6 +527,8 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
         tips = {
             "Open pair": "Load a source JPG and matching wall JSON.",
+            "Exit": "Close the application after offering to save the current project.",
+            "About DALE…": "Show the application name, version, and purpose.",
             "JSON": (
                 "Load another wall JSON for the current JPG. "
                 "Save existing edits before replacing the source pair."
@@ -523,6 +557,13 @@ class MainWindow(QMainWindow):
             "New line": (
                 "Press for the first point, drag, release for the second. "
                 "Snap now or when moving points."
+            ),
+            "New circle": (
+                "Press to set the center, drag to change the radius, "
+                "release to create a circular contour. "
+                "Diameters up to 1 cell use 4 vertices, up to 2 use 6, "
+                "up to 5 use 8; larger circles use more. "
+                "Ctrl+wheel while drawing: adjust the radius."
             ),
             "Erase lines": (
                 "Erase entire line segments touched by the circle. Drag is one undo step."
@@ -588,6 +629,7 @@ class MainWindow(QMainWindow):
                 )
                 if item.text() in (
                     "New line",
+                    "New circle",
                     "Edit points",
                     "Erase lines",
                     "Erase vertices",
@@ -631,6 +673,23 @@ class MainWindow(QMainWindow):
 
     def t(self, text, **values):
         return translate(text, self.language, **values)
+
+    def show_about(self):
+        dialog = QMessageBox(
+            QMessageBox.Icon.Information,
+            self.t("About DALE"),
+            application_title(),
+            parent=self,
+        )
+        dialog.setObjectName("aboutDALE")
+        dialog.setInformativeText(
+            self.t("Prepare transparent floor maps from Dungeon Alchemist JPG and Foundry JSON.")
+        )
+        close = dialog.addButton(QMessageBox.StandardButton.Close)
+        close.setText(self.t("Close"))
+        close.setToolTip(self.t("Close this dialog. Escape: close."))
+        dialog.setEscapeButton(close)
+        dialog.exec()
 
     def initialize_tool_preferences(self):
         self.tool_value_controls = {
@@ -737,6 +796,8 @@ class MainWindow(QMainWindow):
             ),
         )
         self.update_size_help()
+        for menu in (self.file_menu, self.edit_menu, self.about_menu):
+            menu.menuAction().setToolTip(menu.toolTip())
         self.region_control.setToolTip(
             self.t("Choose all closed regions or one region to highlight and export.")
         )
@@ -801,6 +862,18 @@ class MainWindow(QMainWindow):
             )
         else:
             text = self.t("No lines under the cursor. Point at a line and click again.")
+        if not changed:
+            dialog = QMessageBox(
+                QMessageBox.Icon.Information, self.t("Auto-close contours"), text, parent=self
+            )
+            dialog.setObjectName("autoCloseInformation")
+            close = dialog.addButton(QMessageBox.StandardButton.Close)
+            close.setText(self.t("Close"))
+            close.setToolTip(self.t("Close this dialog. Escape: close."))
+            dialog.setDefaultButton(close)
+            dialog.setEscapeButton(close)
+            dialog.exec()
+            return
         dialog = QMessageBox(
             QMessageBox.Icon.Question, self.t("Confirm auto-close"), text, parent=self
         )
@@ -811,7 +884,6 @@ class MainWindow(QMainWindow):
         yes.setText(self.t("Yes"))
         cancel.setToolTip(self.t("Cancel without changing geometry. Escape: cancel."))
         yes.setToolTip(self.t("Apply the shown connections as one undo step."))
-        yes.setEnabled(changed)
         dialog.setDefaultButton(cancel)
         dialog.setEscapeButton(cancel)
         if dialog.exec() == QMessageBox.StandardButton.Yes and changed:
@@ -886,6 +958,11 @@ class MainWindow(QMainWindow):
             ],
             "New line": [
                 "Press, drag, release: draw a contour line.",
+                "Escape: cancel the current gesture.",
+            ],
+            "New circle": [
+                "Press: set center. Drag: change radius. Release: create circular contour.",
+                "Ctrl+wheel while drawing: adjust the radius.",
                 "Escape: cancel the current gesture.",
             ],
             "Auto-close": [

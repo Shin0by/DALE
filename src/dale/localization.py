@@ -17,6 +17,50 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "File information": "Данные файла",
+    "Export regions as PNGs": "Экспорт областей в PNG",
+    "Open, save, export regions, close, and exit.": (
+        "Открытие, сохранение, экспорт областей, закрытие и выход."
+    ),
+    "Undo, redo, and clear selection.": "Отмена, повтор и снятие выделения.",
+    "Application name, version, and purpose.": "Название, версия и назначение программы.",
+    "Application menus.": "Меню приложения.",
+    "Edit": "Правка",
+    "About": "О программе",
+    "About DALE": "О программе DALE",
+    "About DALE…": "О программе DALE…",
+    "Exit": "Выход",
+    "Close this dialog. Escape: close.": "Закрыть это окно. Escape: закрыть.",
+    "Close the application after offering to save the current project.": (
+        "Выйти из программы с предложением сохранить текущий проект."
+    ),
+    "Show the application name, version, and purpose.": (
+        "Показать название, версию и назначение программы."
+    ),
+    "Prepare transparent floor maps from Dungeon Alchemist JPG and Foundry JSON.": (
+        "Подготовка прозрачных карт этажей из JPG Dungeon Alchemist и JSON Foundry."
+    ),
+    "New circle": "Новый круглый контур",
+    "New circular contour": "Новый круглый контур",
+    "Press: set center. Drag: change radius. Release: create circular contour.": (
+        "Нажатие: центр. Перетаскивание: радиус. Отпускание: создать круглый контур."
+    ),
+    "Ctrl+wheel while drawing: adjust the radius.": "Ctrl+колесо при рисовании: изменить радиус.",
+    (
+        "Press to set the center, drag to change the radius, "
+        "release to create a circular contour. "
+        "Diameters up to 1 cell use 4 vertices, up to 2 use 6, "
+        "up to 5 use 8; larger circles use more. "
+        "Ctrl+wheel while drawing: adjust the radius."
+    ): (
+        "Нажмите для задания центра, тяните для изменения радиуса, "
+        "отпустите для создания круглого контура. "
+        "До 1 клетки — 4 вершины, до 2 — 6, до 5 — 8; дальше число вершин растёт. "
+        "Ctrl+колесо при рисовании: изменить радиус."
+    ),
+    "Circle center and radius must be finite and within coordinate limits.": (
+        "Центр и радиус круга должны быть конечными числами в допустимом диапазоне координат."
+    ),
     "Window shortcuts": "Общие горячие клавиши",
     "Scroll the available shortcuts for the current tool and window.": (
         "Прокрутить доступные горячие клавиши текущего инструмента и окна."

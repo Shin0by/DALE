@@ -5,8 +5,9 @@ Open DALE.exe; keep the whole folder including _internal. No Python needed.
 JPG + JSON opens a map; Open resumes a current-format .dale project.
 JSON replaces walls for current JPG: open JSON directly or select from a .dale document list.
 Old project formats are not supported.
-Sets: Contours / Regions / Raster. Right: Project, Regions, Settings, Information.
-Project shows map/file data; Regions has selection; bottom Information shows active gestures
+Menus: File / Edit / About. Contextual tools: Contours / Regions / Raster.
+Right: Project, Settings, Information. Project nests Regions, then File information.
+The global-settings checkbox follows Language. Bottom Information shows active gestures
 and every available window shortcut, including Undo/Redo, file commands, Fit and clear selection.
 Right-drag pans; wheel zooms. Hover help explains tools and shortcuts.
 Sizes/tolerances are inside tool buttons; Ctrl+wheel changes them.
@@ -14,6 +15,9 @@ All eight numeric values save in the project. Store settings globally copies cur
 to UserData/settings.json; enabled globals survive opening projects. Disable to restore project values.
 Clear selection follows Hand; Ctrl+Shift+A clears selected regions and contour highlights.
 Auto-close and Close all contours show white previews and Cancel / Yes confirmation.
+No-op explanations have only Close. New circular contour: press center, drag radius, release.
+The polygon changes live: 1/2/3-5 cells in diameter use 4/6/8 vertices, then density grows.
+Ctrl+wheel adjusts radius while drawing; Escape cancels; one undo step on release.
 Regions selects individual cells. Move regions drags geometry only; Ctrl+wheel scales;
 Select Rotate regions, then ordinary wheel rotates 0.1 degree around common center.
 Right-click either transform tool to configure related lines.
@@ -31,8 +35,12 @@ Preserve projects during updates. Open editors retain their version until restar
 JPG + JSON открывает карту; Открыть — проект .dale текущего формата.
 JSON заменяет разметку JPG: обычный JSON или выбор из списка файлов пакета .dale.
 Старые форматы проектов не поддерживаются.
-Наборы: Контуры / Области / Растр. Справа Проект, Области, Настройки, Информация.
-В Проекте — данные файла и карты; в Областях — выбор. Нижняя Информация показывает
+Новый круглый контур: нажать в центре, тянуть радиус, отпустить. Грани меняются сразу:
+диаметр 1/2/3–5 клеток даёт 4/6/8 вершин, затем число растёт. Ctrl+колесо меняет радиус,
+Escape отменяет. Если автозамыкание ничего не меняет, в окне есть только «Закрыть».
+Меню: Файл / Правка / О программе. Наборы: Контуры / Области / Растр.
+Справа Проект, Настройки, Информация. В Проекте — сначала Области, затем Данные файла.
+Галочка глобальных настроек следует за языком. Нижняя Информация показывает
 действия текущего инструмента и общие горячие клавиши, включая Ctrl+Z и Ctrl+Y.
 Правая кнопка перемещает карту; колесо меняет масштаб. Подсказки поясняют горячие клавиши.
 Размеры и допуски встроены в кнопки; Ctrl+колесо меняет их.

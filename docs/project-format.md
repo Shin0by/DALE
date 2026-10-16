@@ -25,6 +25,8 @@ History stores origin, gap_tolerance, contour_offset, operations, redo, UI. All 
 
 Current UI stores tool set/mode, language, Foundry target, viewport/wall visibility, independent eraser/brush sizes, snap enablement/distance, local/global auto-close tolerance, selected cell indices and active related-line choice. Artwork offset is history.contour_offset and appears in the left Regions tile. No global transparent-padding setting is serialized; exact nonzero bicubic alpha bounds are computed at export.
 
+New circle is a current contour mode. Its completed polygon is an ordinary GeometryEdit with per-edge lineage and undo/redo; no new operation type, native circle metadata or schema migration is required. The transient center/radius gesture is not saved. Original source JSON remains byte-for-byte unchanged.
+
 The application's global_tool_settings preference controls numeric-tool precedence; it is not embedded into .dale. Global overrides do not replace a loaded project's eight stored values. Save serializes the project's independent UI numbers and artwork offset even while global values are active; unchecking the setting restores those project values. Internal mode keys are stable and separate from translated action names. No archive format migration is introduced.
 
 Remember choice and two input/output directories are portable preferences, not project paths. Retired modes, unfinished-draft migration, shared-size fallbacks, export-region aliases, and component-selection migrations are unsupported.

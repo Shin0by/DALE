@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication, QDialogButtonBox, QListWidget, QMess
 from shapely.affinity import rotate
 
 from dale.canvas import GEOMETRY_TOOLS, HANDLE_DIAMETER, REGION_TOOLS, MapView
-from dale.editing import vertices
+from dale.editing import circle_points, vertices
 from dale.project_io import JsonDocument, load_project, save_project
 from dale.raster import load_preview
 from dale.session import Session, Stroke
@@ -40,6 +40,7 @@ def isolated_preferences(monkeypatch, tmp_path):
         "Auto-close",
         "Edit points",
         "New line",
+        "New circle",
         "Erase lines",
         "Erase vertices",
         "Select regions",
@@ -128,6 +129,148 @@ def test_retired_closure_mode_is_not_migrated(pair_factory, tmp_path):
     save_project(Session(pair_factory()), path, {"mode": "Closure"})
     with pytest.raises(ValueError, match="editing mode"):
         load_project(path)
+
+
+def test_circle_drag_shrinks_ctrl_wheel_cancels_and_round_trips(app, pair_factory, tmp_path):
+    source = pair_factory(size=(400, 400), walls=[], grid={"size": 100})
+    view = MapView()
+    view.resize(600, 600)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(200, 200)
+    view.show_walls = False
+    view.set_mode("New circle")
+    app.processEvents()
+    center = view.mapFromScene(200, 200)
+    far = view.mapFromScene(350, 200)
+    near = view.mapFromScene(250, 200)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+    QTest.mouseMove(view.viewport(), far)
+    assert view.circle_radius == pytest.approx(150)
+    QTest.mouseMove(view.viewport(), near)
+    assert view.circle_radius == pytest.approx(50)
+    assert view.active_gesture and not view.session.operations
+    wheel = QWheelEvent(
+        QPointF(near),
+        QPointF(near),
+        QPoint(),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.ControlModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    app.sendEvent(view.viewport(), wheel)
+    assert view.circle_radius == pytest.approx(51)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=near)
+    assert not view.session.operations and not view.active_gesture
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+    assert not view.session.operations
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+    QTest.mouseMove(view.viewport(), near)
+    preview = view.viewport().grab().toImage()
+    vertex = near
+    assert any(preview.pixelColor(vertex.x() + dx, vertex.y()).green() > 150 for dx in range(-1, 2))
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=near)
+    assert len(view.session.operations) == 1 and len(view.session.walls) == 4
+    assert view.session.analysis().faces == 1
+    original = view.session.geometry()
+    project = tmp_path / "circle.dale"
+    save_project(view.session, project, {"mode": "New circle", "tool_set": "geometry"})
+    with load_project(project) as loaded:
+        assert loaded.ui_state["mode"] == "New circle"
+        assert loaded.session.geometry() == original
+        assert loaded.session.geometry().lineage == original.lineage
+        loaded.session.undo()
+        assert not loaded.session.walls
+        loaded.session.redo()
+        assert loaded.session.geometry() == original
+    view.close()
+
+
+def test_circle_paint_changes_edges_during_drag_in_both_directions(app, pair_factory, monkeypatch):
+    source = pair_factory(size=(500, 500), walls=[], grid=100)
+    view = MapView()
+    view.resize(600, 600)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(250, 250)
+    view.set_mode("New circle")
+    app.processEvents()
+    painted = []
+
+    def record_points(*args):
+        result = circle_points(*args)
+        painted.append(result)
+        return result
+
+    monkeypatch.setattr("dale.canvas.circle_points", record_points)
+    center = view.mapFromScene(250, 250)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+    for radius, count in ((50, 4), (100, 6), (150, 8), (100, 6), (50, 4)):
+        point = view.mapFromScene(250 + radius, 250)
+        QTest.mouseMove(view.viewport(), point)
+        view.viewport().grab()
+        assert len(painted[-1]) - 1 == count
+        assert not view.session.operations
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert view.session.walls == tuple(zip(painted[-1], painted[-1][1:], strict=False))
+    assert len(view.session.operations) == 1
+    view.close()
+
+
+def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
+    window = MainWindow()
+    window.show()
+    assert [menu.text() for menu in window.menuBar().actions()] == ["Файл", "Правка", "О программе"]
+
+    def keys(menu):
+        return [
+            action.property("dale_tool_key")
+            for action in menu.actions()
+            if not action.isSeparator()
+        ]
+
+    assert keys(window.file_menu) == [
+        "Open pair",
+        "JSON",
+        "Open project",
+        "Save project",
+        "Save project as…",
+        "Export PNGs",
+        "Close map",
+        "Exit",
+    ]
+    assert keys(window.edit_menu) == ["Undo", "Redo", "Clear selection"]
+    assert window.clear_selection_action in window.tool_set_toolbar.actions()
+    assert len(window.toolbars) == 4
+    assert window.toolbars[0] == window.tool_set_toolbar
+    assert "New circle" in window.mode_actions
+    for language in ("en", "ru"):
+        window.set_language(language, persist=False)
+        seen = []
+
+        def close_about(seen=seen):
+            dialog = app.activeModalWidget()
+            seen.append(dialog.objectName())
+            assert dialog.text() == window.windowTitle()
+            assert dialog.standardButtons() == QMessageBox.StandardButton.Close
+            assert "Escape" in dialog.button(QMessageBox.StandardButton.Close).toolTip()
+            QTest.mouseClick(
+                dialog.button(QMessageBox.StandardButton.Close), Qt.MouseButton.LeftButton
+            )
+
+        QTimer.singleShot(0, close_about)
+        window.about_menu.actions()[0].trigger()
+        assert seen == ["aboutDALE"]
+        assert ("Правка" if language == "ru" else "Edit") == window.edit_menu.title()
+        window.activate_mode("New circle")
+        assert "Ctrl" in window.mode_actions["New circle"].toolTip()
+        assert "Escape" in window.mode_help.text()
+    window.close()
 
 
 @pytest.mark.parametrize("aliased_workspace", [False, True])
@@ -417,7 +560,7 @@ def test_whole_map_close_uses_its_own_distance_and_one_confirmed_undo_step(app, 
     assert not window.statusBar().isVisible()
     assert window.information_group.title() == "Информация"
     assert window.settings_group.title() == "Настройки"
-    assert window.map_info.parentWidget() == window.project_group
+    assert window.map_info.parentWidget() == window.project_info_group
     window.saved_state = window.document_state()
     window.close()
 
@@ -580,7 +723,7 @@ def test_rotate_button_uses_plain_wheel_without_zoom_and_keeps_move_alt_free(
     window.close()
 
 
-def test_auto_close_without_possible_changes_explains_and_disables_yes(app, pair_factory):
+def test_auto_close_without_possible_changes_has_only_close(app, pair_factory):
     source = pair_factory()
     window = MainWindow()
     window.show()
@@ -591,10 +734,9 @@ def test_auto_close_without_possible_changes_explains_and_disables_yes(app, pair
     def answer():
         dialog = app.activeModalWidget()
         seen.append(dialog.text())
-        assert not dialog.button(QMessageBox.StandardButton.Yes).isEnabled()
-        QTest.mouseClick(
-            dialog.button(QMessageBox.StandardButton.Cancel), Qt.MouseButton.LeftButton
-        )
+        assert dialog.objectName() == "autoCloseInformation"
+        assert dialog.standardButtons() == QMessageBox.StandardButton.Close
+        QTest.mouseClick(dialog.button(QMessageBox.StandardButton.Close), Qt.MouseButton.LeftButton)
 
     QTimer.singleShot(0, answer)
     QTest.mouseClick(
@@ -1208,7 +1350,7 @@ def test_clear_selection_follows_hand_and_clears_regions_and_contour_highlights(
     window.toggle_region_at((30, 100))
     assert window.selected_regions
     # QAction order, independent of localized labels or viewport width.
-    actions = window.toolbars[1].actions()
+    actions = window.tool_set_toolbar.actions()
     assert (
         actions.index(window.clear_selection_action)
         == actions.index(window.mode_actions["Pan"]) + 1
@@ -1238,12 +1380,18 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
     ]
     assert groups == [
         window.project_group,
-        window.regions_group,
         window.settings_group,
         window.information_group,
     ]
     assert window.region_control.parentWidget() == window.regions_group
-    assert window.map_info.parentWidget() == window.project_group
+    assert window.map_info.parentWidget() == window.project_info_group
+    assert window.project_group.layout().itemAt(0).widget() == window.regions_group
+    assert window.project_group.layout().itemAt(1).widget() == window.project_info_group
+    form = window.settings_group.layout()
+    assert (
+        form.getWidgetPosition(window.language_control)[0]
+        < form.getWidgetPosition(window.global_tools_control)[0]
+    )
     assert window.information_group.isAncestorOf(window.mode_help)
     for mode in window.mode_actions:
         window.activate_mode(mode, prompt=False)

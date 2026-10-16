@@ -4,6 +4,7 @@ import pytest
 from PIL import Image
 from shapely.geometry import Polygon
 
+from dale.editing import add_circle
 from dale.overlay_export import export_overlays
 from dale.placement import Placement
 from dale.raster import ExportCancelled, render_export_alpha
@@ -20,6 +21,26 @@ def _rectangle(x, y, width, height):
             ((x, y + height), (x, y)),
         ]
     ]
+
+
+def test_circular_contour_exports_selected_polygon_with_smooth_clipped_alpha(
+    pair_factory, tmp_path
+):
+    source = pair_factory(size=(200, 200), walls=[], grid={"size": 40})
+    session = Session(source)
+    session.add(add_circle(session.geometry(), (100, 100), 90, source.cell_pixels))
+    folder = export_overlays(
+        session, tmp_path, Placement(), region_indices=(0,), individual_regions=True
+    )
+    item = json.loads((folder / "placement.json").read_text())["items"][0]
+    with Image.open(folder / item["file"]) as image:
+        alpha = image.getchannel("A")
+        assert image.mode == "RGBA"
+        assert image.width <= 200 and image.height <= 200
+        assert image.getpixel((100 - item["x"], 100 - item["y"]))[3] == 255
+        assert image.getpixel((0, 0))[3] == 0
+        assert alpha.getbbox() == (0, 0, *image.size)
+        assert any(0 < value < 255 for value in alpha.tobytes())
 
 
 def test_separate_contours_have_no_implicit_margin(pair_factory, tmp_path):

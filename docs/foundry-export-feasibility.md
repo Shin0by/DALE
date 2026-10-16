@@ -63,6 +63,12 @@ The source scene has no root `_id` but its links contain the original scene UUID
 
 ## Coordinates, assets and floors
 
+### Circular contours (2026-10-16)
+
+Foundry has a native Region circle model in [v13 CircleShapeData](https://foundryvtt.com/api/v13/classes/foundry.data.CircleShapeData.html) and [v14 CircleShapeData](https://foundryvtt.com/api/v14/classes/foundry.data.CircleShapeData.html). The v13 schema lists type/hole/x/y/radius. Region shape types also include polygons. This differs from [v14 BaseWall](https://foundryvtt.com/api/v14/classes/foundry.documents.BaseWall.html), whose c coordinates describe straight wall endpoints.
+
+DALE's new circular-contour gesture creates editable regular polygon edges. Density follows the owner's grid-cell diameter rule: <=1 cell 4 vertices, <=2 cells 6, <=5 cells 8, then two more per started 2.5 cells, capped at 4096. This replaces the initially considered subpixel-error approximation. These edges fit the existing archive/lineage model and can later serialize as wall segments or a Region polygon. A native circle is technically available in Foundry, but should not be reconstructed from manually edited polygon points or promised as the current output. Semantic scene generation and live Foundry import validation remain future work; current delivery exports PNG and saves .dale geometry.
+
 Maintain explicit transforms between padded Foundry canvas, unpadded scene rectangle, source JPG and each cropped PNG. Resolve padding/grid rounding and background placement before editing. Store crop origin and dimensions; never shrink or shift an individual floor implicitly. Raster masks and source images stay fixed when only geometry moves. The left Artwork offset controls retained JPG content; exact nonzero bicubic alpha bounds determine crops, clipped to JPG. The owner removed the mandatory 3px guard and global transparent-padding parameter.
 
 For v13, evaluate two named profiles: core separate scenes with region teleports, and a pinned single-scene module stack. The latter requires actual module exports and visibility tests; the Wall Height flags in this sample are insufficient. For v14, use native Level records plus wall/Region membership and the appropriate surface/transition definitions. A floor descriptor will need a stable ID, name/order, elevation range, imagery transform and gameplay membership. Future integer-foot UI defaults can use 5-foot presets, but no height controls are added during this research.

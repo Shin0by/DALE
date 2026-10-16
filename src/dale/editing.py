@@ -110,6 +110,60 @@ def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
     return builder.build(walls, closures, overrides)
 
 
+def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tuple[Point, ...]:
+    """Closed editable polygon, with density based on diameter in map cells."""
+    if (
+        type(radius) not in (int, float)
+        or not math.isfinite(radius)
+        or radius <= 0
+        or type(cell_pixels) not in (int, float)
+        or not math.isfinite(cell_pixels)
+        or cell_pixels <= 0
+        or len(center) != 2
+        or any(type(v) not in (int, float) or not math.isfinite(v) for v in center)
+        or any(abs(v) + radius > 1e9 for v in center)
+    ):
+        raise ValueError("Circle center and radius must be finite and within coordinate limits.")
+    diameter = min(5115, 2 * radius / cell_pixels)  # Cap before ceil, including overflow to inf.
+    count = (
+        4
+        if diameter <= 1
+        else 6
+        if diameter <= 2
+        else 8
+        if diameter <= 5
+        else min(4096, 8 + 2 * math.ceil((diameter - 5) / 2.5))
+    )
+    cx, cy = center
+    points = [
+        (cx + radius * math.cos(math.tau * i / count), cy + radius * math.sin(math.tau * i / count))
+        for i in range(count)
+    ]
+    # Exact opposing vertices avoid floating-point gaps at ordinary contacts.
+    points[0], points[count // 2] = (cx + radius, cy), (cx - radius, cy)
+    if count % 4 == 0:
+        points[count // 4], points[3 * count // 4] = (cx, cy + radius), (cx, cy - radius)
+    return (*points, points[0])
+
+
+def add_circle(
+    geometry: GeometryEdit, center: Point, radius: float, cell_pixels: float = 100
+) -> GeometryEdit:
+    points = circle_points(center, radius, cell_pixels)
+    geometry = node_geometry(geometry, points[:-1])
+    builder = LineageBuilder(geometry)
+    walls = list(geometry.walls)
+    existing = {edge_key(edge) for edge in geometry_edges(geometry.walls, geometry.closures)}
+    overrides = {}
+    for edge in pairwise(points):
+        key = edge_key(edge)
+        if key not in existing:
+            walls.append(edge)
+            overrides[key] = LineRecord.child(builder.contacts(edge), edge, manual=True)
+            existing.add(key)
+    return builder.build(walls, geometry.closures, overrides)
+
+
 def geometry_targets(geometry, start, end, radius, target):
     """Use the same circle/capsule hit test for hover previews and deletion."""
     sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))

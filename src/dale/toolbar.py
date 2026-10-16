@@ -40,12 +40,12 @@ def tool_icon(name):
     def circle(x, y, r=2):
         painter.drawEllipse(QPointF(x, y), r, r)
 
-    if name in ("Open pair", "Open project"):
+    if name in ("Open scene", "Open project"):
         painter.drawRoundedRect(QRectF(3, 7, 18, 13), 2, 2)
         line((4, 7), (4, 4))
         line((4, 4), (11, 4))
         line((11, 4), (13, 7))
-        if name == "Open pair":
+        if name == "Open scene":
             line((6, 17), (10, 12))
             line((10, 12), (14, 16))
             circle(17, 11, 1)
@@ -66,8 +66,8 @@ def tool_icon(name):
         line((12, 16), (12, 3))
         line((12, 3), (7, 8))
         line((12, 3), (17, 8))
-    elif name in ("Close map", "Remove inside"):
-        circle(12, 12, 9) if name == "Close map" else painter.drawRect(QRectF(4, 4, 16, 16))
+    elif name in ("Close scene", "Remove inside"):
+        circle(12, 12, 9) if name == "Close scene" else painter.drawRect(QRectF(4, 4, 16, 16))
         line((8, 8), (16, 16))
         line((8, 16), (16, 8))
     elif name in ("Undo", "Redo"):
@@ -102,7 +102,7 @@ def tool_icon(name):
         for x, y, sx, sy in ((3, 3, 1, 1), (21, 3, -1, 1), (3, 21, 1, -1), (21, 21, -1, -1)):
             line((x, y + sy * 5), (x, y))
             line((x, y), (x + sx * 5, y))
-    elif name == "Show walls":
+    elif name == "Show contours":
         painter.drawRoundedRect(QRectF(3, 7, 18, 11), 6, 6)
         circle(12, 12.5, 3)
     elif name in ("Auto-close", "Close all contours"):
@@ -308,9 +308,11 @@ class SizedToolButton(QToolButton):
                 "Ctrl+wheel: change the auto-close distance.",
             ),
             "Close all contours": (
-                "Whole-map close distance (px)",
-                "Extend eligible lines across the whole map after confirmation. "
-                "Distance uses screen pixels.",
+                "Whole-scene close distance (px)",
+                (
+                    "Extend eligible lines across the whole scene after "
+                    "confirmation. Distance uses screen pixels."
+                ),
                 "Ctrl+wheel: change this value.",
             ),
             "Erase": (
@@ -334,8 +336,8 @@ class SizedToolButton(QToolButton):
             "Artwork offset (px)": (
                 "Region artwork offset (px)",
                 (
-                    "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
-                    "negative cuts inward."
+                    "Keep scene image pixels beyond the lines. Positive expands the "
+                    "artwork; negative cuts inward."
                 ),
                 "Ctrl+wheel: change this value.",
             ),
@@ -365,7 +367,7 @@ class SizedToolButton(QToolButton):
 
 PANEL_HELP = {
     "General": "Open, save, close, export, and navigate projects.",
-    "Tool sets": "Choose which tools appear to the left of the map.",
+    "Tool sets": "Choose which tools appear to the left of the scene image.",
     "Tool size": "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.",
     "Snapping": "Configure snapping to existing vertices and line interiors.",
 }

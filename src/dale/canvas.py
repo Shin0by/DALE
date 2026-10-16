@@ -31,7 +31,7 @@ from dale.editing import (
 from dale.geometry import analyze_regions, offset_region
 from dale.raster import render_preview
 from dale.region_transform import plan_region_transform
-from dale.session import Stroke
+from dale.session import ContourMask, Stroke
 
 HANDLE_DIAMETER = 10
 GEOMETRY_TOOLS = (
@@ -148,6 +148,7 @@ class MapView(QGraphicsView):
     def assign(self, session, preview):
         self.cancel_pending()
         self.session, self.preview = session, preview
+        self.raster_key = None
         self.scene().clear()
         self.item = self.scene().addPixmap(pixmap(preview))
         self.item.setTransform(
@@ -178,6 +179,7 @@ class MapView(QGraphicsView):
         self.scene().clear()
         self.session = self.preview = self.item = self.working_geometry = self.analysis = None
         self.geometry_key = None
+        self.raster_key = None
         self.auto_close_index = self.auto_close_key = None
         self.walls = ()
         self.image_rect = QRectF()
@@ -233,14 +235,19 @@ class MapView(QGraphicsView):
     def update_image(self):
         if not self.session:
             return
-        operations = self.session.operations
+        operations = [op for op in self.session.operations if isinstance(op, (ContourMask, Stroke))]
         if self.stroke:
             operations = operations + [
                 Stroke(tuple(self.stroke), self.diameter / 2, self.mode == "Restore")
             ]
+        key = self.session.source.size, tuple(operations)
+        if key == self.raster_key:
+            self.viewport().update()
+            return
         self.item.setPixmap(
             pixmap(render_preview(self.preview, self.session.source.size, operations))
         )
+        self.raster_key = key
         self.viewport().update()
 
     def set_mode(self, mode):

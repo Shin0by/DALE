@@ -124,15 +124,15 @@ def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tup
         or any(abs(v) + radius > 1e9 for v in center)
     ):
         raise ValueError("Circle center and radius must be finite and within coordinate limits.")
-    diameter = min(5115, 2 * radius / cell_pixels)  # Cap before ceil, including overflow to inf.
+    diameter = min(5112, 2 * radius / cell_pixels)  # Cap before ceil, including overflow to inf.
     count = (
         4
-        if diameter <= 1
+        if diameter <= 0.5
         else 6
-        if diameter <= 2
+        if diameter <= 1
         else 8
-        if diameter <= 5
-        else min(4096, 8 + 2 * math.ceil((diameter - 5) / 2.5))
+        if diameter <= 2
+        else min(4096, 8 + 2 * math.ceil((diameter - 2) / 2.5))
     )
     cx, cy = center
     points = [

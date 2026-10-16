@@ -2,8 +2,8 @@ DALE — Dungeon Alchemist Levels Export
 
 ENGLISH
 Open DALE.exe; keep the whole folder including _internal. No Python needed.
-JPG + JSON opens a map; Open resumes a current-format .dale project.
-JSON replaces walls for current JPG: open JSON directly or select from a .dale document list.
+File > Open scene loads a scene image and scene JSON; Open project resumes a .dale project.
+File > JSON loads a scene JSON directly or selects one from a DALE project document list.
 Old project formats are not supported.
 Menus: File / Edit / About. Contextual tools: Contours / Regions / Raster.
 Right: Project, Settings, Information. Project nests Regions, then File information.
@@ -16,12 +16,12 @@ to UserData/settings.json; enabled globals survive opening projects. Disable to 
 Clear selection follows Hand; Ctrl+Shift+A clears selected regions and contour highlights.
 Auto-close and Close all contours show white previews and Cancel / Yes confirmation.
 No-op explanations have only Close. New circular contour: press center, drag radius, release.
-The polygon changes live: 1/2/3-5 cells in diameter use 4/6/8 vertices, then density grows.
+The polygon changes live: 0.5/1/2 cells in diameter use 4/6/8 vertices, then density grows.
 Ctrl+wheel adjusts radius while drawing; Escape cancels; one undo step on release.
 Regions selects individual cells. Move regions drags geometry only; Ctrl+wheel scales;
 Select Rotate regions, then ordinary wheel rotates 0.1 degree around common center.
 Right-click either transform tool to configure related lines.
-Walls off hides inactive lines/handles; only selection and current tool highlights stay visible.
+Show contours off hides inactive lines/handles; only selection and current tool highlights stay visible.
 Raster Erase/Restore have independent diameters. Save stores sources, history, redo, ancestry.
 Input/output folders are remembered independently.
 Left Artwork offset adds/cuts actual JPG pixels relative to lines. No global padding setting.
@@ -32,11 +32,11 @@ Preserve projects during updates. Open editors retain their version until restar
 
 РУССКИЙ
 Запускайте DALE.exe; переносите всю папку с _internal. Python не нужен.
-JPG + JSON открывает карту; Открыть — проект .dale текущего формата.
-JSON заменяет разметку JPG: обычный JSON или выбор из списка файлов пакета .dale.
+Файл > Открыть сцену загружает изображение сцены и JSON сцены; Открыть проект — файл .dale.
+Файл > JSON загружает JSON сцены напрямую или из списка документов проекта .dale.
 Старые форматы проектов не поддерживаются.
 Новый круглый контур: нажать в центре, тянуть радиус, отпустить. Грани меняются сразу:
-диаметр 1/2/3–5 клеток даёт 4/6/8 вершин, затем число растёт. Ctrl+колесо меняет радиус,
+диаметр 0,5/1/2 клетки даёт 4/6/8 вершин, затем число растёт. Ctrl+колесо меняет радиус,
 Escape отменяет. Если автозамыкание ничего не меняет, в окне есть только «Закрыть».
 Меню: Файл / Правка / О программе. Наборы: Контуры / Области / Растр.
 Справа Проект, Настройки, Информация. В Проекте — сначала Области, затем Данные файла.
@@ -50,7 +50,7 @@ Escape отменяет. Если автозамыкание ничего не �
 Автозамыкание и Замкнуть всю карту показывают белый кант и подтверждение Отмена / Да.
 Области выбираются по отдельности. Перемещение меняет только контуры:
 Ctrl+колесо — масштабирование. Кнопка Вращение областей — обычное колесо по 0,1°.
-При выключенных Стенах видны только выбранные области и активная подсветка.
+При отключённом показе контуров видны только выбранные области и активная подсветка.
 Правый клик по инструменту снова открывает вопрос о связанных линиях.
 Ластик и восстановление растра имеют собственные диаметры.
 Проект хранит исходники, историю, повтор и происхождение линий.
@@ -59,3 +59,6 @@ Ctrl+колесо — масштабирование. Кнопка Вращен�
 PNG сглаживает альфа-край через bicubic и включает все ненулевые альфа-пиксели в границах JPG.
 Высоту задавайте в Foundry. Минимум окна 1024 x 768.
 Настройки — в UserData/settings.json. Открытый редактор использует свою версию до перезапуска.
+
+Exact PNG dimensions for large scenes calculate in the background; editing stays available.
+Точные размеры PNG больших сцен рассчитываются в фоне, редактирование остаётся доступным.

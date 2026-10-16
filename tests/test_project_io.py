@@ -133,7 +133,7 @@ def test_json_catalog_preserves_original_and_multiple_updated_documents(pair_fac
     session = Session(
         source,
         json_documents=(
-            JsonDocument("edit-1", "Edited walls.json", "updated", updated),
+            JsonDocument("edit-1", "Edited contours.json", "updated", updated),
             JsonDocument("edit-2", "Second edit.json", "updated", updated + b"\n"),
         ),
     )

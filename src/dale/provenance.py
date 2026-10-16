@@ -1,4 +1,4 @@
-"""Persistent line ancestry and exact references to unmodified source JSON walls."""
+"""Persistent line ancestry and exact references to unmodified source JSON contours."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ class LineRecord:
 
 
 def vertex_records(geometry):
-    """A contact explicitly names its incident lines, parents, and source walls."""
+    """A contact explicitly names its incident lines, parents, and source contour segments."""
     nodes = {}
     for edge, record in zip(
         geometry_edges(geometry.walls, geometry.closures), geometry.lineage, strict=True
@@ -173,7 +173,7 @@ def decode_record(value):
     references = []
     for source in sources:
         if not isinstance(source, dict):
-            raise ValueError("Invalid source wall reference.")
+            raise ValueError("Invalid source contour reference.")
         digest, index, wall_id = (
             source.get("json_sha256"),
             source.get("wall_index"),
@@ -187,6 +187,6 @@ def decode_record(value):
             or not 0 <= index < 100_000
             or (wall_id is not None and (not isinstance(wall_id, str) or len(wall_id) > 256))
         ):
-            raise ValueError("Invalid source wall identity.")
+            raise ValueError("Invalid source contour identity.")
         references.append(SourceWall(digest, index, wall_id))
     return LineRecord(identifier, tuple(parents), tuple(references), origin)

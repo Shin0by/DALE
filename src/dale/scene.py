@@ -41,11 +41,11 @@ def open_source(path: Path):
             Image.MAX_IMAGE_PIXELS = previous
     try:
         if image.format != "JPEG":
-            raise ValueError("The source image must be a JPG/JPEG file.")
+            raise ValueError("The scene image must be a JPG/JPEG file.")
         if max(image.size) > MAX_SIDE:
             raise ValueError(f"Image exceeds the {MAX_SIDE:,}-pixel per-side limit.")
         if image.getexif().get(274, 1) != 1:
-            raise ValueError("EXIF-rotated JPGs need a coordinate-aware import adapter.")
+            raise ValueError("EXIF-rotated scene images require a coordinate-aware import adapter.")
         yield image
     finally:
         image.close()
@@ -94,9 +94,9 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
     digest = hashlib.sha256(source_bytes).hexdigest()
     raw = json.loads(source_bytes.decode("utf-8-sig"))
     if not isinstance(raw, dict) or not isinstance(raw.get("walls"), list):
-        raise ValueError("Expected a Foundry scene object with a walls array.")
+        raise ValueError("Scene JSON must contain a `walls` array.")
     if len(raw.get("walls", [])) > 100_000:
-        raise ValueError("More than 100,000 source walls are not supported yet.")
+        raise ValueError("More than 100,000 source contour segments are not supported yet.")
     width = number(raw.get("width", size[0]), "Scene width")
     height = number(raw.get("height", size[1]), "Scene height")
     if width <= 0 or height <= 0:
@@ -116,27 +116,29 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
     for i, wall in enumerate(raw.get("walls", [])):
         c = wall.get("c") if isinstance(wall, dict) else None
         if not isinstance(c, list) or len(c) != 4:
-            raise ValueError(f"Wall {i}: expected c: [x1, y1, x2, y2].")
-        x1, y1, x2, y2 = [number(v, f"Wall {i} coordinate") for v in c]
+            raise ValueError(f"Contour segment {i}: expected c: [x1, y1, x2, y2].")
+        x1, y1, x2, y2 = [number(v, f"Contour segment {i} coordinate") for v in c]
         if (x1, y1) != (x2, y2):
             walls.append(((x1, y1), (x2, y2)))
             wall_id = wall.get("_id", wall.get("id"))
             if wall_id is not None and len(str(wall_id)) > 256:
-                raise ValueError(f"Wall {i}: identifier exceeds 256 characters.")
+                raise ValueError(f"Contour segment {i}: identifier exceeds 256 characters.")
             references.append(SourceWall(digest, i, str(wall_id) if wall_id is not None else None))
     warnings = []
     if max(size) > COMPATIBILITY_SIDE:
         warnings.append("Above 8,192 pixels: check the texture limit of every Foundry client.")
     if raw.get("padding", 0):
-        warnings.append("Nonzero scene padding: review wall alignment and set Scene origin X/Y.")
+        warnings.append("Scene padding is nonzero. Verify contour alignment before editing.")
     if not walls:
         warnings.append(
-            "No usable walls found. Brush editing is available; contour masking is not."
+            "No contour segments found in the scene JSON. Draw contours or edit raster pixels."
         )
     if "width" not in raw or "height" not in raw:
-        warnings.append("Scene dimensions absent: using JPG dimensions; verify alignment.")
+        warnings.append("Scene dimensions absent: using scene image dimensions; verify alignment.")
     if "levels" in raw:
-        warnings.append("Scene levels detected. This prototype uses only top-level walls.")
+        warnings.append(
+            "Scene levels detected. Only the scene-level contour collection is imported."
+        )
     return SceneInput(
         image_path,
         json_path,

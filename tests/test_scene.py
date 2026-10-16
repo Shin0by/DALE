@@ -18,7 +18,7 @@ def test_scene_scale_origin_and_background_offset(pair_factory):
     "wall", [{"c": [0, 0, 1]}, {"c": [True, 1, 2, 3]}, {"c": [0, 0, float("nan"), 3]}]
 )
 def test_malformed_walls_fail_visibly(pair_factory, wall):
-    with pytest.raises(ValueError, match="Wall"):
+    with pytest.raises(ValueError, match="Contour segment"):
         pair_factory(walls=[wall])
 
 
@@ -38,7 +38,7 @@ def test_raw_json_is_not_changed_by_transformation(pair_factory):
 def test_unrecognized_json_does_not_silently_become_an_empty_scene(pair_factory):
     source = pair_factory()
     source.json_path.write_text('{"unrecognized": "data"}', encoding="utf-8")
-    with pytest.raises(ValueError, match="walls array"):
+    with pytest.raises(ValueError, match="`walls` array"):
         load_pair(source.image_path, source.json_path)
 
 

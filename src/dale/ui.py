@@ -50,6 +50,7 @@ from shapely.geometry import Point as ShapePoint
 
 from dale import __version__, application_title
 from dale.autoclose import AutoCloseIndex
+from dale.bounds_preview import BoundsPreview
 from dale.canvas import GEOMETRY_ERASERS, REGION_TOOLS, MapView
 from dale.geometry import offset_region, open_contour_count
 from dale.localization import (
@@ -58,7 +59,7 @@ from dale.localization import (
     translate,
     translate_static,
 )
-from dale.overlay_export import export_overlays, export_regions, prepare_overlay
+from dale.overlay_export import export_overlays, export_regions
 from dale.placement import Placement
 from dale.preferences import (
     TOOL_VALUE_RANGES,
@@ -143,6 +144,12 @@ class MainWindow(QMainWindow):
         self.resize(1280, 860)
         self.setMinimumSize(1024, 768)
         self.worker = None
+        self.bounds_preview = BoundsPreview(self)
+        self.bounds_ready_timer = QTimer(self)
+        self.bounds_ready_timer.setSingleShot(True)
+        self.bounds_ready_timer.timeout.connect(self.apply_bounds_ready)
+        self.bounds_preview.changed.connect(self.apply_bounds_ready)
+        QApplication.instance().aboutToQuit.connect(self.bounds_preview.shutdown)
         self.progress = None
         self.export_outcome = None
         self.project_path = None
@@ -167,7 +174,7 @@ class MainWindow(QMainWindow):
         self.view.message.connect(
             lambda message: self.statusBar().showMessage(self.t(message), 7000)
         )
-        self.info = QLabel("Open an upper-floor JPG and its Foundry JSON to begin.")
+        self.info = QLabel("Open a scene image and its scene JSON to begin.")
         self.info.setWordWrap(True)
         self.map_info = QLabel()
         self.map_info.setWordWrap(True)
@@ -212,14 +219,14 @@ class MainWindow(QMainWindow):
         self.gap_tolerance.setDecimals(2)
         self.gap_tolerance.setSingleStep(1)
         self.gap_tolerance.setToolTip(
-            "Connect free wall ends within this distance in original image pixels. "
-            "0 disables joining."
+            "Connect free contour ends within this distance in original "
+            "image pixels. 0 disables joining."
         )
         self.contour_offset = ToolSpinBox()
         self.contour_offset.setRange(-4096, 4096)
         self.contour_offset.setToolTip(
-            "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
-            "negative cuts inward. Ctrl+wheel: change this value."
+            "Keep scene image pixels beyond the lines. Positive expands the "
+            "artwork; negative cuts inward. Ctrl+wheel: change this value."
         )
         self.gap_tolerance.valueChanged.connect(self.update_contour_settings)
         self.contour_offset.valueChanged.connect(self.update_contour_settings)
@@ -359,14 +366,14 @@ class MainWindow(QMainWindow):
                 item.setProperty(
                     "dale_display_key",
                     {
-                        "Open pair": "Image + JSON",
+                        "Open scene": "Image + JSON",
                         "Open project": "Open",
                         "Save project": "Save",
                         "Save project as…": "Save as…",
-                        "Close map": "Close",
+                        "Close scene": "Close",
                         "Export PNGs": "Export regions",
                         "Pan": "Hand",
-                        "Show walls": "Walls",
+                        "Show contours": "Show contours",
                     }.get(title, title),
                 )
             item.triggered.connect(handler)
@@ -438,7 +445,7 @@ class MainWindow(QMainWindow):
         self.tool_set_actions["geometry"].setChecked(True)
         categories.addSeparator()
 
-        action(self.file_menu, "Open pair", self.open_pair, "Ctrl+I")
+        action(self.file_menu, "Open scene", self.open_pair, "Ctrl+I")
         action(self.file_menu, "JSON", self.open_json)
         action(self.file_menu, "Open project", self.open_project, QKeySequence.StandardKey.Open)
         self.file_menu.addSeparator()
@@ -453,7 +460,7 @@ class MainWindow(QMainWindow):
         )
         self.file_menu.addSeparator()
         self.export_action = action(self.file_menu, "Export PNGs", self.export, "Ctrl+E")
-        action(self.file_menu, "Close map", self.close_document)
+        action(self.file_menu, "Close scene", self.close_document)
         self.file_menu.addSeparator()
         action(self.file_menu, "Exit", self.close, "Ctrl+Q")
         action(self.edit_menu, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo)
@@ -500,7 +507,7 @@ class MainWindow(QMainWindow):
                 lambda point, m=mode: self.configure_region_move(m)
             )
         action(categories, "Fit", self.view.fit_map, "F")
-        self.walls_action = action(categories, "Show walls", self.toggle_walls)
+        self.walls_action = action(categories, "Show contours", self.toggle_walls)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
         self.geometry_brush_control = self.geometry_eraser_tiles["Erase lines"].editor()
@@ -526,13 +533,10 @@ class MainWindow(QMainWindow):
         self.view.size_changed.connect(self.sync_tool_sizes)
         QApplication.instance().installEventFilter(self)
         tips = {
-            "Open pair": "Load a source JPG and matching wall JSON.",
+            "Open scene": "Load a scene image and its scene JSON.",
             "Exit": "Close the application after offering to save the current project.",
             "About DALE…": "Show the application name, version, and purpose.",
-            "JSON": (
-                "Load another wall JSON for the current JPG. "
-                "Save existing edits before replacing the source pair."
-            ),
+            "JSON": ("Load a scene JSON. Current edits can be saved before importing."),
             "Open project": "Open a portable .dale archive including sources and undo history.",
             "Save project": (
                 "Save sources, masks, geometry, preferences, and undo/redo in one .dale file."
@@ -543,7 +547,7 @@ class MainWindow(QMainWindow):
             "Export PNGs": (
                 "Export separate cropped PNGs with the configured margin and a placement manifest."
             ),
-            "Pan": "Drag to move the map. Right-drag works in every tool.",
+            "Pan": "Drag to move the scene image. Right-drag works in every tool.",
             "Auto-close": (
                 "Hover to trace connected lines and valid continuations. "
                 "White edges show affected lines; "
@@ -551,8 +555,8 @@ class MainWindow(QMainWindow):
                 "along their directions after confirmation in one undo step."
             ),
             "Close all contours": (
-                "Extend eligible lines across the whole map after confirmation. "
-                "Distance uses screen pixels."
+                "Extend eligible lines across the whole scene after "
+                "confirmation. Distance uses screen pixels."
             ),
             "New line": (
                 "Press for the first point, drag, release for the second. "
@@ -561,8 +565,8 @@ class MainWindow(QMainWindow):
             "New circle": (
                 "Press to set the center, drag to change the radius, "
                 "release to create a circular contour. "
-                "Diameters up to 1 cell use 4 vertices, up to 2 use 6, "
-                "up to 5 use 8; larger circles use more. "
+                "Diameters up to 0.5 cells use 4 vertices, up to 1 use 6, "
+                "up to 2 use 8; larger circles use more. "
                 "Ctrl+wheel while drawing: adjust the radius."
             ),
             "Erase lines": (
@@ -572,7 +576,7 @@ class MainWindow(QMainWindow):
                 "Erase vertices inside the circle; reconnect ordinary line neighbors. "
                 "Branching vertices remove their connected edges."
             ),
-            "Close map": "Close the current map after offering to save its project.",
+            "Close scene": "Close the current scene after offering to save its DALE project.",
             "Snapping (px)": (
                 "Enable snapping for new lines and moved vertices; vertices take priority."
             ),
@@ -595,8 +599,8 @@ class MainWindow(QMainWindow):
             ),
             "Export selected regions": "Export only the highlighted regions as separate PNGs.",
             "Artwork offset (px)": (
-                "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
-                "negative cuts inward."
+                "Keep scene image pixels beyond the lines. Positive expands the "
+                "artwork; negative cuts inward."
             ),
             "Edit points": (
                 "Click a line to insert; drag a fixed-size circle to move; "
@@ -604,15 +608,15 @@ class MainWindow(QMainWindow):
                 "Hold Alt to move along the selected line vector."
             ),
             "Erase": "Paint transparency over unwanted objects.",
-            "Restore": "Restore opacity from the original JPG.",
+            "Restore": "Restore opacity from the original scene image.",
             "Remove outside": "Keep enclosed regions and make their exterior transparent.",
             "Remove inside": "Erase enclosed regions and keep their exterior.",
             "Undo": "Undo the last complete stroke, mask, or geometry edit.",
             "Redo": "Redo the last undone edit.",
-            "Fit": "Show the complete source map.",
-            "Show walls": (
-                "Show all walls or hide inactive geometry. "
-                "Selected regions and highlighted lines remain visible."
+            "Fit": "Fit the scene image to the viewport.",
+            "Show contours": (
+                "Show all contours or hide inactive geometry. Selected regions "
+                "and highlighted lines remain visible."
             ),
             "Clear selection": (
                 "Clear selected regions and contour highlights. "
@@ -655,10 +659,10 @@ class MainWindow(QMainWindow):
             )
         self.view.setToolTip("")
         self.view.viewport().setToolTip("")
-        self.view.horizontalScrollBar().setToolTip("Pan the map horizontally.")
-        self.view.verticalScrollBar().setToolTip("Pan the map vertically.")
-        sidebar_scroll.verticalScrollBar().setToolTip("Scroll map settings and editing help.")
-        sidebar_scroll.horizontalScrollBar().setToolTip("Scroll map settings and editing help.")
+        self.view.horizontalScrollBar().setToolTip("Pan the scene image horizontally.")
+        self.view.verticalScrollBar().setToolTip("Pan the scene image vertically.")
+        sidebar_scroll.verticalScrollBar().setToolTip("Scroll scene settings and editing help.")
+        sidebar_scroll.horizontalScrollBar().setToolTip("Scroll scene settings and editing help.")
         for control in (
             self.version,
             self.language_control,
@@ -683,7 +687,10 @@ class MainWindow(QMainWindow):
         )
         dialog.setObjectName("aboutDALE")
         dialog.setInformativeText(
-            self.t("Prepare transparent floor maps from Dungeon Alchemist JPG and Foundry JSON.")
+            self.t(
+                "Prepare transparent floor maps from Dungeon Alchemist scene "
+                "images and Foundry scene JSON."
+            )
         )
         close = dialog.addButton(QMessageBox.StandardButton.Close)
         close.setText(self.t("Close"))
@@ -801,8 +808,7 @@ class MainWindow(QMainWindow):
         self.region_control.setToolTip(
             self.t("Choose all closed regions or one region to highlight and export.")
         )
-        if not self.view.session:
-            self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
+        self.update_project_info()
         self.update_placement_hint()
         self.update_mode_help()
         self.refresh()
@@ -814,6 +820,22 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(
                     self.t("Language changed; preferences could not be written."), 7000
                 )
+
+    def apply_bounds_ready(self):
+        if self.bounds_preview.closed:
+            return
+        if self.view.active_gesture:
+            self.bounds_ready_timer.start(40)
+            return
+        self.update_map_info()
+
+    def update_project_info(self):
+        if not self.view.session:
+            self.info.setText(self.t("Open a scene image and its scene JSON to begin."))
+            return
+        source = self.view.session.source
+        name = self.project_path.name if self.project_path else source.image_path.name
+        self.info.setText("\n".join((name, *(self.t(warning) for warning in source.warnings))))
 
     def information(self, title, text, *options):
         return QMessageBox.information(self, self.t(title), self.t(text), *options)
@@ -950,7 +972,7 @@ class MainWindow(QMainWindow):
     def update_mode_help(self):
         mode = self.view.mode
         instructions = {
-            "Pan": ["Left-drag: pan the map."],
+            "Pan": ["Left-drag: pan the scene image."],
             "Edit points": [
                 "Click a line: insert a contour point. Drag a circle: move it.",
                 "Double-click a circle: delete the point. Alt-drag: follow the line vector.",
@@ -1001,7 +1023,7 @@ class MainWindow(QMainWindow):
             ],
         }[mode]
         lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
-        lines.append(self.t("Right-drag: pan the map."))
+        lines.append(self.t("Right-drag: pan the scene image."))
         if mode != "Rotate regions":
             lines.append(self.t("Wheel: zoom at cursor."))
         lines.append("")
@@ -1061,7 +1083,9 @@ class MainWindow(QMainWindow):
         if mode in ("Move regions", "Rotate regions") and prompt:
             if not self.selected_regions:
                 self.activate_mode("Select regions")
-                self.information("Select regions", "Select at least one closed region on the map.")
+                self.information(
+                    "Select regions", "Select at least one closed region on the scene image."
+                )
                 return
             if self.remembered_move_related is None and not self.configure_region_move(mode):
                 self.mode_actions[self.view.mode].setChecked(True)
@@ -1171,7 +1195,7 @@ class MainWindow(QMainWindow):
             self.loaded_project = None
         self.project_path = self.saved_state = None
         self._project_tool_values = None
-        self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
+        self.info.setText(self.t("Open a scene image and its scene JSON to begin."))
         self.diagnostics.clear()
         self.update_map_info()
 
@@ -1360,7 +1384,7 @@ class MainWindow(QMainWindow):
             self.project_path = path
             self.remember_directory("input", path.resolve().parent)
             self.saved_state = self.document_state()
-            self.info.setText(path.name)
+            self.update_project_info()
             self.refresh()
             self.remember_tool_values()
             return True
@@ -1378,9 +1402,9 @@ class MainWindow(QMainWindow):
             return
         image_path, _ = QFileDialog.getOpenFileName(
             self,
-            self.t("Open source JPG"),
+            self.t("Open scene image"),
             str(self.input_directory or Path("examples")),
-            self.t("JPEG images (*.jpg *.jpeg)"),
+            self.t("Scene images (*.jpg *.jpeg)"),
         )
         if not image_path:
             return
@@ -1388,9 +1412,9 @@ class MainWindow(QMainWindow):
         if not json_path.is_file():
             selected, _ = QFileDialog.getOpenFileName(
                 self,
-                self.t("Open matching Foundry JSON"),
+                self.t("Load scene JSON"),
                 str(json_path),
-                self.t("JSON files (*.json)"),
+                self.t("Scene JSON (*.json)"),
             )
             if not selected:
                 return
@@ -1399,15 +1423,15 @@ class MainWindow(QMainWindow):
 
     def open_json(self):
         if not self.view.session:
-            self.information("JSON", "Open a source JPG before loading another JSON.")
+            self.information("JSON", "Open a scene image before loading a scene JSON.")
             return
         if not self.can_discard():
             return
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            self.t("Import wall JSON"),
+            self.t("Load scene JSON"),
             str(self.input_directory or self.view.session.source.json_path.parent),
-            self.t("JSON or DALE projects (*.json *.dale)"),
+            self.t("Scene JSON or DALE projects (*.json *.dale)"),
         )
         if selected:
             path = Path(selected)
@@ -1422,16 +1446,18 @@ class MainWindow(QMainWindow):
             self.remember_directory("input", path.resolve().parent)
             dialog = QDialog(self)
             dialog.setObjectName("jsonDocumentSelection")
-            dialog.setWindowTitle(self.t("JSON files in DALE project"))
+            dialog.setWindowTitle(self.t("Scene JSON documents in DALE project"))
             dialog.resize(520, 300)
             layout = QVBoxLayout(dialog)
-            layout.addWidget(QLabel(self.t("Choose wall JSON to use with the current JPG.")))
+            layout.addWidget(QLabel(self.t("Choose a scene JSON for the current scene image.")))
             choices = QListWidget(dialog)
             choices.setToolTip(
-                self.t("Select the original or an updated JSON stored in this project.")
+                self.t("Select an original or updated scene JSON stored in this DALE project.")
             )
             for document in documents:
-                kind = self.t("Original JSON" if document.kind == "original" else "Updated JSON")
+                kind = self.t(
+                    "Original scene JSON" if document.kind == "original" else "Updated scene JSON"
+                )
                 item = QListWidgetItem(f"{document.name} — {kind}", choices)
                 item.setToolTip(f"{document.name}\n{kind}")
             choices.setCurrentRow(0)
@@ -1441,7 +1467,7 @@ class MainWindow(QMainWindow):
             )
             buttons.button(QDialogButtonBox.StandardButton.Ok).setText(self.t("Import"))
             buttons.button(QDialogButtonBox.StandardButton.Ok).setToolTip(
-                self.t("Import the selected JSON for the current JPG.")
+                self.t("Load the selected scene JSON for the current scene image.")
             )
             buttons.button(QDialogButtonBox.StandardButton.Cancel).setToolTip(
                 self.t("Cancel without changing geometry. Escape: cancel.")
@@ -1465,7 +1491,7 @@ class MainWindow(QMainWindow):
                 self.remember_directory("input", path.resolve().parent)
             self.release_json_workspaces(keep_current=True)
         except Exception as exc:
-            self.warning("Cannot import JSON", str(exc))
+            self.warning("Cannot load scene JSON", str(exc))
 
     def release_json_workspaces(self, keep_current=False):
         current = self.view.session.source if keep_current and self.view.session else None
@@ -1497,7 +1523,6 @@ class MainWindow(QMainWindow):
             self._project_tool_values = self.current_tool_values()
             self.origin_x.setValue(0)
             self.origin_y.setValue(0)
-            self.info.setText(f"{source.image_path.name}\n" + "\n".join(source.warnings))
             self.refresh()
             if self.loaded_project and not source.image_path.is_relative_to(
                 Path(self.loaded_project.workspace.name).resolve()
@@ -1505,11 +1530,12 @@ class MainWindow(QMainWindow):
                 self.loaded_project.close()
                 self.loaded_project = None
             self.project_path = None
+            self.update_project_info()
             self.saved_state = self.document_state()
             self.release_json_workspaces(keep_current=True)
             return True
         except Exception as exc:
-            self.warning("Cannot open source pair", str(exc))
+            self.warning("Cannot open scene", str(exc))
             return False
 
     def remember_directory(self, purpose, directory):
@@ -1622,7 +1648,8 @@ class MainWindow(QMainWindow):
                 self.view.selected_path.closeSubpath()
         self.view.selected_path.setFillRule(Qt.FillRule.OddEvenFill)
         if not session:
-            self.map_info.setText(self.t("Map: not loaded\nClosed: 0 | Open: 0"))
+            self.bounds_preview.clear()
+            self.map_info.setText(self.t("Scene image: not loaded\nClosed: 0 | Open: 0"))
             return
         try:
             selected = (
@@ -1635,19 +1662,17 @@ class MainWindow(QMainWindow):
             )
         except ValueError:
             selected = ()
+        result = self.bounds_preview.request(session, selected)
         if not selected:
             detail = self.t("PNG: none")
+        elif result is None:
+            detail = self.t("PNG: calculating exact bounds…")
+        elif result.error:
+            detail = self.t("PNG: bounds unavailable")
         else:
-            bounds = []
-            for polygon in selected:
-                try:
-                    result, _, _ = prepare_overlay(session, polygon)
-                    if result is not None:
-                        bounds.append(result)
-                except ValueError:
-                    pass
+            bounds = result.bounds
             if not bounds:
-                detail = self.t("PNG: none (selection outside the source map)")
+                detail = self.t("PNG: none (selection outside the scene image)")
             elif len(bounds) == 1:
                 x, y, right, bottom = bounds[0]
                 detail = self.t(
@@ -1665,7 +1690,7 @@ class MainWindow(QMainWindow):
                 )
         self.map_info.setText(
             self.t(
-                "Map: {width} × {height} px\n{detail}\nClosed: {closed} | Open: {open}",
+                "Scene image: {width} × {height} px\n{detail}\nClosed: {closed} | Open: {open}",
                 width=session.source.size[0],
                 height=session.source.size[1],
                 closed=(
@@ -1681,9 +1706,9 @@ class MainWindow(QMainWindow):
         )
         self.map_info.setToolTip(
             self.t(
-                "Closed: connected closed regions in current geometry. "
-                "Open: connected groups of unresolved lines. "
-                "PNG bounds include every nonzero bicubic alpha pixel, clipped to the source JPG."
+                "Closed: connected closed regions in current geometry. Open: "
+                "connected groups of unresolved lines. PNG bounds include every "
+                "nonzero bicubic alpha pixel, clipped to the scene image."
             )
         )
         self.view.viewport().update()
@@ -1749,7 +1774,9 @@ class MainWindow(QMainWindow):
             return
         if self.selected_regions == () or (selected_only and self.selected_regions is None):
             self.activate_mode("Select regions")
-            self.information("Select regions", "Select at least one closed region on the map.")
+            self.information(
+                "Select regions", "Select at least one closed region on the scene image."
+            )
             return
         try:
             placement = self.placement()
@@ -1816,6 +1843,7 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
         elif self.can_discard():
+            self.bounds_preview.shutdown()
             self.release_json_workspaces()
             if self.loaded_project:
                 self.loaded_project.close()
@@ -1847,7 +1875,7 @@ def main():
     parser.add_argument("--smoke-report", type=Path, help=argparse.SUPPRESS)
     options = parser.parse_args()
     if bool(options.image) != bool(options.scene):
-        parser.error("Pass both --image and --scene to open a map pair.")
+        parser.error("Pass both --image and --scene to open a scene image and scene JSON.")
     if options.project and options.image:
         parser.error("Open a project or an image pair, not both.")
     app = QApplication([sys.argv[0]])

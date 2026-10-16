@@ -125,7 +125,7 @@ def export_overlays(
         "selected_region": region_index,
         "selected_regions": [i for i, _ in selected],
         "artwork_offset_px": session.contour_offset,
-        "bounds_mode": "all nonzero bicubic alpha, clipped to source JPG",
+        "bounds_mode": "all nonzero bicubic alpha, clipped to scene image",
         "alpha_antialiasing": "2x supersampling, bicubic reduction",
         "region_mode": "faces" if individual_regions else "components",
         "coordinate_units": "source-image pixels",

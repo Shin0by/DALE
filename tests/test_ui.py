@@ -2,13 +2,15 @@
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QTransform, QWheelEvent
+from PySide6.QtGui import QKeySequence, QTransform, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QListWidget, QMessageBox
 from shapely.affinity import rotate
@@ -174,7 +176,7 @@ def test_circle_drag_shrinks_ctrl_wheel_cancels_and_round_trips(app, pair_factor
     vertex = near
     assert any(preview.pixelColor(vertex.x() + dx, vertex.y()).green() > 150 for dx in range(-1, 2))
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=near)
-    assert len(view.session.operations) == 1 and len(view.session.walls) == 4
+    assert len(view.session.operations) == 1 and len(view.session.walls) == 6
     assert view.session.analysis().faces == 1
     original = view.session.geometry()
     project = tmp_path / "circle.dale"
@@ -210,7 +212,7 @@ def test_circle_paint_changes_edges_during_drag_in_both_directions(app, pair_fac
     monkeypatch.setattr("dale.canvas.circle_points", record_points)
     center = view.mapFromScene(250, 250)
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
-    for radius, count in ((50, 4), (100, 6), (150, 8), (100, 6), (50, 4)):
+    for radius, count in ((25, 4), (50, 6), (100, 8), (50, 6), (25, 4)):
         point = view.mapFromScene(250 + radius, 250)
         QTest.mouseMove(view.viewport(), point)
         view.viewport().grab()
@@ -235,13 +237,13 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         ]
 
     assert keys(window.file_menu) == [
-        "Open pair",
+        "Open scene",
         "JSON",
         "Open project",
         "Save project",
         "Save project as…",
         "Export PNGs",
-        "Close map",
+        "Close scene",
         "Exit",
     ]
     assert keys(window.edit_menu) == ["Undo", "Redo", "Clear selection"]
@@ -251,6 +253,13 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
         window.set_language(language, persist=False)
+        save_as = next(
+            a
+            for a in window.file_menu.actions()
+            if a.property("dale_tool_key") == "Save project as…"
+        )
+        native_shortcut = save_as.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+        assert "Ctrl" in native_shortcut and "Shift" in native_shortcut
         seen = []
 
         def close_about(seen=seen):
@@ -332,7 +341,7 @@ def test_json_import_from_dale_shows_all_documents_and_uses_chosen_one(
     save_project(
         Session(
             source,
-            json_documents=(JsonDocument("edit-1", "Updated walls.json", "updated", updated),),
+            json_documents=(JsonDocument("edit-1", "Updated contours.json", "updated", updated),),
         ),
         archive,
     )
@@ -1232,7 +1241,7 @@ def test_export_margin_tooltip_has_one_description_and_keeps_wheel_help(app):
             assert len(lines) == 3  # Name, source-artwork meaning, Ctrl+wheel.
             assert "Ctrl" in lines[-1]
             assert "3 px" not in control.toolTip()
-        assert "JPG" in tile.toolTip()
+        assert ("изображения сцены" if language == "ru" else "scene image") in tile.toolTip()
     window.close()
 
 
@@ -1420,3 +1429,143 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
     window.export_action.setEnabled(True)
     assert "Ctrl+E:" in window.mode_help.text()
     window.close()
+
+
+def test_large_png_bounds_do_not_block_ui_and_only_latest_snapshot_is_applied(
+    app, pair_factory, monkeypatch
+):
+    from dale.bounds_preview import calculate_bounds
+    from dale.overlay_export import export_regions, prepare_overlay
+    from dale.raster import ExportCancelled
+
+    started, release = threading.Event(), threading.Event()
+    calls = []
+
+    def delayed(session, polygons, cancelled=None):
+        started.set()
+        while not release.wait(0.005):
+            if cancelled and cancelled():
+                raise ExportCancelled()
+        calls.append(session.contour_offset)
+        return calculate_bounds(session, polygons, cancelled)
+
+    monkeypatch.setattr("dale.bounds_preview.calculate_bounds", delayed)
+    source = pair_factory(
+        size=(1600, 1600),
+        walls=[
+            {"c": [*a, *b]}
+            for a, b in [
+                ((100, 100), (1400, 100)),
+                ((1400, 100), (1400, 1400)),
+                ((1400, 1400), (100, 1400)),
+                ((100, 1400), (100, 100)),
+            ]
+        ],
+    )
+    w = MainWindow()
+    w.show()
+    w.load_sources(source.image_path, source.json_path)
+    assert started.wait(2)
+    assert "расчёт" in w.map_info.text()
+    ticks = []
+    QTimer.singleShot(0, lambda: ticks.append(True))
+    QTest.qWait(15)
+    assert ticks  # The UI loop runs while exact native alpha is deliberately held.
+    w.contour_offset.setValue(10)
+    w.contour_offset.setValue(20)
+    w.activate_mode("New circle")
+    QTest.mousePress(
+        w.view.viewport(), Qt.MouseButton.LeftButton, pos=w.view.mapFromScene(800, 800)
+    )
+    release.set()
+    deadline = time.monotonic() + 4
+    while w.bounds_preview.worker is not None and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert w.bounds_preview.worker is None
+    assert w.view.active_gesture and "расчёт" in w.map_info.text()
+    QTest.keyClick(w.view, Qt.Key.Key_Escape)
+    while "расчёт" in w.map_info.text() and time.monotonic() < deadline:
+        QTest.qWait(10)
+    assert "расчёт" not in w.map_info.text() and "PNG:" in w.map_info.text()
+    assert calls[-1] == 20 and 10 not in calls
+    polygon = export_regions(w.view.session)[0]
+    expected = prepare_overlay(w.view.session, polygon)[0]
+    assert f"{expected[2] - expected[0]} × {expected[3] - expected[1]}" in w.map_info.text()
+    w.saved_state = w.document_state()
+    w.close()
+
+
+def test_contour_edits_reuse_raster_but_raster_undo_redraws_it(app, pair_factory, monkeypatch):
+    from dale.editing import add_line
+    from dale.raster import render_preview
+
+    view = MapView()
+    source = pair_factory()
+    view.assign(Session(source), load_preview(source))
+    calls = []
+
+    def rendered(*args):
+        calls.append(True)
+        return render_preview(*args)
+
+    monkeypatch.setattr("dale.canvas.render_preview", rendered)
+    view.session.add(add_line(view.session.geometry(), (5, 5), (20, 5)))
+    view.refresh()
+    assert not calls
+    view.session.add(Stroke(((30, 100),), 10))
+    view.refresh()
+    assert len(calls) == 1
+    view.session.undo()
+    view.refresh()
+    assert len(calls) == 2
+    view.close()
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_factory, language):
+    import re
+
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QAbstractButton, QComboBox, QGroupBox, QLabel
+
+    w = MainWindow()
+    source = pair_factory(padding=0.25)
+    w.load_sources(source.image_path, source.json_path)
+    w.set_language(language, persist=False)
+    for mode in w.mode_actions:
+        w.activate_mode(mode, prompt=False)
+        texts = []
+        for c in [
+            w,
+            *w.findChildren(QLabel),
+            *w.findChildren(QAbstractButton),
+            *w.findChildren(QAction),
+            *w.findChildren(QComboBox),
+            *w.findChildren(QGroupBox),
+        ]:
+            texts.append(c.toolTip())
+            if hasattr(c, "text"):
+                texts.append(c.text())
+            if hasattr(c, "title"):
+                texts.append(c.title())
+            if isinstance(c, QComboBox):
+                texts.extend(c.itemText(i) for i in range(c.count()))
+        unexpected = [
+            text
+            for text in texts
+            if re.search(
+                r"стен|\bwall(?:s)?\b|(?<!\.)\bJPG\b|(?<!\.)\bJPEG\b|другой JSON|another.*JSON",
+                text,
+                re.I,
+            )
+        ]
+        assert not unexpected, (mode, unexpected)
+    command = next(a for a in w.findChildren(QAction) if a.property("dale_tool_key") == "JSON")
+    assert (
+        "Загрузить JSON сцены" if language == "ru" else "Load a scene JSON"
+    ) in command.toolTip()
+    assert ("Показывать контуры" if language == "ru" else "Show contours") == w.walls_action.text()
+    assert (
+        "Проверьте совмещение" if language == "ru" else "Verify contour alignment"
+    ) in w.info.text()
+    w.close()

@@ -160,3 +160,7 @@ The UUID layout is `Scene.<scene-id>.Region.<region-id>`. Source IDs must be rem
 Missing coverage includes secret open/locked doors, actual animation textures/types and sounds, vertical/diagonal walls, rotated shapes, dedicated circles, hole/refill ordering, disabled behaviors, cross-scene or missing teleport destinations, v14 multi-destination teleports, populated tiles/lights/sounds, native floor membership, visibility/occlusion and player-side transitions. Foundry permits combinations beyond this probe; a missing example is not a prohibited configuration.
 
 Convenience API interfaces can lag runtime schemas: the v13 RegionData interface describes elevation differently from this exported object and BaseRegion's SchemaField. Prefer actual target exports plus `defineSchema()` and runtime validation; do not generate from an interface summary alone. Original source preservation and Foundry 13/14 support do not introduce support for older `.dale` archives.
+
+## Additional Tile probe
+
+A second export of this scene adds one Tile while preserving the original native `walls`, Regions, Token and Drawings. The inventory above describes the first file. See [Tile analysis](foundry-tile-format.md) and the machine profile tile_probe for the revised file, screenshot mapping and future PNG floor-artwork design.

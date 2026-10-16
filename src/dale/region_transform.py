@@ -63,11 +63,11 @@ def plan_region_transform(
 ):
     """Detach unselected branches, or include all lines reachable within tolerance.
 
-    Shared walls are retained for stationary neighboring cells when related
+    Shared contours are retained for stationary neighboring cells when related
     geometry is excluded. History stores the exact original graph for undo.
     """
     if not selected:
-        raise ValueError("Select at least one closed region on the map.")
+        raise ValueError("Select at least one closed region on the scene image.")
     if not math.isfinite(tolerance) or tolerance < 0:
         raise ValueError("Related-line distance must be finite and nonnegative.")
     selected = tuple(selected)

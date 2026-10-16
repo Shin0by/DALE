@@ -22,17 +22,18 @@ from dale.session import Closure, GeometryEdit, Session
     "diameter,count",
     [
         (0.1, 4),
-        (1, 4),
-        (1.01, 6),
-        (2, 6),
-        (2.01, 8),
-        (3, 8),
-        (5, 8),
-        (5.01, 10),
-        (10, 12),
-        (15, 16),
-        (20, 20),
-        (100, 84),
+        (0.5, 4),
+        (0.51, 6),
+        (1, 6),
+        (1.01, 8),
+        (2, 8),
+        (2.01, 10),
+        (4.5, 10),
+        (5, 12),
+        (10, 16),
+        (15, 20),
+        (20, 24),
+        (100, 88),
     ],
 )
 def test_circular_contour_vertex_density_uses_map_cells(diameter, count):
@@ -54,7 +55,7 @@ def test_circular_contour_rejects_invalid_dimensions(radius, cell):
 
 
 def test_circle_contact_keeps_source_parents_and_is_one_undoable_geometry(pair_factory):
-    source = pair_factory(size=(400, 400), walls=[{"c": [0, 0, 200, 0]}], grid={"size": 100})
+    source = pair_factory(size=(400, 400), walls=[{"c": [0, 0, 200, 0]}], grid={"size": 200})
     before = source.json_path.read_bytes()
     session = Session(source)
     original = session.geometry()
@@ -64,7 +65,7 @@ def test_circle_contact_keeps_source_parents_and_is_one_undoable_geometry(pair_f
     contacting = [record for record in circle.lineage[2:] if record.sources]
     assert len(contacting) == 2
     assert all(record.sources == original.lineage[0].sources for record in contacting)
-    assert add_circle(circle, (100, 50), 50, 100) == circle
+    assert add_circle(circle, (100, 50), 50, 200) == circle
     session.add(circle)
     assert session.analysis().faces == 1
     session.undo()
@@ -85,7 +86,7 @@ def test_circle_uses_imported_grid_or_explicit_pixel_fallback(pair_factory, grid
 def test_circle_density_scales_with_source_grid_and_has_a_safe_vertex_cap(pair_factory):
     source = pair_factory(size=(200, 200), width=400, height=400, grid={"size": 100})
     assert source.cell_pixels == 50
-    assert len(circle_points((100, 100), 25, source.cell_pixels)) == 5
+    assert len(circle_points((100, 100), 12.5, source.cell_pixels)) == 5
     assert len(circle_points((0, 0), 16000, 1)) == 4097
     assert len(circle_points((0, 0), 16000, 1e-300)) == 4097
 

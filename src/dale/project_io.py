@@ -106,7 +106,7 @@ def _read_json_documents(archive, manifest):
 
 
 def read_json_documents(path: Path):
-    """Read the declared JSON catalog without extracting or decoding the source JPG."""
+    """Read the declared JSON catalog without extracting or decoding the scene image."""
     with zipfile.ZipFile(path) as archive:
         return _read_json_documents(archive, _archive_manifest(archive))
 
@@ -188,7 +188,7 @@ def _decode(value):
         walls = tuple(_points(edge) for edge in value["walls"])
         closures = tuple(_points(path) for path in value["closures"])
         if any(len(edge) != 2 for edge in walls) or any(len(path) < 2 for path in closures):
-            raise ValueError("Invalid project wall or closure geometry.")
+            raise ValueError("Invalid project contour or closure geometry.")
         lineage, ancestry = value.get("lineage"), value.get("ancestry")
         if any(
             not isinstance(records, list) or len(records) > 2_000_000
@@ -317,7 +317,9 @@ def _load_ui(value):
     vertex_diameter = number(value.get("vertex_eraser_diameter", 24), "Vertex eraser diameter")
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
     auto_distance = number(value.get("auto_close_distance_px", 14), "Auto-close distance")
-    global_distance = number(value.get("global_close_distance_px", 14), "Whole-map close distance")
+    global_distance = number(
+        value.get("global_close_distance_px", 14), "Whole-scene close distance"
+    )
     zoom = number(value.get("zoom", 1), "Viewport zoom")
     if mode not in (
         "Pan",

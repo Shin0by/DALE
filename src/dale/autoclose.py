@@ -33,7 +33,7 @@ class AutoCloseIndex:
     Only dangling endpoints initiate repairs. Extend paired outward rays to their
     intersection, then extend remaining tips to existing segment interiors.
     Apply by lengthening existing segments
-    along their vectors, including when meeting the middle of a wall.
+    along their vectors, including when meeting the middle of a contour.
     """
 
     def __init__(self, geometry: GeometryEdit, tolerance: float):

@@ -850,5 +850,93 @@
     "level_v14": "https://foundryvtt.com/api/v14/classes/foundry.documents.BaseLevel.html",
     "wall_height_bounds": "https://github.com/theripper93/wall-height/blob/main/scripts/utils.js",
     "scene_dimensions": "https://foundryvtt.com/api/v13/classes/foundry.documents.Scene.html#getDimensions"
+  },
+  "tile_probe": {
+    "source": {
+      "local_path": "examples/fvtt-Scene-test-2WsAkxPbpDPmK2o4 (1).json",
+      "bytes": 21593,
+      "sha256": "f225fcaf1f9aae25226c23ff48e558d3eeec9dac5fd7b7d09a0cd91122ab0738",
+      "core_version": "13.351",
+      "system_id": "dnd5e",
+      "system_version": "5.3.3",
+      "private_ids_and_asset_path_omitted": true
+    },
+    "changed_root_keys": [
+      "tiles",
+      "_stats"
+    ],
+    "unchanged_collections": [
+      "walls",
+      "regions",
+      "tokens",
+      "drawings"
+    ],
+    "tile_alias": "T0 = /tiles/0 in this additional probe",
+    "observed_tile": {
+      "x": 3200,
+      "y": 1300,
+      "width": 900,
+      "height": 500,
+      "rotation": 10,
+      "elevation": 20,
+      "sort": 5,
+      "texture": {
+        "src": "assets/.../image.png",
+        "scaleX": 1,
+        "scaleY": 1,
+        "tint": "#ffffff",
+        "anchorX": 0.5,
+        "anchorY": 0.5,
+        "offsetX": 0,
+        "offsetY": 0,
+        "fit": "fill",
+        "rotation": 0,
+        "alphaThreshold": 0.75
+      },
+      "alpha": 1,
+      "occlusion": {
+        "mode": 0,
+        "alpha": 0
+      },
+      "restrictions": {
+        "light": true,
+        "weather": true
+      },
+      "_id": "omitted",
+      "hidden": false,
+      "locked": true,
+      "video": {
+        "loop": true,
+        "autoplay": true,
+        "volume": 0
+      },
+      "flags": {}
+    },
+    "screenshot_tabs": [
+      "Position",
+      "Appearance",
+      "Overhead"
+    ],
+    "lock_confirmed_by_owner": true,
+    "v13_occlusion_codes": {
+      "NONE": 0,
+      "FADE": 1,
+      "RADIAL": 3,
+      "VISION": 4
+    },
+    "v14_occlusion_codes": {
+      "NONE": 0,
+      "FADE": 1,
+      "SURFACE": 2,
+      "RADIAL": 4,
+      "VISION": 8
+    },
+    "v14_schema_additions": [
+      "name",
+      "levels"
+    ],
+    "future_png_carrier": "Tile texture.src references region PNG; scene-aware crop position/size, explicit elevation and v14 Level membership",
+    "live_runtime_verified": false,
+    "details": "docs/foundry-tile-format.md"
   }
 }

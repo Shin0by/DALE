@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dale import __version__
+from dale import __version__, application_title
 from dale.canvas import MapView, line_path
 from dale.geometry import open_contour_count
 from dale.localization import (
@@ -50,12 +50,18 @@ from dale.localization import (
 )
 from dale.overlay_export import crop_bounds, export_overlays, export_regions
 from dale.placement import Placement
-from dale.preferences import load_language, save_language, settings_path
+from dale.preferences import (
+    load_foundry_major,
+    load_language,
+    save_foundry_major,
+    save_language,
+    settings_path,
+)
 from dale.project_io import load_project, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
 from dale.session import Session
-from dale.toolbar import apply_theme, make_toolbar, tool_icon
+from dale.toolbar import NumericToolTile, ToolSpinBox, apply_theme, make_toolbar, tool_icon
 
 
 class ExportWorker(QThread):
@@ -99,8 +105,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.preferences_path = preferences_path or settings_path()
         self.language = load_language(self.preferences_path)
-        self.setWindowTitle(f"DALE {__version__} — " + self.t("Floor overlay editor"))
+        self.setWindowTitle(application_title())
         self.resize(1280, 860)
+        self.setMinimumSize(1024, 768)
         self.worker = None
         self.progress = None
         self.export_outcome = None
@@ -123,6 +130,7 @@ class MainWindow(QMainWindow):
         self.diagnostics.setWordWrap(True)
         self.version = QComboBox()
         self.version.addItems(["Foundry 14", "Foundry 13"])
+        self.version.setCurrentIndex(0 if load_foundry_major(self.preferences_path) == 14 else 1)
         self.elevation = QComboBox()
         self.elevation.setEditable(True)
         self.elevation.addItems([str(i) for i in range(-20, 105, 5)])
@@ -135,6 +143,7 @@ class MainWindow(QMainWindow):
         self.placement_hint = QLabel()
         self.placement_hint.setWordWrap(True)
         self.version.currentTextChanged.connect(self.update_placement_hint)
+        self.version.currentIndexChanged.connect(self.remember_foundry_version)
         self.elevation.currentTextChanged.connect(self.update_placement_hint)
         self.origin_x, self.origin_y = QDoubleSpinBox(), QDoubleSpinBox()
         for control in (self.origin_x, self.origin_y):
@@ -195,7 +204,10 @@ class MainWindow(QMainWindow):
         sidebar.addWidget(alignment)
         sidebar.addWidget(self.placement_hint)
         sidebar.addWidget(
-            QLabel("Cyan: closed regions\nRed: open contours\nAll geometry lines: 2 screen pixels")
+            QLabel(
+                "Cyan: closed regions\nRed: open contours (RGB 255, 0, 0)\n"
+                "Lines: 3 px with black edges"
+            )
         )
         sidebar.addWidget(self.diagnostics)
         help_text = QLabel(
@@ -204,7 +216,7 @@ class MainWindow(QMainWindow):
             "New line: press, drag, release\nEdit points: click line, drag circle\n"
             "Double-click circle: delete\nGeometry erasers: drag the circle\n"
             "Escape: cancel current gesture\n\n"
-            "Snap distance uses screen pixels.\nVertices take priority over lines.\n\n"
+            "Snapping (px): distance to existing geometry.\nVertices take priority over lines.\n\n"
             "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
         )
         help_text.setWordWrap(True)
@@ -217,12 +229,18 @@ class MainWindow(QMainWindow):
         sidebar_scroll.setWidget(panel)
         sidebar_scroll.setFixedWidth(360)
         layout = QHBoxLayout()
+        left_panel = QWidget()
+        left_panel.setFixedWidth(64)
+        self.tool_column = QVBoxLayout(left_panel)
+        self.tool_column.setContentsMargins(0, 0, 0, 0)
+        self.tool_column.setSpacing(4)
         self.tool_stack = QStackedWidget()
-        self.tool_stack.setFixedWidth(56)
+        self.tool_stack.setFixedWidth(64)
         self.tool_stack.setStyleSheet(
             "QStackedWidget { background: #303030; border: 1px solid #494949; }"
         )
-        layout.addWidget(self.tool_stack)
+        self.tool_column.addWidget(self.tool_stack)
+        layout.addWidget(left_panel)
         layout.addWidget(self.view, 1)
         layout.addWidget(sidebar_scroll)
         root = QWidget()
@@ -230,9 +248,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.footer_label = QLabel()
         self.footer_label.setMinimumWidth(100)
-        self.footer_label.setMinimumHeight(44)
-        self.footer_label.setMargin(3)
-        self.statusBar().setMinimumHeight(50)
+        self.footer_label.setMinimumHeight(24)
+        self.footer_label.setMargin(2)
+        self.statusBar().setMinimumHeight(28)
         self.statusBar().addPermanentWidget(self.footer_label, 1)
         self.region_control = QComboBox()
         self.region_control.setMinimumWidth(120)
@@ -241,30 +259,24 @@ class MainWindow(QMainWindow):
         )
         self.region_control.currentIndexChanged.connect(self.select_region)
         self.statusBar().addPermanentWidget(self.region_control)
-        language_label = QLabel("Language")
-        language_label.setToolTip(self.language_control.toolTip())
-        self.statusBar().addPermanentWidget(language_label)
         self.statusBar().addPermanentWidget(self.language_control)
         general = make_toolbar(self, "General")
         categories = make_toolbar(self, "Tool sets", new_row=True)
-        options = make_toolbar(self, "Tool size")
-        snapping = make_toolbar(self, "Snapping")
         geometry = make_toolbar(self, "Lines and vertices", vertical=True)
         pixels = make_toolbar(self, "Pixels", vertical=True)
-        self.toolbars = (general, categories, options, snapping, geometry, pixels)
+        self.toolbars = (general, categories, geometry, pixels)
         for bar in (geometry, pixels):
             container = QWidget()
             column = QVBoxLayout(container)
             column.setContentsMargins(0, 0, 0, 0)
             column.addWidget(bar)
-            column.addStretch()
             self.tool_stack.addWidget(container)
 
-        def action(bar, title, handler, shortcut=None, compact=False):
+        def action(bar, title, handler, shortcut=None):
             item = QAction(title, self)
             if bar.orientation() == Qt.Orientation.Vertical:
                 item.setIcon(tool_icon(title))
-            if bar == general:
+            if bar in (general, categories):
                 item.setProperty(
                     "dale_display_key",
                     {
@@ -283,7 +295,7 @@ class MainWindow(QMainWindow):
                 item.setShortcut(shortcut)
             bar.addAction(item)
             if bar.orientation() == Qt.Orientation.Vertical:
-                bar.widgetForAction(item).setFixedSize(40, 40)
+                bar.widgetForAction(item).setFixedSize(48, 48)
             return item
 
         tool_sets = QActionGroup(self)
@@ -297,6 +309,7 @@ class MainWindow(QMainWindow):
             tool_sets.addAction(item)
             self.tool_set_actions[key] = item
         self.tool_set_actions["geometry"].setChecked(True)
+        categories.addSeparator()
 
         action(general, "Open pair", self.open_pair, "Ctrl+I")
         action(general, "Open project", self.open_project, QKeySequence.StandardKey.Open)
@@ -306,22 +319,21 @@ class MainWindow(QMainWindow):
             "Save project as…",
             lambda: self.save_project_file(save_as=True),
             QKeySequence.StandardKey.SaveAs,
-            compact=True,
         )
         self.menuBar().setToolTip("Project file menu.")
         file_menu = self.menuBar().addMenu("File")
         file_menu.setToolTipsVisible(True)
         file_menu.addAction(save_as)
-        action(general, "Close map", self.close_document, compact=True)
+        action(general, "Close map", self.close_document)
         self.export_action = action(general, "Export PNGs", self.export, "Ctrl+E")
         general.addSeparator()
-        action(general, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo, True)
-        action(general, "Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo, True)
+        action(general, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo)
+        action(general, "Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo)
         modes = QActionGroup(self)
         modes.setExclusive(True)
         self.mode_actions = {}
         for bar, names in (
-            (general, ("Pan",)),
+            (categories, ("Pan",)),
             (geometry, ("Edit points", "New line", "Closure", "Erase lines", "Erase vertices")),
             (pixels, ("Erase", "Restore")),
         ):
@@ -331,11 +343,11 @@ class MainWindow(QMainWindow):
                 item.setChecked(mode == "Pan")
                 modes.addAction(item)
                 self.mode_actions[mode] = item
-        action(general, "Fit", self.view.fit_map, "F", compact=True)
-        self.walls_action = action(general, "Show walls", self.toggle_walls, compact=True)
+        action(categories, "Fit", self.view.fit_map, "F")
+        self.walls_action = action(categories, "Show walls", self.toggle_walls)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
-        self.geometry_brush_control = QSpinBox()
+        self.geometry_brush_control = ToolSpinBox()
         self.geometry_brush_control.setRange(1, 512)
         self.geometry_brush_control.setValue(self.view.geometry_diameter)
         self.geometry_brush_control.setToolTip(
@@ -345,31 +357,30 @@ class MainWindow(QMainWindow):
         pixels.addSeparator()
         action(pixels, "Remove outside", lambda: self.mask("outside"))
         action(pixels, "Remove inside", lambda: self.mask("inside"))
-        brush = self.brush_control = QSpinBox()
+        brush = self.brush_control = ToolSpinBox()
         brush.setRange(1, 4096)
         brush.setValue(40)
         brush.valueChanged.connect(self.set_brush)
         self.size_stack = QStackedWidget()
-        self.size_stack.setFixedWidth(82)
         self.size_stack.addWidget(self.geometry_brush_control)
         self.size_stack.addWidget(brush)
-        options.addWidget(self.size_stack)
-        self.size_unit = QLabel()
-        options.addWidget(self.size_unit)
-        self.snap_action = action(snapping, "Snap", self.set_snapping)
+        self.size_tile = NumericToolTile(self.size_stack, "Brush diameter")
+        self.tool_column.addWidget(self.size_tile, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.snap_action = QAction(tool_icon("Snapping (px)"), "Snapping (px)", self)
+        self.snap_action.triggered.connect(self.set_snapping)
         self.snap_action.setCheckable(True)
         self.snap_action.setChecked(True)
-        distance_label = QLabel("Distance (screen px)")
-        snapping.addWidget(distance_label)
-        self.snap_distance = QSpinBox()
+        self.snap_distance = ToolSpinBox()
         self.snap_distance.setRange(0, 256)
         self.snap_distance.setValue(14)
-        self.snap_distance.setToolTip(
-            "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors."
-        )
         self.snap_distance.valueChanged.connect(self.set_snap_distance)
-        distance_label.setToolTip(self.snap_distance.toolTip())
-        snapping.addWidget(self.snap_distance)
+        self.snap_tile = NumericToolTile(self.snap_distance, "Snapping (px)", self.snap_action)
+        self.tool_column.addWidget(self.snap_tile, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.tool_column.addStretch()
+        for bar in (geometry, pixels):
+            bar.ensurePolished()
+            bar.setFixedHeight(bar.sizeHint().height())
+        self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.view.size_changed.connect(self.sync_tool_sizes)
         QApplication.instance().installEventFilter(self)
         tips = {
@@ -397,7 +408,9 @@ class MainWindow(QMainWindow):
                 "Erase vertices inside the circle using the selected junction deletion policy."
             ),
             "Close map": "Close the current map after offering to save its project.",
-            "Snap": "Enable snapping for new lines and moved vertices; vertices take priority.",
+            "Snapping (px)": (
+                "Enable snapping for new lines and moved vertices; vertices take priority."
+            ),
             "Lines and vertices": "Show the single-column line and vertex tools beside the map.",
             "Pixels": "Show the single-column pixel editing tools beside the map.",
             "Edit points": (
@@ -425,7 +438,7 @@ class MainWindow(QMainWindow):
             if display_key:
                 item.setText(display_key)
         self.version.setToolTip(
-            "Select the target Foundry generation for placement guidance and metadata."
+            "Select the target Foundry generation. The choice is saved between launches."
         )
         for control in (self.origin_x, self.origin_y):
             control.setToolTip(
@@ -475,10 +488,15 @@ class MainWindow(QMainWindow):
                 self.placement_hint,
                 self.footer_label,
                 self.region_control,
-                self.size_unit,
             ),
         )
-        self.update_size_unit()
+        self.update_size_help()
+        self.snap_tile.set_help(
+            "Snapping (px)",
+            "Distance to existing vertices or lines. Vertices take priority. "
+            "Click the magnet to toggle snapping.",
+            self.language,
+        )
         self.region_control.setToolTip(
             self.t("Choose all closed regions or one region to highlight and export.")
         )
@@ -486,8 +504,6 @@ class MainWindow(QMainWindow):
             self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.update_placement_hint()
         self.refresh()
-        if not self.project_path:
-            self.setWindowTitle(f"DALE {__version__} — " + self.t("Floor overlay editor"))
         self.statusBar().clearMessage()
         if persist:
             try:
@@ -535,6 +551,16 @@ class MainWindow(QMainWindow):
             + self.t("Placement in Foundry is configured separately. PNG edge guard: 3 px.")
         )
 
+    def remember_foundry_version(self):
+        try:
+            save_foundry_major(
+                self.preferences_path, 14 if self.version.currentIndex() == 0 else 13
+            )
+        except OSError:
+            self.statusBar().showMessage(
+                self.t("Foundry version changed; preferences could not be written."), 7000
+            )
+
     def set_brush(self, value):
         self.view.diameter = value
         self.view.viewport().update()
@@ -542,19 +568,28 @@ class MainWindow(QMainWindow):
     def select_tool_set(self, key, activate=True):
         self.current_tool_set = key
         self.tool_stack.setCurrentIndex(0 if key == "geometry" else 1)
+        self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.size_stack.setCurrentIndex(0 if key == "geometry" else 1)
-        self.update_size_unit()
+        self.update_size_help()
         self.tool_set_actions[key].setChecked(True)
         if activate:
             self.activate_mode(self.last_tool_modes[key])
 
-    def update_size_unit(self):
-        self.size_unit.setText(
-            self.t("Screen px" if self.current_tool_set == "geometry" else "Source px")
-        )
-        self.size_unit.setToolTip(
-            self.t("Geometry size uses screen pixels; pixel brush size uses original image pixels.")
-        )
+    def update_size_help(self):
+        if self.current_tool_set == "geometry":
+            title = "Geometry eraser diameter (px)"
+            description = (
+                "Diameter for line and vertex erasers. Ctrl+wheel changes it, "
+                "independent of map zoom."
+            )
+        else:
+            title = (
+                "Restore brush diameter (px)"
+                if self.last_tool_modes["pixels"] == "Restore"
+                else "Pixel eraser diameter (px)"
+            )
+            description = "Diameter in original image pixels. Ctrl+wheel changes it."
+        self.size_tile.set_help(title, description, self.language)
 
     def activate_mode(self, mode):
         if mode != "Pan":
@@ -605,6 +640,9 @@ class MainWindow(QMainWindow):
                     self.contour_offset,
                 )
                 while control is not None and control not in sizeable:
+                    if isinstance(control, NumericToolTile):
+                        control = control.editor()
+                        break
                     control = control.parentWidget()
                 if control in sizeable:
                     control.stepBy(round(steps) or (1 if steps > 0 else -1))
@@ -625,7 +663,6 @@ class MainWindow(QMainWindow):
         self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.diagnostics.clear()
         self.update_footer()
-        self.setWindowTitle(f"DALE {__version__} — " + self.t("Floor overlay editor"))
 
     def toggle_walls(self, value):
         self.view.show_walls = value
@@ -721,7 +758,6 @@ class MainWindow(QMainWindow):
             save_project(self.view.session, path, self.ui_state())
             self.project_path = path
             self.saved_state = self.document_state()
-            self.setWindowTitle(f"{path.name} — DALE {__version__}")
             self.statusBar().showMessage(self.t("Saved complete project: {path}", path=path), 10000)
             return True
         except Exception as exc:
@@ -785,7 +821,6 @@ class MainWindow(QMainWindow):
             self.info.setText(
                 f"{path.name}\n{session.source.size[0]:,} × {session.source.size[1]:,} px"
             )
-            self.setWindowTitle(f"{path.name} — DALE {__version__}")
             self.refresh()
             return True
         except Exception as exc:
@@ -841,7 +876,6 @@ class MainWindow(QMainWindow):
                 self.loaded_project = None
             self.project_path = None
             self.saved_state = self.document_state()
-            self.setWindowTitle(f"DALE {__version__} — " + self.t("Floor overlay editor"))
         except Exception as exc:
             self.warning("Cannot open source pair", str(exc))
 
@@ -899,7 +933,7 @@ class MainWindow(QMainWindow):
             self.footer_label.setText(self.t("Map: not loaded | Closed: 0 | Open: 0"))
             return
         if not regions:
-            detail = self.t("Export: no closed region")
+            detail = self.t("PNG: none")
         else:
             selected = (
                 (regions[self.selected_region],) if self.selected_region is not None else regions
@@ -908,23 +942,21 @@ class MainWindow(QMainWindow):
             if len(bounds) == 1:
                 x, y, right, bottom = bounds[0]
                 detail = self.t(
-                    "Export (+3 px): {width} × {height} px | X: {x}, Y: {y}",
+                    "PNG: {width} × {height} (+3 px)",
                     width=right - x,
                     height=bottom - y,
-                    x=x,
-                    y=y,
                 )
             else:
                 largest = max(bounds, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
                 detail = self.t(
-                    "Export: {count} PNGs | Largest crop (+3 px): {width} × {height} px",
+                    "PNG: {count} · max {width} × {height} (+3 px)",
                     count=len(bounds),
                     width=largest[2] - largest[0],
                     height=largest[3] - largest[1],
                 )
         self.footer_label.setText(
             self.t(
-                "Map: {width} × {height} px | Closed: {closed} | Open: {open}\n{detail}",
+                "Map: {width} × {height} | {detail} | Closed: {closed} | Open: {open}",
                 width=session.source.size[0],
                 height=session.source.size[1],
                 closed=(
@@ -1116,8 +1148,12 @@ def main():
         def smoke_report():
             report = {
                 "version": __version__,
+                "window_title": window.windowTitle(),
                 "language": window.language,
+                "foundry_major": window.placement().foundry_major,
                 "window_visible": window.isVisible(),
+                "minimum_window": [window.minimumWidth(), window.minimumHeight()],
+                "footer": window.footer_label.text(),
                 "project_loaded": bool(window.project_path),
                 "dimensions": window.view.session.source.size if window.view.session else None,
                 "operations": len(window.view.session.operations) if window.view.session else 0,

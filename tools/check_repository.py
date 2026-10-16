@@ -2,6 +2,7 @@
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,4 +25,16 @@ if len(ids) != len(set(ids)) or not ids:
     raise SystemExit("Requirement IDs must exist and be unique.")
 if state["communication_language"] != "ru" or state["technical_language"] != "en":
     raise SystemExit("Language agreement changed unexpectedly.")
+version = re.search(
+    r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
+    (ROOT / "src/dale/__init__.py").read_text(encoding="utf-8"),
+    re.MULTILINE,
+)
+metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+if (
+    not version
+    or version[1] != metadata["project"]["version"]
+    or version[1] != state["current_version"]
+):
+    raise SystemExit("Package, project metadata, and state versions must agree.")
 print(f"Repository index valid: {len(paths)} paths, {len(ids)} requirement IDs.")

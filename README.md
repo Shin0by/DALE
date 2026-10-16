@@ -4,15 +4,17 @@ DALE is a local desktop editor that turns Dungeon Alchemist JPG + JSON exports i
 
 DALE — локальный редактор, который превращает экспорт Dungeon Alchemist (JPG + JSON) в прозрачные PNG для многоэтажных карт Foundry VTT. Полная карта остаётся на уровне земли, а верхние этажи очищаются по контурам стен и кистью. Разработкой можно управлять через чат; техническая документация ведётся на английском.
 
+The application title is **Dungeon Alchemist Levels Export (v.x.xx.xxx)**. Each Windows build automatically advances only the revision; major and minor versions change only on the owner's explicit instruction.
+
 ## Development status
 
 Working prototype. Six real Dungeon Alchemist pairs have been inspected and opened, and one 13,500 × 16,200 source image has passed the PNG pipeline check. Verification in the owner's Foundry installation is pending. The workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented. See [the observed export profile](docs/sample-formats.md) for sample findings and current limitations.
 
-Implemented: two text-only top rows and a contextual icon-only tool column left of the map, a Photoshop-inspired dark-gray theme, and localized hover help for every control. Editing includes cyan closed/red open contours at 2 screen pixels, draggable vertices, new lines, vertex-first snapping, geometry and pixel erasers, Ctrl+wheel sizing, gap joining with T junctions, signed offsets, masking, undo/redo, and right-drag pan. Save complete `.dale` projects and export selected or all separate PNGs with 3-pixel guards. The footer shows dimensions, closed/open counts, region selection, and language. Foundry 13/14 and integer-foot height retain placement intent; configure placement separately in Foundry.
+Implemented: unframed text commands in the first top row; tool-set selection, Hand, Fit, and Walls in the second. A single icon-only tool column left of the map includes double-height diameter and Snapping (px) tiles with centered numbers and visible minus/plus controls. The Photoshop-inspired dark-gray UI has localized help for every control, a single-row footer, and a 1024 x 768 minimum window. Editing includes cyan closed/pure-red open contours with 3-pixel black-edged strokes, draggable vertices, new lines, vertex-first snapping, geometry and pixel erasers, Ctrl+wheel sizing, gap joining with T junctions, signed offsets, masking, undo/redo, and right-drag pan. Save complete `.dale` projects and export selected or all separate PNGs with 3-pixel guards. The footer shows dimensions, closed/open counts, region selection, and language. Foundry 13/14 selection is remembered between launches; integer-foot height retains placement intent. Configure placement separately in Foundry.
 
 ## Run on Windows
 
-Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains the language choice. English and Russian can be switched in the footer; hover over controls for help.
+Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains language and selected Foundry version. English and Russian can be switched in the footer; hover over controls for help.
 
 The generated portable folder is ignored by Git. Repository updates must rebuild it using the command below. Build provenance is recorded in `DALE/build-info.json`; refresh preserves `UserData` and user projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
 
@@ -35,6 +37,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1
 ```
 
 Packaging uses PyInstaller's directory bundle, including the Python runtime and native libraries. An optional `-Mode onefile` build is a separate artifact; the maintained user delivery is `DALE/`. `tools/run_development.cmd` is a development convenience only.
+
+`tools/build_windows.ps1` first runs `tools/bump_revision.py`, synchronizing the new revision in the package, `pyproject.toml`, and project state before packaging. Keep these generated version updates in the source commit. Version display pads minor to two digits and revision to three; revision never automatically rolls over major/minor.
 
 Generate an optional synthetic demonstration (not a Dungeon Alchemist export):
 

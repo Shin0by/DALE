@@ -2,7 +2,7 @@
 
 | Canonical term | Aliases | Meaning in DALE |
 | --- | --- | --- |
-| DALE | project, editor | Working project name; a local image preparation application. |
+| DALE | Dungeon Alchemist Levels Export, project, editor | Local image preparation application. Full name appears in the window title; the portable executable remains `DALE.exe`. |
 | Foundry VTT | Foundry, Фаундри | Foundry Virtual Tabletop, the target tabletop application. It hosts game scenes, maps, tokens, walls, visibility, lighting, and tabletop game systems. |
 | Dungeon Alchemist | Alchemist, Алхимист | The map creation application that provides the source image and Foundry scene JSON. |
 | Dungeons & Dragons | D&D, DND, ДНД | The tabletop role-playing game in the owner's use case. DALE image operations do not depend on a specific game system. |
@@ -16,7 +16,7 @@
 | Remove inside | keep exterior | Make pixels inside the union of closed faces transparent. |
 | Eraser | transparency brush | Circular brush that writes zero alpha without altering original RGB data. |
 | Restore brush | restore | Restores source opacity in painted areas, including areas removed by a contour mask. |
-| Snap | привязка | Project a cursor position onto the nearest original segment within a screen-space tolerance. |
+| Snapping | Snap, прилипание | Project a cursor position onto existing working geometry within a screen-space distance, preferring vertices over segment interiors. The left tile is labeled "Snapping (px)" / "Прилипание (px)" through hover help. |
 | Image coordinates | native pixels | Original JPG pixel coordinates; authoritative coordinates for all edits and exports. |
 | Scene coordinates | Foundry coordinates | Coordinates from the source scene; may require scale and origin/offset conversion. |
 | Floor elevation | height, высота этажа | Intended vertical position in integer feet; presets are spaced 5 ft apart. Separate from pixel dimensions and grid size. |

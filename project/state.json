@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "contextual_tool_layout_and_localized_help",
+  "phase": "compact_toolbar_and_persistent_target",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -21,14 +21,16 @@
     "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
     "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
     "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow.",
-    "Latest color instruction: resolved closed geometry cyan, unresolved/open lines red; all lines 2 screen pixels. Supersedes the earlier outer-red/interior-cyan request and original diagnostic colors.",
-    "Two text-only top rows: general actions, then geometry/pixel set selection, contextual size, and snapping. Show the active set as one narrow column of square icon-only buttons left of the map, with localized name/help tooltips and a Photoshop-inspired dark-gray theme.",
+    "Latest color instruction: closed geometry cyan, open lines pure RGB (255, 0, 0) red; 3-screen-pixel cosmetic strokes with a black backing and 1-pixel color center. Supersedes prior thickness and diagnostic colors.",
+    "Two text-only top rows: unframed general commands, then geometry/pixel set selection plus Hand/Fit/Walls. Left square icon tools followed by double-height diameter and Snapping (px) tiles with centered inputs and visible minus/plus buttons; Russian term is Прилипание (px).",
     "New line uses press/drag/release; snapping radius 0-256 screen pixels, default 14, prioritizes vertices and excludes self-edges on movement.",
     "Circular geometry erasers remove touched edges or vertices across swept drags, commit one undo step, and support Escape cancellation. Geometry diameter uses screen pixels; raster diameter uses source pixels.",
     "Ctrl+wheel changes active tool size globally; over size/distance controls it adjusts that control. Alt-click adds free closure corners.",
-    "Footer shows map dimensions, current closed/open component counts, export crop dimensions including 3-pixel guards, all/one-region selection, and language. Open counts are connected unresolved groups, not guessed missing regions.",
+    "Single-row footer shows map dimensions, current closed/open component counts, crop dimensions including 3-pixel guards, region selection, and language. Minimum window is 1024 x 768; open counts remain connected unresolved groups.",
     "Optional project UI fields retain snapping, geometry size, mode, and export selection; older schema-1 archives load with defaults.",
-    "Localized hover help covers every application control, including embedded numeric editors, selectors, scrollbars, overflow controls, and menus; keep action names in icon-only tooltips."
+    "Localized hover help covers every application control, including embedded numeric editors, selectors, scrollbars, overflow controls, and menus; keep action names in icon-only tooltips.",
+    "Persist selected Foundry major (13/14) and language together in portable UserData/settings.json using merged atomic writes. Project loading restores and remembers its target version.",
+    "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction."
   ],
   "validated": [
     {
@@ -62,9 +64,9 @@
     },
     {
       "check": "unit_and_qt_event_tests",
-      "result": "90 passed",
+      "result": "94 passed",
       "command": "python -m pytest -q",
-      "scope": "Existing coverage plus swept geometry erasers, line creation/T connections, snap priority/exclusions, right-drag in all tools, global Ctrl+wheel, selected export bounds and footer/project preferences."
+      "scope": "Existing geometry/export/archive/Qt coverage, merged Foundry/language preferences, revision-only build increments without major/minor rollover, and version mismatch rejection before writes."
     },
     {
       "check": "visual_review",
@@ -127,6 +129,17 @@
       "check": "packaged_contextual_layout",
       "version": "0.3.1",
       "result": "Standalone isolated-PATH startup loaded the 4-operation .dale archive. Native startup opened the real 13500x16200 pair, with two text-only top rows, square icon-only left tools, dark-gray theme, complete footer and localized help. Both smoke processes exited 0. Project reload also retained the pixel tool set while Pan was active."
+    },
+    {
+      "check": "compact_ui_and_preferences",
+      "version": "0.3.2",
+      "result": "Real Qt button/wheel checks passed for both diameter tiles and snapping. All tools and centered editors remain visible at 1024 x 768. Audited 68 interactive controls in RU/EN/RU. A representative 16200-square map footer fits one row. Restarting windows retained Foundry 13/14 and language independently. English/Russian and minimum-window screenshots inspected. Raster inspection confirmed a black/color/black horizontal stroke with exact RGB values and pure-red center pixels.",
+      "command": "python artifacts/verify_compact_ui.py; python tools/preview_demo.py"
+    },
+    {
+      "check": "automatic_revision_policy",
+      "result": "Temporary-repository tests verified synchronized revision increments, 999-to-1000 without minor rollover, preservation of unrelated state, and mismatch rejection without writes. Repository checker now enforces version agreement.",
+      "command": "python -m pytest -q; python tools/check_repository.py"
     }
   ],
   "completed": [
@@ -174,5 +187,13 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.1"
+  "current_version": "0.3.3",
+  "version_policy": {
+    "scheme": "major.minor.revision",
+    "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
+    "automatic_component": "revision",
+    "increment_per_build": 1,
+    "major_minor_changes": "explicit owner instruction only",
+    "automatic_rollover": false
+  }
 }

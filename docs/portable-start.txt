@@ -1,5 +1,7 @@
 DALE portable for Windows x64
 
+Window title: Dungeon Alchemist Levels Export (v.x.xx.xxx).
+
 Open DALE.exe. Python installation and command scripts are not needed.
 Keep DALE.exe and the complete _internal folder together. To move DALE,
 copy this entire folder, including UserData if you want to keep preferences.
@@ -8,17 +10,23 @@ Switch English / Russian using Language in the footer.
 Hover over buttons and settings for help. The right panel can be scrolled.
 Open JPG + JSON to start, or open a saved .dale project to continue.
 Ctrl+S saves the original files, editing operations and Undo/Redo history.
-Top row: general text actions. Second row: tool set, size, and snapping.
+Top row: unframed text commands. Second row: tool set, Hand, Fit, and Walls.
 The selected tools appear left of the map as square icon-only buttons.
+Diameter and Snapping (px) are left tiles with numbers and minus/plus buttons.
 Hover over any control for localized help; left tools include their names.
 Ctrl+wheel changes tool size; Alt-click adds a free closure corner.
-Closed contours are cyan, open contours are red. All lines are 2 screen pixels.
+Closed contours are cyan, open contours pure RGB (255, 0, 0) red.
+Lines are 3 screen pixels: black edges around a 1-pixel color center.
+Minimum window: 1024 x 768. The footer uses one row.
+The selected Foundry version and language are remembered between launches.
 Select a region in the footer to see its guarded dimensions and export only it.
 Export creates separate PNGs with 3-pixel guards and placement.json.
 placement.json is a DALE coordinate reference, not a Foundry scene import.
 Configure image positions and elevation in Foundry separately.
 
 DALE portable для Windows x64
+
+Заголовок окна: Dungeon Alchemist Levels Export (v.x.xx.xxx).
 
 Запустите DALE.exe. Устанавливать Python или запускать скрипты не нужно.
 Файл DALE.exe и папка _internal должны находиться рядом. Для переноса
@@ -28,11 +36,15 @@ DALE portable для Windows x64
 Наведите курсор на кнопку или параметр для подсказки. Панель прокручивается.
 Откройте JPG + JSON либо сохранённый проект .dale.
 Ctrl+S сохраняет исходники, изменения и историю отмены/повтора.
-Первый ряд сверху — общие текстовые действия, второй — набор, размер и привязка.
+Первый ряд сверху — текстовые команды, второй — набор, Рука, Вся карта и Стены.
 Выбранные инструменты находятся слева от карты: квадратные кнопки с иконками.
+Диаметр и Прилипание (px) — слева, с числом и кнопками минус/плюс.
 У всех элементов есть локализованные подсказки; у инструментов — также названия.
 Ctrl + колесо меняет размер инструмента, Alt + клик добавляет угол замыкания.
-Замкнутые контуры голубые, незамкнутые красные; толщина — 2 экранных пикселя.
+Замкнутые контуры голубые, незамкнутые красные с RGB (255, 0, 0).
+Линии — 3 пикселя: чёрные края вокруг цветного центра в 1 пиксель.
+Минимум окна: 1024 x 768. Футер занимает один ряд.
+Выбранные версия Foundry и язык запоминаются между запусками.
 Выберите область внизу окна для просмотра её габаритов и отдельного экспорта.
 Экспорт создаёт отдельные PNG с запасом 3 пикселя и placement.json.
 placement.json содержит координаты DALE, это не импорт сцены Foundry.

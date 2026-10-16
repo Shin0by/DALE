@@ -16,6 +16,39 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Snapping (px)": "Прилипание (px)",
+    "Geometry eraser diameter (px)": "Диаметр ластика линий и точек (px)",
+    "Pixel eraser diameter (px)": "Диаметр пиксельного ластика (px)",
+    "Restore brush diameter (px)": "Диаметр кисти восстановления (px)",
+    "Diameter for line and vertex erasers. Ctrl+wheel changes it, independent of map zoom.": (
+        "Диаметр ластика линий и точек. Ctrl + колесо меняет его независимо от масштаба карты."
+    ),
+    "Diameter in original image pixels. Ctrl+wheel changes it.": (
+        "Диаметр в пикселях исходной карты. Ctrl + колесо меняет его."
+    ),
+    (
+        "Distance to existing vertices or lines. Vertices take priority. "
+        "Click the magnet to toggle snapping."
+    ): (
+        "Расстояние прилипания к вершинам и линиям. Вершины в приоритете. "
+        "Нажатие на магнит включает или выключает прилипание."
+    ),
+    "Decrease by 1 px.": "Уменьшить на 1 px.",
+    "Increase by 1 px.": "Увеличить на 1 px.",
+    "Select the target Foundry generation. The choice is saved between launches.": (
+        "Выберите версию Foundry. Выбор запоминается между запусками."
+    ),
+    "Foundry version changed; preferences could not be written.": (
+        "Версия Foundry изменена, но сохранить настройки не удалось."
+    ),
+    "PNG: none": "PNG: нет",
+    "PNG: {width} × {height} (+3 px)": "PNG: {width} × {height} (+3 px)",
+    "PNG: {count} · max {width} × {height} (+3 px)": (
+        "PNG: {count} · макс. {width} × {height} (+3 px)"
+    ),
+    "Map: {width} × {height} | {detail} | Closed: {closed} | Open: {open}": (
+        "Карта: {width} × {height} | {detail} | Замкнутых: {closed} | Незамкнутых: {open}"
+    ),
     "Tool size": "Размер",
     "Screen px": "Экранные px",
     "Source px": "Исходные px",
@@ -36,7 +69,7 @@ RUSSIAN = {
         "Размер ластика геометрии или пиксельной кисти. Ctrl + колесо меняет размер."
     ),
     "Configure snapping to existing vertices and line interiors.": (
-        "Настройте привязку к существующим вершинам и отрезкам линий."
+        "Настройте прилипание к существующим вершинам и отрезкам линий."
     ),
     "Geometry size uses screen pixels; pixel brush size uses original image pixels.": (
         "Размер геометрического ластика — в экранных пикселях, кисти — в исходных пикселях карты."
@@ -64,12 +97,12 @@ RUSSIAN = {
     ),
     "Lines and vertices": "Линии и точки",
     "Pixels": "Пиксели",
-    "Snapping": "Привязка",
+    "Snapping": "Прилипание",
     "New line": "Новая линия",
     "Erase lines": "Ластик линий",
     "Erase vertices": "Ластик точек",
     "Close map": "Закрыть карту",
-    "Snap": "Привязка",
+    "Snap": "Прилипание",
     "Eraser (screen px)": "Диаметр (экранные px)",
     "Brush (source px)": "Кисть (исходные px)",
     "Distance (screen px)": "Радиус (экранные px)",
@@ -97,9 +130,9 @@ RUSSIAN = {
     "Map: {width} × {height} px | Closed: {closed} | Open: {open}\n{detail}": (
         "Карта: {width} × {height} px | Замкнутых: {closed} | Незамкнутых: {open}\n{detail}"
     ),
-    "Cyan: closed regions\nRed: open contours\nAll geometry lines: 2 screen pixels": (
-        "Голубой: замкнутые области\nКрасный: незамкнутые контуры\n"
-        "Толщина линий: 2 экранных пикселя"
+    "Cyan: closed regions\nRed: open contours (RGB 255, 0, 0)\nLines: 3 px with black edges": (
+        "Голубой: замкнутые области\nКрасный: незамкнутые контуры (RGB 255, 0, 0)\n"
+        "Линии: 3 px с чёрными краями"
     ),
     (
         "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
@@ -107,7 +140,7 @@ RUSSIAN = {
         "New line: press, drag, release\nEdit points: click line, drag circle\n"
         "Double-click circle: delete\nGeometry erasers: drag the circle\n"
         "Escape: cancel current gesture\n\n"
-        "Snap distance uses screen pixels.\nVertices take priority over lines.\n\n"
+        "Snapping (px): distance to existing geometry.\nVertices take priority over lines.\n\n"
         "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
     ): (
         "Правая кнопка: перемещение\nКолесо: масштаб у курсора\n"
@@ -115,21 +148,21 @@ RUSSIAN = {
         "Новая линия: нажать, тянуть, отпустить\nТочки: клик по линии, тянуть кружок\n"
         "Двойной клик: удалить точку\nЛастик геометрии: тяните круг\n"
         "Escape: отменить текущий жест\n\n"
-        "Радиус привязки — в экранных пикселях.\nПриоритет у вершин, затем у линий.\n\n"
+        "Прилипание (px) — расстояние до разметки.\nПриоритет у вершин, затем у линий.\n\n"
         "Ctrl+S: сохранить проект\nPNG: отдельные области + 3 px запаса"
     ),
     "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size.": (
         "Диаметр ластика геометрии в экранных пикселях. Ctrl + колесо меняет размер инструмента."
     ),
     "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors.": (
-        "Радиус привязки в экранных пикселях при любом масштабе. Сначала вершины, затем линии."
+        "Радиус прилипания в экранных пикселях при любом масштабе. Сначала вершины, затем линии."
     ),
     "Snap the first/last click to a wall; Alt-click adds free corners.": (
         "Первый и последний клик привязываются к стене; Alt + клик добавляет свободный угол."
     ),
     "Press for the first point, drag, release for the second. Snap now or when moving points.": (
         "Нажатие задаёт первую точку, отпускание — вторую. "
-        "Привязка работает при создании и переносе."
+        "Прилипание работает при создании и переносе."
     ),
     "Erase entire line segments touched by the circle. Drag is one undo step.": (
         "Удалить отрезки, задетые кругом. Всё движение мышью отменяется одним шагом."
@@ -141,10 +174,10 @@ RUSSIAN = {
         "Закрыть текущую карту с предложением сохранить проект."
     ),
     "Enable snapping for new lines and moved vertices; vertices take priority.": (
-        "Включить привязку новых линий и перемещаемых точек; приоритет у вершин."
+        "Включить прилипание новых линий и перемещаемых точек; приоритет у вершин."
     ),
     "Click near a wall within the configured snap distance.": (
-        "Щёлкните рядом со стеной в пределах установленного радиуса привязки."
+        "Щёлкните рядом со стеной в пределах установленного радиуса прилипания."
     ),
     (
         "{count} unresolved segments remain. They may be gaps or unused/internal lines.\n"
@@ -452,7 +485,9 @@ def translate_static(root: QWidget, language: str, excluded=()):
                 widget.setTitle(translate(original, language))
             else:
                 widget.setWindowTitle(translate(original, language))
-        if isinstance(widget, (QLabel, QAbstractButton, QAction)):
+        if isinstance(widget, (QLabel, QAbstractButton, QAction)) and not (
+            isinstance(widget, QToolButton) and widget.defaultAction() is not None
+        ):
             original = widget.property("dale_original_text")
             if original is None:
                 original = widget.text()

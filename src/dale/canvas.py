@@ -504,51 +504,60 @@ class MapView(QGraphicsView):
         if not self.session:
             return
 
-        def pen(color, width=2, dashed=False):
+        def pen(color, width, dashed=False):
             result = QPen(QColor(color), width)
             result.setCosmetic(True)
             if dashed:
-                result.setStyle(Qt.PenStyle.DashLine)
+                # Match dash lengths in device pixels across both stroke widths.
+                result.setDashPattern([6 / width, 4 / width])
             return result
+
+        def outlined(draw, color, dashed=False):
+            painter.save()
+            # Keep crisp device-pixel edges and an exact-color central pixel.
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setPen(pen("#000000", 3, dashed))
+            draw()
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(pen(color, 1, dashed))
+            draw()
+            painter.restore()
+
+        def path(shape, color, dashed=False):
+            outlined(lambda: painter.drawPath(shape), color, dashed)
+
+        def circle(point, radius, color):
+            outlined(lambda: painter.drawEllipse(QPointF(*point), radius, radius), color)
 
         if self.show_walls or self.mode in GEOMETRY_TOOLS:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(88, 217, 236, 38))
             painter.drawPath(self.selected_path)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(pen("#58d9ec"))
-            painter.drawPath(self.original_path)
-            painter.setPen(pen("#ff454f"))
-            painter.drawPath(self.warning_path)
-            painter.setPen(pen("#58d9ec", 2, True))
-            painter.drawPath(self.offset_path)
+            path(self.original_path, "#58d9ec")
+            path(self.warning_path, "#ff0000")
+            path(self.offset_path, "#58d9ec", True)
         if self.pending:
-            painter.setPen(pen("#ff454f", 2, True))
             points = self.pending + ([self.snap or self.cursor_point] if self.cursor_point else [])
-            painter.drawPath(line_path(pairwise(points)))
+            path(line_path(pairwise(points)), "#ff0000", True)
         if self.line_start is not None:
-            painter.setPen(pen("#ff454f"))
-            painter.drawPath(line_path(((self.line_start, self.line_end),)))
+            path(line_path(((self.line_start, self.line_end),)), "#ff0000")
             painter.setBrush(QColor("#effbff"))
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
             for point in (self.line_start, self.line_end):
-                painter.drawEllipse(QPointF(*point), radius, radius)
+                circle(point, radius, "#ff0000")
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if self.snap:
             radius = 5 / self.transform().m11()
-            painter.setPen(pen("#ffffff", 2))
-            painter.drawEllipse(QPointF(*self.snap), radius, radius)
+            circle(self.snap, radius, "#ffffff")
         if self.cursor_point and self.mode in ("Erase", "Restore"):
-            painter.setPen(pen("#ffffff"))
-            painter.drawEllipse(QPointF(*self.cursor_point), self.diameter / 2, self.diameter / 2)
+            circle(self.cursor_point, self.diameter / 2, "#ffffff")
         if self.cursor_point and self.mode in GEOMETRY_ERASERS:
             radius = self.geometry_diameter / 2 / self.transform().m11()
-            painter.setBrush(QColor(255, 69, 79, 35))
-            painter.setPen(pen("#ff454f"))
-            painter.drawEllipse(QPointF(*self.cursor_point), radius, radius)
+            painter.setBrush(QColor(255, 0, 0, 35))
+            circle(self.cursor_point, radius, "#ff0000")
         if self.mode in ("Edit points", "New line", "Erase vertices") and self.working_geometry:
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
-            painter.setPen(pen("#183244"))
             painter.setBrush(QColor("#effbff"))
             for vertex in vertices(self.working_geometry):
-                painter.drawEllipse(QPointF(*vertex), radius, radius)
+                circle(vertex, radius, "#183244")

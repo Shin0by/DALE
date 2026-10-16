@@ -2,7 +2,19 @@
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import QLabel, QToolBar
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSpinBox,
+    QStackedWidget,
+    QToolBar,
+    QToolButton,
+    QVBoxLayout,
+)
+
+from dale.localization import translate
 
 
 def tool_icon(name):
@@ -108,10 +120,10 @@ def tool_icon(name):
             line((16, 20), (22, 20))
             line((19, 17), (19, 23))
         elif name == "Erase vertices":
-            painter.setBrush(QColor("#ff454f"))
+            painter.setBrush(QColor("#ff0000"))
             circle(19, 19, 3)
         elif name == "Erase lines":
-            painter.setPen(QPen(QColor("#ff454f"), 2))
+            painter.setPen(QPen(QColor("#ff0000"), 2))
             line((16, 22), (23, 15))
     elif name == "Remove outside":
         painter.drawRect(QRectF(7, 7, 10, 10))
@@ -122,12 +134,19 @@ def tool_icon(name):
             ((19, 19), (21, 21)),
         ]:
             line(a, b)
-    elif name == "Snap":
+    elif name in ("Snap", "Snapping (px)"):
         painter.drawArc(QRectF(4, 4, 16, 16), 180 * 16, 180 * 16)
         line((4, 12), (4, 5))
         line((20, 12), (20, 5))
         line((2, 5), (6, 5))
         line((18, 5), (22, 5))
+    elif name == "Brush diameter":
+        circle(12, 12, 9)
+        line((5, 12), (19, 12))
+        line((5, 12), (8, 9))
+        line((5, 12), (8, 15))
+        line((19, 12), (16, 9))
+        line((19, 12), (16, 15))
     else:
         painter.drawRect(QRectF(5, 5, 14, 14))
     painter.end()
@@ -148,6 +167,119 @@ QToolBar QSpinBox, QToolBar QDoubleSpinBox, QToolBar QComboBox {
     border-radius: 2px; padding: 3px; min-height: 20px; }
 QToolBar::separator { background: #555555; width: 1px; margin: 4px; }
 """
+
+COMMAND_STYLE = (
+    STYLE
+    + """
+QToolBar { border: 0; border-bottom: 1px solid #494949; }
+QToolBar QToolButton { background: transparent; border: 0; padding: 5px 8px; }
+QToolBar QToolButton:hover { background: #464646; border: 0; }
+QToolBar QToolButton:pressed { background: #242424; }
+QToolBar QToolButton:disabled { background: transparent; border: 0; }
+"""
+)
+
+
+class ToolSpinBox(QSpinBox):
+    """Keep the editor usable with Qt's styled, buttonless spin-box layout."""
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit_editor()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.fit_editor()
+
+    def fit_editor(self):
+        self.lineEdit().setGeometry(3, 2, max(1, self.width() - 6), self.height() - 4)
+
+
+class NumericToolTile(QFrame):
+    """A double-height tool tile with an icon, centered editor, and explicit step buttons."""
+
+    def __init__(self, editor, icon_name, action=None):
+        super().__init__()
+        self.editor_widget = editor
+        self.setObjectName("numericToolTile")
+        self.setFixedSize(48, 96)
+        self.setStyleSheet("""
+            QFrame#numericToolTile { background: #383838; border: 1px solid #696969;
+                border-radius: 2px; }
+            QToolButton { background: transparent; color: #f4f4f4; border: 0; padding: 0; }
+            QToolButton:hover { background: #505050; }
+            QToolButton:checked { background: #485966; border: 1px solid #9aafbd; }
+            QToolButton[stepButton="true"] { background: #505050; border: 1px solid #888888;
+                border-radius: 2px; font-size: 13px; }
+            QToolButton[stepButton="true"]:hover { background: #686868; }
+            QSpinBox { background: #202020; color: #f4f4f4; border: 1px solid #777777;
+                border-radius: 2px; padding: 1px; }
+        """)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(2)
+        self.icon_button = QToolButton()
+        self.icon_button.setFixedSize(40, 40)
+        self.icon_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.icon_button.setIconSize(QSize(24, 24))
+        if action is not None:
+            self.icon_button.setDefaultAction(action)
+        else:
+            self.icon_button.setIcon(tool_icon(icon_name))
+            self.icon_button.clicked.connect(self.focus_editor)
+        layout.addWidget(self.icon_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        editors = (
+            [editor.widget(i) for i in range(editor.count())]
+            if isinstance(editor, QStackedWidget)
+            else [editor]
+        )
+        for control in editors:
+            control.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            control.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            control.lineEdit().setTextMargins(2, 0, 2, 0)
+            control.setFixedSize(40, 24)
+        editor.setFixedSize(40, 24)
+        layout.addWidget(editor, 0, Qt.AlignmentFlag.AlignHCenter)
+        steps = QHBoxLayout()
+        steps.setContentsMargins(0, 0, 0, 0)
+        steps.setSpacing(2)
+        self.decrease_button, self.increase_button = QToolButton(), QToolButton()
+        for button, text, amount in (
+            (self.decrease_button, "−", -1),
+            (self.increase_button, "+", 1),
+        ):
+            button.setText(text)
+            button.setProperty("stepButton", True)
+            button.setFixedSize(20, 20)
+            button.clicked.connect(
+                lambda checked=False, amount=amount: self.editor().stepBy(amount)
+            )
+            steps.addWidget(button)
+        layout.addLayout(steps)
+
+    def editor(self):
+        return (
+            self.editor_widget.currentWidget()
+            if isinstance(self.editor_widget, QStackedWidget)
+            else self.editor_widget
+        )
+
+    def focus_editor(self):
+        control = self.editor()
+        control.setFocus(Qt.FocusReason.MouseFocusReason)
+        control.lineEdit().selectAll()
+
+    def set_help(self, title, description, language):
+        for control in (self, self.icon_button, self.editor(), self.editor().lineEdit()):
+            control.setProperty("dale_tooltip_parts", [title, description])
+            control.setToolTip(translate(title, language) + "\n" + translate(description, language))
+        for button, description in (
+            (self.decrease_button, "Decrease by 1 px."),
+            (self.increase_button, "Increase by 1 px."),
+        ):
+            button.setProperty("dale_tooltip_parts", [title, description])
+            button.setToolTip(translate(title, language) + "\n" + translate(description, language))
+
 
 PANEL_HELP = {
     "General": "Open, save, close, export, and navigate projects.",
@@ -196,8 +328,10 @@ def make_toolbar(window, title, new_row=False, vertical=False):
         bar.setOrientation(Qt.Orientation.Vertical)
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         bar.setIconSize(QSize(24, 24))
-        bar.setFixedWidth(52)
+        bar.setFixedWidth(60)
         bar.setStyleSheet(STYLE + "QToolBar::separator { height: 1px; width: 38px; }")
+    elif title == "General":
+        bar.setStyleSheet(COMMAND_STYLE)
     elif title != "General":
         heading = QLabel(title)
         heading.setToolTip(PANEL_HELP.get(title, title))

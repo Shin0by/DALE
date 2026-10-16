@@ -20,6 +20,9 @@ foreach ($targetPath in @($distributionPath, $buildPath)) {
 
 Push-Location -LiteralPath $projectRoot
 try {
+    $buildVersion = & $projectPython tools/bump_revision.py
+    if ($LASTEXITCODE -ne 0) { throw 'Build revision update failed.' }
+    Write-Output ("Building version " + $buildVersion)
     & $projectPython -m PyInstaller --noconfirm --windowed "--$Mode" --noupx `
         --name DALE --paths src --distpath $distributionPath --workpath $buildPath `
         --specpath $buildPath --collect-binaries shapely tools/desktop_entry.py
@@ -78,6 +81,7 @@ try {
         }
         $buildInfo = [ordered]@{
             format = 'dale-portable-build'
+            version = $buildVersion
             built_utc = [DateTime]::UtcNow.ToString('o')
             mode = $Mode
             source_sha256 = $fingerprints

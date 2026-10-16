@@ -1,51 +1,148 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "real_samples_inspected_and_manual_ui_testing",
+  "phase": "portable_delivery_and_bilingual_editor",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
-    "Local desktop application: Python 3.11+, PySide6, Pillow, Shapely.",
-    "JPG + Foundry scene JSON input; original-size RGBA PNG output.",
-    "Use wall contours and manual brushing for the first terrain-removal workflow.",
-    "Temporary closures never enter source or exported Foundry JSON.",
-    "Target 16384 pixels per side; warn above 8192; validate memory before export.",
-    "Support Foundry 13 and 14 as explicit targets; keep raster export common and future scene adapters separate.",
-    "Elevation dropdown: 5-ft presets, custom whole feet; record intent in PNG metadata without claiming automatic Foundry placement.",
-    "Right-button drag pans in all tools, including at fit zoom.",
-    "Explicit gap tolerance joins free endpoints and endpoint-to-segment T junctions in native pixels; default 0 disables it.",
-    "Signed contour offset expands or contracts the mask boundary without changing the PNG canvas or original JSON.",
-    "Applied masks are snapshots; setting changes preview the next mask.",
-    "Windows UI can be launched by double-clicking run.cmd; --image and --scene support preloaded manual tests."
+    "Local desktop application: Python 3.11+, PySide6, Pillow, Shapely, psutil; deliver a PyInstaller directory bundle without external Python.",
+    "JPG + Foundry scene JSON input; separate cropped native-resolution RGBA PNG per disconnected closed region, with a mandatory 3-pixel guard beyond signed user offset.",
+    "Export placement.json records source and transformed scene coordinates; it is a DALE manifest, not a native Foundry scene import.",
+    "Use wall contours, local repairs, and manual brushes; no semantic terrain recognition.",
+    "Original JPG/JSON stay unchanged. Temporary closures, point edits, automatic joins, and brushes remain editor operations.",
+    "Target 16384 pixels per input side; warn above 8192; use reduced previews, memory preflight, and striped cancellable exports.",
+    "Foundry 13/14 explicit targets; 5-ft elevation presets with custom whole feet. Actual Foundry placement remains separately configured.",
+    "Right-drag pans in every tool, including fit zoom.",
+    "Gap tolerance in source pixels supports endpoint pairs and T junctions; default 0 disables joining. Signed offset expands/contracts contours.",
+    "Applied masks remain immutable snapshots. Geometry/settings changes affect preview and the next mask.",
+    "Edit points uses fixed 10-screen-pixel circular handles, pointing-hand hover, insertion spacing of one diameter, shared-node movement, and undoable junction deletion.",
+    "Self-contained ZIP .dale projects preserve exact sources, operations and redo, placement, geometry, viewport, language/tool state, and unfinished closures.",
+    "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
+    "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default."
   ],
   "validated": [
-    {"check": "unit_and_qt_event_tests", "result": "52 passed", "command": "python -m pytest -q"},
-    {"check": "lint", "result": "passed", "command": "python -m ruff check ."},
-    {"check": "visual_review", "result": "Offscreen synthetic editor screenshot inspected; text, wall overlays, closures, transparency, and elevation controls visible.", "command": "python tools/preview_demo.py"},
-    {"check": "maximum_size_synthetic_export", "dimensions": [16384, 16384], "export_seconds": 3.6, "peak_export_rss_mib": 1090, "result": "RGBA, dimensions, contour alpha, brush alpha, and elevation metadata verified.", "command": "python tools/verify_large_map.py --size 16384"},
-    {"check": "owner_sample_inspection", "pairs": 6, "dimensions": [13500, 16200], "grid_pixels": 300, "grid_distance_ft": 5, "result": "Legacy-style scene schema, zero shifts/padding, matching canvases, identical day/night wall arrays, and incomplete/open contours verified. Representative daytime overlays visually inspected.", "command": "python tools/inspect_examples.py --previews", "details": "docs/sample-formats.md"},
-    {"check": "real_image_png_export", "dimensions": [13500, 16200], "export_seconds": 24.32, "output_bytes": 680799171, "result": "RGBA, inside/outside alpha, elevation metadata, and unchanged source SHA-256 hashes verified. This is not a finished floor mask or a Foundry import test.", "command": "python tools/inspect_examples.py --verify-export village-ruin-day-lvl2"},
-    {"check": "native_ui_launch", "result": "A responding Windows window titled DALE — Floor overlay editor was launched with the real daytime upper-floor pair for owner testing. Process lifetime is not tracked as persistent project state."}
+    {
+      "check": "lint",
+      "result": "passed",
+      "command": "python -m ruff check ."
+    },
+    {
+      "check": "maximum_size_synthetic_export",
+      "dimensions": [
+        16384,
+        16384
+      ],
+      "export_seconds": 3.6,
+      "peak_export_rss_mib": 1090,
+      "result": "RGBA, dimensions, contour alpha, brush alpha, and elevation metadata verified.",
+      "command": "python tools/verify_large_map.py --size 16384"
+    },
+    {
+      "check": "owner_sample_inspection",
+      "pairs": 6,
+      "dimensions": [
+        13500,
+        16200
+      ],
+      "grid_pixels": 300,
+      "grid_distance_ft": 5,
+      "result": "Legacy-style scene schema, zero shifts/padding, matching canvases, identical day/night wall arrays, and incomplete/open contours verified. Representative daytime overlays visually inspected.",
+      "command": "python tools/inspect_examples.py --previews",
+      "details": "docs/sample-formats.md"
+    },
+    {
+      "check": "unit_and_qt_event_tests",
+      "result": "75 passed",
+      "command": "python -m pytest -q",
+      "scope": "Geometry, T junctions, point mouse events/spacing, portable ZIP history and source safety, cropped edge guards, language switching/preferences/dialogs."
+    },
+    {
+      "check": "visual_review",
+      "result": "Russian and English synthetic editor screenshots inspected. All controls fit in the scrollable side panel; fixed circular point handles and source-aligned transparency visible.",
+      "command": "python tools/preview_demo.py"
+    },
+    {
+      "check": "real_separate_png_export",
+      "source_dimensions": [
+        13500,
+        16200
+      ],
+      "png_count": 1,
+      "output_dimensions": [
+        3451,
+        3523
+      ],
+      "output_bytes": 15510058,
+      "seconds": 1.36,
+      "guard_pixels": 3,
+      "result": "Native-resolution cropped image and placement manifest produced from the existing upper-floor contour; no live Foundry validation."
+    },
+    {
+      "check": "real_portable_project",
+      "archive_bytes": 49828685,
+      "result": "Self-contained archive written with original real JPG/JSON and editing history."
+    },
+    {
+      "check": "packaged_standalone_startup",
+      "result": "DALE.exe launched from the OS temporary working directory with PATH limited to Windows/System32, loaded a self-contained synthetic .dale project and its 3 operations, rendered a screenshot, and exited with code 0. No Python command was invoked.",
+      "version": "0.2.0",
+      "runtime_files": 269,
+      "runtime_bytes": 165345077
+    },
+    {
+      "check": "packaged_native_real_map",
+      "result": "Normal visible Windows DALE.exe window loaded the real upper-floor .dale archive, rendered a screenshot, and exited with code 0 via the smoke timer.",
+      "dimensions": [
+        13500,
+        16200
+      ],
+      "language": "ru"
+    }
   ],
   "completed": [
-    {"id": "NEXT-001", "result": "Inspected all six real input pairs and validated the current zero-padding/zero-shift import profile. Real image PNG export verified; live Foundry placement remains NEXT-002."}
+    {
+      "id": "NEXT-001",
+      "result": "Inspected all six real input pairs and validated the current zero-padding/zero-shift import profile. Real image PNG export verified; live Foundry placement remains NEXT-002."
+    },
+    {
+      "id": "NEXT-003",
+      "result": "Implemented validated portable ZIP .dale save/load, exact sources and undo/redo history, settings and pending closures."
+    },
+    {
+      "id": "NEXT-006",
+      "result": "Zero-alpha RGB is compacted without changing visible RGB; default export now uses separate crops with 3-pixel edge guards."
+    },
+    {
+      "id": "NEXT-005",
+      "result": "Built the complete Windows x64 portable directory bundle at DALE/DALE.exe; native real-map and isolated-PATH packaged startup checks passed."
+    }
   ],
   "pending": [
-    {"id": "NEXT-002", "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."},
-    {"id": "NEXT-003", "task": "Add a portable editing-session format with source fingerprints and safe reload."},
-    {"id": "NEXT-004", "task": "Evaluate selected-region masking and edge refinement after real sample review."},
-    {"id": "NEXT-005", "task": "Package a Windows executable after the editing workflow is validated. The source checkout already has a double-click launcher."},
-    {"id": "NEXT-006", "task": "Reduce PNG size by compactly encoding fully transparent pixels while preserving visible pixels, dimensions, and source-based restore behavior. The real image check produced a 680,799,171-byte PNG."},
-    {"id": "NEXT-007", "task": "Design boundary reuse across aligned floors and/or free region outlines for roofs absent from their own wall JSON. Do not infer heights from filenames."}
+    {
+      "id": "NEXT-002",
+      "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."
+    },
+    {
+      "id": "NEXT-004",
+      "task": "Evaluate selected-region masking and edge refinement after real sample review."
+    },
+    {
+      "id": "NEXT-007",
+      "task": "Design boundary reuse across aligned floors and/or free region outlines for roofs absent from their own wall JSON. Do not infer heights from filenames."
+    }
   ],
   "limitations": [
     "No semantic terrain/object segmentation.",
-    "No direct Foundry connection, scene mutation, or multi-floor scene assembly.",
-    "Unknown export variants require explicit adapter work rather than guessed coordinates.",
-    "Editor history is in-memory until persistent sessions are implemented.",
-    "Only the observed legacy zero-shift/zero-padding import profile is validated against real examples; nonzero legacy shifts remain unverified.",
-    "The current PNG encoder retains RGB under zero-alpha pixels, producing very large real-map outputs.",
-    "Gap joining repairs local geometric gaps but cannot recover missing roof/terrain semantics."
-  ]
+    "No direct Foundry connection, scene mutation, native scene import export, or multi-floor scene assembly; actual Foundry 13/14 placement unverified.",
+    "Only the observed legacy zero-shift/zero-padding profile is validated with real samples; nonzero legacy shifts and other variants need explicit evidence/adapters.",
+    "Gap joining cannot recover missing roof geometry. Boundary reuse/free outlines and per-face selection remain future work.",
+    "The preview omits the mandatory extra 3-pixel export guard; exported PNGs add it around the effective contour.",
+    "Unknown low-level import/ZIP/library error details can remain English; application actions, tooltips, guidance, and dialogs are bilingual."
+  ],
+  "ui_languages": [
+    "en",
+    "ru"
+  ],
+  "portable_entrypoint": "DALE/DALE.exe"
 }

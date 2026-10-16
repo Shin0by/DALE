@@ -6,9 +6,12 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+/DALE/
 artifacts/
 exports/
 *.dale.json
+*.dale
+*.exe
 examples/*
 !examples/README.md
 !examples/.gitkeep

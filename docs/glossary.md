@@ -7,7 +7,7 @@
 | Dungeon Alchemist | Alchemist, Алхимист | The map creation application that provides the source image and Foundry scene JSON. |
 | Dungeons & Dragons | D&D, DND, ДНД | The tabletop role-playing game in the owner's use case. DALE image operations do not depend on a specific game system. |
 | Ground-level map | base map, ground floor | Complete, unchanged map at the bottom of the intended floor stack. |
-| Upper-floor overlay | floor overlay | Full-size PNG with transparent terrain, aligned with the base map. |
+| Upper-floor overlay | floor overlay | Cropped native-resolution PNG with transparent terrain, aligned to the base map using recorded placement coordinates. |
 | Terrain | ground, relief, рельеф, земля | Outdoor ground/background the owner wants to remove. It is a visual category, not a guaranteed field in the JSON. |
 | Source wall | original line | Wall segment read from the source JSON, including door/window segments. Not the visible wall artwork itself. |
 | Closure | temporary line, virtual closure | Editor-only polyline joining source walls to create closed mask regions. Never a new Foundry wall. |
@@ -25,3 +25,8 @@
 | Gap tolerance | join distance, допуск соединения | Maximum original-image distance for an automatic editor-only wall connection; 0 disables it. |
 | T junction | Т-образное соединение | A wall endpoint meets, or lies near, the interior of another segment. |
 | Contour offset | margin, отступ контура | Signed image-pixel expansion (positive) or contraction (negative) of the closed region. |
+| Edge guard | export padding, запас 3 пикселя | Mandatory 3-source-pixel expansion beyond the effective contour for each cropped PNG; retains available source edge detail. |
+| Point handle | drag circle, кружок | Circular 10-screen-pixel control for moving/deleting a working geometry vertex; its size is independent of zoom. |
+| DALE project | .dale, проект | Self-contained ZIP archive with exact source assets, editing and redo history, geometry, placement, and UI settings. |
+| Portable package | portable, портейбл | Complete `DALE/` runtime folder with executable and dependencies; launch without installing Python and move by copying the entire folder. |
+| Placement manifest | placement.json | DALE export coordinate reference for cropped images; not a Foundry scene import document. |

@@ -27,7 +27,13 @@ class ContourMask:
     mode: Literal["outside", "inside"]
 
 
-Operation = Closure | Stroke | ContourMask
+@dataclass(frozen=True)
+class GeometryEdit:
+    walls: tuple
+    closures: tuple[tuple[Point, ...], ...] = ()
+
+
+Operation = Closure | Stroke | ContourMask | GeometryEdit
 
 
 @dataclass
@@ -41,11 +47,21 @@ class Session:
 
     @property
     def walls(self):
-        return self.source.image_walls(self.origin)
+        return self.geometry().walls
 
     @property
     def closures(self):
-        return tuple(op.points for op in self.operations if isinstance(op, Closure))
+        return self.geometry().closures
+
+    def geometry(self) -> GeometryEdit:
+        walls = self.source.image_walls(self.origin)
+        closures = []
+        for operation in self.operations:
+            if isinstance(operation, Closure):
+                closures.append(operation.points)
+            elif isinstance(operation, GeometryEdit):
+                walls, closures = operation.walls, list(operation.closures)
+        return GeometryEdit(walls, tuple(closures))
 
     def analysis(self):
         return analyze_regions(self.walls, self.closures, self.gap_tolerance)

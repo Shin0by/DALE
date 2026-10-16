@@ -26,9 +26,18 @@ app.processEvents()
 window.view.assign(session, load_preview(source))
 window.info.setText("Synthetic demonstration\n1,200 × 900 px\nNot a Dungeon Alchemist export")
 window.elevation.setCurrentText("17")
+window.mode_actions["Edit points"].setChecked(True)
+window.view.set_mode("Edit points")
 window.refresh()
+window.project_path = ROOT / "artifacts/demo/demo.dale"
+assert window.save_project_file()
 app.processEvents()
 destination = ROOT / "artifacts/demo/editor-preview.png"
 window.grab().save(str(destination))
 print(destination)
+window.set_language("en", persist=False)
+app.processEvents()
+english = destination.with_name("editor-preview-en.png")
+window.grab().save(str(english))
+print(english)
 # No event loop is entered and no desktop window is shown by the offscreen platform.

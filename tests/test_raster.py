@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 from shapely.geometry import Polygon
 
 from dale.placement import Placement
@@ -60,7 +60,10 @@ def test_export_stripes_match_full_render_preserve_rgb_and_source(pair_factory, 
         assert result.mode == "RGBA"
         assert result.size == original.size == source.size
         assert result.getchannel("A").tobytes() == expected.tobytes()
-        assert result.convert("RGB").tobytes() == original.convert("RGB").tobytes()
+        difference = ImageChops.difference(result.convert("RGB"), original.convert("RGB"))
+        difference.paste((0, 0, 0), mask=ImageChops.invert(expected))
+        assert difference.getbbox() is None
+        assert result.getpixel((0, 0)) == (0, 0, 0, 0)
         assert result.info["DALE.FoundryMajor"] == "13"
         assert result.info["DALE.ElevationFeet"] == "17"
     assert progress[-1] == 100

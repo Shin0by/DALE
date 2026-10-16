@@ -1,0 +1,27 @@
+DALE portable for Windows x64
+
+Open DALE.exe. Python installation and command scripts are not needed.
+Keep DALE.exe and the complete _internal folder together. To move DALE,
+copy this entire folder, including UserData if you want to keep preferences.
+
+Switch English / Russian using Language in the right panel.
+Hover over buttons and settings for help. The right panel can be scrolled.
+Open JPG + JSON to start, or open a saved .dale project to continue.
+Ctrl+S saves the original files, editing operations and Undo/Redo history.
+Export creates separate PNGs with 3-pixel guards and placement.json.
+placement.json is a DALE coordinate reference, not a Foundry scene import.
+Configure image positions and elevation in Foundry separately.
+
+DALE portable для Windows x64
+
+Запустите DALE.exe. Устанавливать Python или запускать скрипты не нужно.
+Файл DALE.exe и папка _internal должны находиться рядом. Для переноса
+скопируйте всю эту папку; UserData содержит настройки, включая язык.
+
+Язык переключается в правой панели: English / Русский.
+Наведите курсор на кнопку или параметр для подсказки. Панель прокручивается.
+Откройте JPG + JSON либо сохранённый проект .dale.
+Ctrl+S сохраняет исходники, изменения и историю отмены/повтора.
+Экспорт создаёт отдельные PNG с запасом 3 пикселя и placement.json.
+placement.json содержит координаты DALE, это не импорт сцены Foundry.
+Координаты и высоту размещения задайте в Foundry отдельно.

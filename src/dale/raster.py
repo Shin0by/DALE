@@ -33,7 +33,7 @@ def load_preview(source: SceneInput) -> Image.Image:
         return image.convert("RGB")
 
 
-def _polygon_mask(size, area, sx, sy, top):
+def _polygon_mask(size, area, sx, sy, top, left=0):
     mask = Image.new("L", size, 0)
     draw = ImageDraw.Draw(mask)
     polygons = [area] if area.geom_type == "Polygon" else list(area.geoms)
@@ -44,7 +44,7 @@ def _polygon_mask(size, area, sx, sy, top):
             continue
 
         def project(ring):
-            return [(math.floor(x * sx), math.floor(y * sy) - top) for x, y in ring.coords]
+            return [(math.floor(x * sx) - left, math.floor(y * sy) - top) for x, y in ring.coords]
 
         draw.polygon(project(polygon.exterior), fill=255)
         for ring in polygon.interiors:
@@ -58,19 +58,20 @@ def render_alpha(
     operations: Sequence[Operation],
     top: int = 0,
     scale: tuple[float, float] | None = None,
+    left: int = 0,
 ) -> Image.Image:
     """Render a preview or export stripe; top is measured in output pixels."""
     sx, sy = scale or (size[0] / native_size[0], size[1] / native_size[1])
     alpha = Image.new("L", size, 255)
     for operation in operations:
         if isinstance(operation, ContourMask):
-            region = _polygon_mask(size, operation.area, sx, sy, top)
+            region = _polygon_mask(size, operation.area, sx, sy, top, left)
             if operation.mode == "inside":
                 region = ImageChops.invert(region)
             alpha = ImageChops.multiply(alpha, region)
         elif isinstance(operation, Stroke) and operation.points:
             rx, ry = max(0.5, operation.radius * sx), max(0.5, operation.radius * sy)
-            points = [(x * sx, y * sy - top) for x, y in operation.points]
+            points = [(x * sx - left, y * sy - top) for x, y in operation.points]
             if max(p[1] for p in points) + ry < 0 or min(p[1] for p in points) - ry > size[1]:
                 continue
             draw = ImageDraw.Draw(alpha)
@@ -115,6 +116,8 @@ def export_png(
     progress: Callable[[int], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
     placement: Placement | None = None,
+    crop: tuple[int, int, int, int] | None = None,
+    metadata: dict[str, str] | None = None,
 ):
     destination = destination.resolve()
     if destination in (source.image_path.resolve(), source.json_path.resolve()):
@@ -125,8 +128,11 @@ def export_png(
         os.path.samefile(destination, path) for path in (source.image_path, source.json_path)
     ):
         raise ValueError("Export cannot replace a hard-linked source file.")
-    width, height = source.size
-    required = width * height * 4 + 256 * 1024 * 1024
+    left, origin_y, right, bottom_y = crop or (0, 0, *source.size)
+    width, height = right - left, bottom_y - origin_y
+    if width <= 0 or height <= 0:
+        raise ValueError("PNG crop dimensions must be positive.")
+    required = source.size[0] * source.size[1] * 4 + 256 * 1024 * 1024
     if psutil.virtual_memory().available < required:
         raise MemoryError(f"Export needs approximately {required / 1024**3:.1f} GiB free RAM.")
 
@@ -136,6 +142,7 @@ def export_png(
 
     check_cancel()
     temporary = None
+    visible = False
     try:
         with open_source(source.image_path) as image:
             if image.size != source.size:
@@ -147,8 +154,10 @@ def export_png(
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(b"\x89PNG\r\n\x1a\n")
                 _chunk(stream, b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-                if placement:
-                    for key, value in placement.metadata().items():
+                text_metadata = placement.metadata() if placement else {}
+                text_metadata.update(metadata or {})
+                if text_metadata:
+                    for key, value in text_metadata.items():
                         _chunk(
                             stream,
                             b"tEXt",
@@ -158,10 +167,20 @@ def export_png(
                 for top in range(0, height, STRIPE_ROWS):
                     check_cancel()
                     bottom = min(height, top + STRIPE_ROWS)
-                    stripe = image.crop((0, top, width, bottom)).convert("RGBA")
-                    stripe.putalpha(
-                        render_alpha(stripe.size, source.size, operations, top=top, scale=(1, 1))
+                    stripe = image.crop((left, origin_y + top, right, origin_y + bottom)).convert(
+                        "RGBA"
                     )
+                    alpha = render_alpha(
+                        stripe.size,
+                        source.size,
+                        operations,
+                        top=origin_y + top,
+                        scale=(1, 1),
+                        left=left,
+                    )
+                    visible = visible or alpha.getextrema()[1] > 0
+                    stripe.putalpha(alpha)
+                    stripe.paste((0, 0, 0, 0), mask=alpha.point([255] + [0] * 255))
                     pixels = stripe.tobytes()
                     stride = width * 4
                     for row in range(bottom - top):
@@ -181,6 +200,7 @@ def export_png(
         temporary = None
         if progress:
             progress(100)
+        return visible
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

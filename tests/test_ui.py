@@ -8,9 +8,11 @@ import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QTransform
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
-from dale.canvas import MapView
+from dale.canvas import HANDLE_DIAMETER, MapView
+from dale.editing import vertices
+from dale.project_io import load_project
 from dale.raster import load_preview
 from dale.session import Closure, Session, Stroke
 from dale.ui import MainWindow
@@ -21,7 +23,12 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-@pytest.mark.parametrize("mode", ["Pan", "Erase", "Restore", "Closure"])
+@pytest.fixture(autouse=True)
+def isolated_preferences(monkeypatch, tmp_path):
+    monkeypatch.setenv("DALE_SETTINGS_PATH", str(tmp_path / "settings.json"))
+
+
+@pytest.mark.parametrize("mode", ["Pan", "Erase", "Restore", "Closure", "Edit points"])
 @pytest.mark.parametrize("zoomed", [False, True])
 def test_right_drag_pans_in_every_mode_without_editing(app, pair_factory, mode, zoomed):
     source = pair_factory()
@@ -133,4 +140,139 @@ def test_contour_controls_update_topology_and_offset_preview_at_any_zoom(app, pa
     assert window.view.session.make_mask("outside").area.bounds == (5, 15, 65, 275)
     window.gap_tolerance.setValue(0)
     assert window.view.analysis.faces == 0
+    window.close()
+
+
+@pytest.mark.parametrize("zoom", [2, 5])
+def test_edit_point_spacing_uses_fixed_screen_diameter(app, pair_factory, zoom):
+    source = pair_factory(size=(200, 200), walls=[{"c": [50, 100, 150, 100]}])
+    view = MapView()
+    view.resize(500, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(100, 100)
+    view.set_mode("Edit points")
+    app.processEvents()
+    assert view._handle_tolerance() * zoom == HANDLE_DIAMETER
+    near = view.mapFromScene(50, 100) + QPoint(HANDLE_DIAMETER - 1, 0)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=near)
+    assert len(vertices(view.session.geometry())) == 2
+    assert not view.session.operations
+    view.close()
+
+
+def test_edit_points_click_drag_double_click_and_undo(app, pair_factory):
+    source = pair_factory(size=(200, 200), walls=[{"c": [50, 100, 150, 100]}])
+    view = MapView()
+    view.resize(500, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(100, 100)
+    view.set_mode("Edit points")
+    app.processEvents()
+    middle = view.mapFromScene(100, 100)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=middle)
+    assert len(vertices(view.session.geometry())) == 3
+    assert len(view.session.operations) == 1
+    point = next(point for point in vertices(view.session.geometry()) if 75 < point[0] < 125)
+    start = view.mapFromScene(*point)
+    end = start + QPoint(20, -20)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert len(view.session.operations) == 2
+    point = next(point for point in vertices(view.session.geometry()) if 75 < point[0] < 125)
+    assert point[1] == 90
+    end = view.mapFromScene(*point)
+    QTest.mouseMove(view.viewport(), end)
+    assert view.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert len(vertices(view.session.geometry())) == 2
+    view.session.undo()
+    assert len(vertices(view.session.geometry())) == 3
+    view.close()
+
+
+def test_project_save_and_load_through_window_preserves_editing_state(app, pair_factory, tmp_path):
+    source = pair_factory()
+    first = MainWindow()
+    first.load_sources(source.image_path, source.json_path)
+    first.gap_tolerance.setValue(3)
+    first.contour_offset.setValue(2)
+    first.elevation.setCurrentText("17")
+    first.set_language("en")
+    first.version.setCurrentIndex(1)
+    first.view.session.add(Stroke(((20, 30), (30, 40)), 3))
+    first.view.pending = [(10, 20), (30, 40)]
+    first.view.set_mode("Closure")
+    first.view.pending = [(10, 20), (30, 40)]
+    first.project_path = tmp_path / "ui-session.dale"
+    assert first.save_project_file()
+    assert first.can_discard()
+    second = MainWindow()
+    assert second.load_project_file(first.project_path)
+    assert second.view.session.operations == first.view.session.operations
+    assert second.view.pending == first.view.pending
+    assert second.gap_tolerance.value() == 3
+    assert second.contour_offset.value() == 2
+    assert second.placement().elevation_ft == 17
+    assert second.placement().foundry_major == 13
+    assert second.view.mode == "Closure"
+    assert second.language == "en"
+    assert second.can_discard()
+    with load_project(first.project_path) as project:
+        assert project.ui_state["pending_closure"] == ((10, 20), (30, 40))
+    first.close()
+    second.close()
+
+
+def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_path):
+    window = MainWindow(preferences_path=tmp_path / "language.json")
+    assert window.language == "ru"
+    assert window.mode_actions["Edit points"].text() == "Точки"
+    assert "Клик" in window.mode_actions["Edit points"].toolTip()
+    window.language_control.setCurrentIndex(0)
+    assert window.mode_actions["Edit points"].text() == "Edit points"
+    assert "Click a line" in window.mode_actions["Edit points"].toolTip()
+    window.mode_actions["Edit points"].trigger()
+    assert window.view.mode == "Edit points"
+    window.language_control.setCurrentIndex(1)
+    assert window.view.mode == "Edit points"
+    window.elevation.setCurrentText("17")
+    assert "17 футов" in window.placement_hint.text()
+    assert window.menuBar().actions()[0].text() == "Файл"
+    window.language_control.setCurrentIndex(0)
+    assert window.menuBar().actions()[0].text() == "File"
+    reopened = MainWindow(preferences_path=tmp_path / "language.json")
+    assert reopened.language == "en"
+    window.close()
+    reopened.close()
+
+
+def test_russian_review_dialog_and_standard_buttons(app, pair_factory, monkeypatch):
+    source = pair_factory(
+        walls=[
+            {"c": [10, 20, 60, 20]},
+            {"c": [60, 20, 60, 270]},
+            {"c": [60, 270, 10, 270]},
+            {"c": [10, 270, 10, 20]},
+            {"c": [1, 1, 5, 5]},
+        ]
+    )
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    messages = []
+    monkeypatch.setattr(
+        window,
+        "question",
+        lambda title, text, *options: messages.append(text) or QMessageBox.StandardButton.No,
+    )
+    window.mask("outside")
+    assert "Осталось незамкнутых" in messages[0]
+    assert not window.view.session.operations
+    dialog = QMessageBox(window)
+    dialog.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel)
+    assert "Сохранить" in dialog.button(QMessageBox.StandardButton.Save).text()
     window.close()

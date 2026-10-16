@@ -56,7 +56,9 @@ Calling this a legacy-style profile is an inference from the field layout, suppo
 
 The daytime `lvl2` image was decoded and exported through the existing stripe-based pipeline at **13,500 × 16,200**. The result was RGBA PNG with verified inside/outside alpha, recorded placement metadata, and unchanged source JPG/JSON SHA-256 hashes. Runtime on the current machine was 24.32 seconds. This checks the raster pipeline using the uncorrected existing contour, not a finished upper-floor asset or live Foundry placement.
 
-The output was **680,799,171 bytes** (about 649 MiB). Current export retains RGB values even under fully transparent pixels, so most original image detail still contributes to PNG size. Compact encoding of fully transparent pixels is a high-priority follow-up; it must preserve visible pixels, canvas dimensions, and edit-time restoration from the original image. The local result is under ignored `artifacts/sample-analysis/` and is not published.
+The original full-canvas output was **680,799,171 bytes** (about 649 MiB), because that encoder retained RGB under fully transparent pixels. This was a historical pipeline check; the current encoder zeroes RGB only where alpha is zero and restores edits from the unchanged source image.
+
+The current default was checked separately on the same upper-floor source: one cropped **3,451 × 3,523** PNG, **15,510,058 bytes**, **1.36 seconds**, with the mandatory 3-pixel guard and placement manifest. A self-contained `.dale` archive was **49,828,685 bytes**, including exact JPG/JSON and history. These use the existing incomplete contour, not a finished floor or a Foundry import test. Private results remain under ignored `artifacts/sample-analysis/`.
 
 ## Reproduce locally
 

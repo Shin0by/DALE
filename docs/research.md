@@ -27,9 +27,10 @@ The owner requires both generations. The [v13 Tile model](https://foundryvtt.com
 - [Qt QGraphicsView](https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QGraphicsView.html): local 2D canvas, transforms, and scene input.
 - [Shapely polygonize_full](https://shapely.readthedocs.io/en/stable/reference/shapely.polygonize_full.html): bounded polygons and unresolved geometry diagnostics.
 - [Pillow Image API](https://pillow.readthedocs.io/en/stable/reference/Image.html): image opening, JPEG decoder reduction, raster manipulation, and pixel-count protections.
+- [PyInstaller operating mode](https://pyinstaller.org/en/stable/operating-mode.html) and [usage](https://pyinstaller.org/en/stable/usage.html): bundle the interpreter and application dependencies for users without Python; validate a directory bundle before considering a single-file variant.
 
 ## Validation still required
 
-Confirm exact owner builds for the requested Foundry 13/14 targets, JSON coordinate conventions, background offsets, actual export dimensions, and floor workflows. Verify identical-size transparent PNGs on the owner's actual Foundry clients. The initial implementation must not equate successful synthetic tests with this external validation.
+Confirm exact owner builds for the requested Foundry 13/14 targets, JSON coordinate conventions, background offsets, and floor workflows. Verify cropped transparent PNG placement using recorded source/scene positions on the owner's actual Foundry clients. Successful synthetic tests do not establish this external validation.
 
 The six supplied real pairs have now been inspected for image dimensions, zero offsets/padding, wall/light layout, day/night geometry equality, and contour topology. Their observed legacy-style field layout is documented in [the sample profile](sample-formats.md), with an official v9 scene-model comparison and a v13 wall-schema comparison. Real-image import/preview and one full-resolution PNG export have passed; live Foundry placement remains untested.

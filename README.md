@@ -8,13 +8,17 @@ DALE — локальный редактор, который превращае�
 
 Working prototype. Six real Dungeon Alchemist pairs have been inspected and opened, and one 13,500 × 16,200 source image has passed the PNG pipeline check. Verification in the owner's Foundry installation is pending. The workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented. See [the observed export profile](docs/sample-formats.md) for sample findings and current limitations.
 
-Implemented: wall overlays, temporary snapped polyline closures, adjustable gap joining including T junctions, signed contour offsets, inside/outside masking, erase/restore brushes, undo/redo, right-button drag panning in every tool, Foundry 13/14 selection, and a floor-elevation dropdown with 5-ft presets and custom integer feet. PNG metadata retains elevation intent; placement in Foundry is still configured separately.
+Implemented: wall overlays and temporary closures, adjustable gap joining including T junctions, signed contour offsets, draggable circular vertices, inside/outside masking, erase/restore brushes, undo/redo, right-button panning, complete `.dale` projects, English/Russian UI with tooltips, and separate cropped PNG export with a mandatory 3-pixel guard per object. Foundry 13/14 selection and integer-foot elevation retain placement intent; placement in Foundry is configured separately using the exported coordinate reference.
 
 ## Run on Windows
 
-Requires 64-bit Python 3.11 or newer.
+Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains the language choice. English and Russian can be switched in the right panel; hover over controls for help.
 
-Double-click **run.cmd** to open the desktop UI. If the local environment is absent, the launcher prepares it automatically. For explicit setup or console debugging:
+The generated portable folder is ignored by Git. Repository updates must rebuild it using the command below. Build provenance is recorded in `DALE/build-info.json`; refresh preserves `UserData` and user projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
+
+## Development and packaging
+
+The implementation uses Python 3.11+, native Qt widgets via PySide6, Pillow, and Shapely. This Python environment is for development only:
 
 ```powershell
 python -m venv .venv
@@ -22,6 +26,15 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --no-deps -e .
 .\.venv\Scripts\python.exe -m dale
 ```
+
+After project changes, run checks, then refresh the complete portable package:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.lock
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1
+```
+
+Packaging uses PyInstaller's directory bundle, including the Python runtime and native libraries. An optional `-Mode onefile` build is a separate artifact; the maintained user delivery is `DALE/`. `tools/run_development.cmd` is a development convenience only.
 
 Generate an optional synthetic demonstration (not a Dungeon Alchemist export):
 
@@ -33,7 +46,7 @@ Open the generated `artifacts/demo/demo.jpg` and `demo.json` in the editor. See 
 
 ## Map dimensions
 
-Foundry has no single fixed map size. Image limits depend on each participant's GPU/browser; its documentation describes approximately 8,000 pixels per side on older hardware and 16,000 on newer hardware. DALE targets up to **16,384 × 16,384 pixels**, warns above **8,192** on either side, and preserves dimensions without cropping or resizing. This does not guarantee that every Foundry client can load the result. Large PNGs also take more time to distribute. See [research and sources](docs/research.md).
+Foundry has no single fixed map size. Image limits depend on each participant's GPU/browser; its documentation describes approximately 8,000 pixels per side on older hardware and 16,000 on newer hardware. DALE accepts JPGs up to **16,384 × 16,384 pixels** and warns above **8,192** on either side. Export crops each closed object with a 3-pixel guard, preserving native pixel resolution and recording placement in `placement.json`. This is a DALE coordinate manifest, not a Foundry scene import. Large individual objects remain subject to client limits. See [research and sources](docs/research.md).
 
 ## Repository navigation
 

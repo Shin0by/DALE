@@ -313,7 +313,6 @@ def _load_ui(value):
     language = value.get("language", "ru")
     raster_erase = number(value.get("raster_erase_diameter", 40), "Raster eraser diameter")
     raster_restore = number(value.get("raster_restore_diameter", 40), "Restore brush diameter")
-    export_padding = number(value.get("export_padding_px", 0), "Export padding")
     line_diameter = number(value.get("line_eraser_diameter", 24), "Line eraser diameter")
     vertex_diameter = number(value.get("vertex_eraser_diameter", 24), "Vertex eraser diameter")
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
@@ -364,8 +363,6 @@ def _load_ui(value):
         ):
             raise ValueError("Invalid project region selection.")
         selected_regions = tuple(sorted(set(selected_regions)))
-    if export_padding != int(export_padding) or not 0 <= export_padding <= 4096:
-        raise ValueError("Invalid project export padding.")
     snap_enabled = value.get("snap_enabled", True)
     move_related = value.get("move_related_lines", False)
     if type(move_related) is not bool:
@@ -380,7 +377,6 @@ def _load_ui(value):
         "language": language,
         "raster_erase_diameter": int(raster_erase),
         "raster_restore_diameter": int(raster_restore),
-        "export_padding_px": int(export_padding),
         "export_regions": selected_regions,
         "line_eraser_diameter": int(line_diameter),
         "vertex_eraser_diameter": int(vertex_diameter),

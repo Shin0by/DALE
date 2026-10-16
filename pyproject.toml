@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dale-map-editor"
-version = "0.3.14"
+version = "0.3.16"
 description = "Local wall-guided transparency editor for Dungeon Alchemist maps"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -15,7 +15,8 @@ Right-click either transform tool to configure related lines.
 Walls off hides inactive lines/handles; only selection and current tool highlights stay visible.
 Raster Erase/Restore have independent diameters. Save stores sources, history, redo, ancestry.
 Input/output folders are remembered independently.
-Separate PNGs include mandatory 3px guard plus optional transparent padding, clamped to JPG.
+Left Artwork offset adds/cuts actual JPG pixels relative to lines. No global padding setting.
+PNG alpha uses light bicubic smoothing; exact bounds include every nonzero alpha pixel.
 placement.json records coordinates. Configure height in Foundry.
 Minimum 1024 x 768. UserData/settings.json retains preferences.
 Preserve projects during updates. Open editors retain their version until restarted.
@@ -36,6 +37,7 @@ Ctrl+колесо — масштабирование. Кнопка Вращен�
 Ластик и восстановление растра имеют собственные диаметры.
 Проект хранит исходники, историю, повтор и происхождение линий.
 Папки открытия и сохранения запоминаются раздельно.
-PNG имеют запас 3px и дополнительный прозрачный отступ, обрезанные по границам JPG.
+Слева Отступ изображения добавляет/срезает пиксели JPG относительно линий. Общей рамки нет.
+PNG сглаживает альфа-край через bicubic и включает все ненулевые альфа-пиксели в границах JPG.
 Высоту задавайте в Foundry. Минимум окна 1024 x 768.
 Настройки — в UserData/settings.json. Открытый редактор использует свою версию до перезапуска.

@@ -40,7 +40,6 @@ from PySide6.QtWidgets import (
     QProgressDialog,
     QPushButton,
     QScrollArea,
-    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -57,7 +56,7 @@ from dale.localization import (
     translate,
     translate_static,
 )
-from dale.overlay_export import crop_bounds, export_overlays, export_regions
+from dale.overlay_export import export_overlays, export_regions, prepare_overlay
 from dale.placement import Placement
 from dale.preferences import (
     load_directory,
@@ -87,14 +86,13 @@ class ExportWorker(QThread):
     progress = Signal(int)
     outcome = Signal(str, str)
 
-    def __init__(self, session, path, placement, parent, region_indices=None, extra_padding=0):
+    def __init__(self, session, path, placement, parent, region_indices=None):
         super().__init__(parent)
         self.source = session.source
         self.operations = tuple(session.operations)
         self.path = path
         self.placement = placement
         self.region_indices = region_indices
-        self.extra_padding = extra_padding
         self.session = Session(
             session.source,
             session.origin,
@@ -112,7 +110,6 @@ class ExportWorker(QThread):
                 self.progress.emit,
                 self.isInterruptionRequested,
                 region_indices=self.region_indices,
-                extra_padding=self.extra_padding,
                 individual_regions=self.region_indices is not None,
             )
             self.outcome.emit("success", str(destination))
@@ -206,10 +203,11 @@ class MainWindow(QMainWindow):
             "Connect free wall ends within this distance in original image pixels. "
             "0 disables joining."
         )
-        self.contour_offset = QSpinBox()
+        self.contour_offset = ToolSpinBox()
         self.contour_offset.setRange(-4096, 4096)
         self.contour_offset.setToolTip(
-            "Original image pixels: positive expands the contour, negative shrinks it."
+            "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
+            "negative cuts inward. Ctrl+wheel: change this value."
         )
         self.gap_tolerance.valueChanged.connect(self.update_contour_settings)
         self.contour_offset.valueChanged.connect(self.update_contour_settings)
@@ -225,7 +223,6 @@ class MainWindow(QMainWindow):
             lambda index: self.set_language("en" if index == 0 else "ru")
         )
         form.addRow("Target", self.version)
-        form.addRow("Contour offset (px)", self.contour_offset)
         form.addRow("Regions", self.region_control)
         form.addRow("Language", self.language_control)
         self.settings_group = QGroupBox("Settings")
@@ -327,20 +324,21 @@ class MainWindow(QMainWindow):
                 ),
                 "Snapping (px)": (0, 256, 14, "snap_distance", self.set_snap_distance),
                 "Close all contours": (1, 256, 14, "global_close_control", lambda value: None),
-                "Export padding (px)": (
-                    0,
+                "Artwork offset (px)": (
+                    -4096,
                     4096,
                     0,
-                    "export_padding_control",
-                    lambda v: self.update_map_info(),
+                    "contour_offset",
+                    lambda v: self.update_contour_settings(),
                 ),
             }
             if title in sizes:
                 low, high, initial, attribute, handler = sizes[title]
-                editor = ToolSpinBox()
-                editor.setRange(low, high)
-                editor.setValue(initial)
-                editor.valueChanged.connect(handler)
+                editor = self.contour_offset if title == "Artwork offset (px)" else ToolSpinBox()
+                if title != "Artwork offset (px)":
+                    editor.setRange(low, high)
+                    editor.setValue(initial)
+                    editor.valueChanged.connect(handler)
                 setattr(self, attribute, editor)
                 tile = SizedToolButton(editor, item)
                 self.sized_tools[title] = tile
@@ -428,7 +426,7 @@ class MainWindow(QMainWindow):
         self.export_regions_action = action(
             region_tools, "Export selected regions", lambda: self.export(selected_only=True)
         )
-        action(region_tools, "Export padding (px)", lambda: self.export_padding_control.setFocus())
+        action(region_tools, "Artwork offset (px)", lambda: self.contour_offset.setFocus())
         self.tool_column.addStretch()
         for bar in (geometry, region_tools, pixels):
             bar.ensurePolished()
@@ -450,7 +448,7 @@ class MainWindow(QMainWindow):
                 "Save sources, masks, geometry, preferences, and undo/redo in one .dale file."
             ),
             "Export PNGs": (
-                "Export separate cropped PNGs with a 3 px guard and a placement manifest."
+                "Export separate cropped PNGs with the configured margin and a placement manifest."
             ),
             "Pan": "Drag to move the map. Right-drag works in every tool.",
             "Auto-close": (
@@ -496,9 +494,9 @@ class MainWindow(QMainWindow):
                 "Right-click: configure connected lines. Each notch is one undo step."
             ),
             "Export selected regions": "Export only the highlighted regions as separate PNGs.",
-            "Export padding (px)": (
-                "Additional transparent pixels around each region box, beyond the manda"
-                "tory 3 px guard."
+            "Artwork offset (px)": (
+                "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
+                "negative cuts inward."
             ),
             "Edit points": (
                 "Click a line to insert; drag a fixed-size circle to move; "
@@ -556,7 +554,6 @@ class MainWindow(QMainWindow):
         sidebar_scroll.horizontalScrollBar().setToolTip("Scroll map settings and editing help.")
         for control in (
             self.version,
-            self.contour_offset,
             self.language_control,
             self.region_control,
         ):
@@ -697,7 +694,7 @@ class MainWindow(QMainWindow):
         self.placement_hint.setText(
             text
             + "\n\n"
-            + self.t("Placement in Foundry is configured separately. PNG edge guard: 3 px.")
+            + self.t("Placement in Foundry is configured separately. PNG margin is configurable.")
         )
 
     def remember_foundry_version(self):
@@ -852,7 +849,6 @@ class MainWindow(QMainWindow):
                 sizeable = (
                     self.brush_control,
                     self.restore_brush_control,
-                    self.export_padding_control,
                     self.global_close_control,
                     self.geometry_brush_control,
                     self.vertex_brush_control,
@@ -945,7 +941,6 @@ class MainWindow(QMainWindow):
             "elevation_ft": placement.elevation_ft,
             "raster_erase_diameter": self.view.raster_diameters["Erase"],
             "raster_restore_diameter": self.view.raster_diameters["Restore"],
-            "export_padding_px": self.export_padding_control.value(),
             "export_regions": self.selected_regions,
             "move_related_lines": self.view.move_related,
             "mode": self.view.mode,
@@ -1033,7 +1028,6 @@ class MainWindow(QMainWindow):
             self.elevation.setCurrentText(str(settings["elevation_ft"]))
             self.brush_control.setValue(settings["raster_erase_diameter"])
             self.restore_brush_control.setValue(settings["raster_restore_diameter"])
-            self.export_padding_control.setValue(settings["export_padding_px"])
             self.geometry_brush_control.setValue(settings["line_eraser_diameter"])
             self.vertex_brush_control.setValue(settings["vertex_eraser_diameter"])
             self.auto_close_control.setValue(settings["auto_close_distance_px"])
@@ -1332,11 +1326,12 @@ class MainWindow(QMainWindow):
         if not selected:
             detail = self.t("PNG: none")
         else:
-            padding = self.export_padding_control.value()
             bounds = []
             for polygon in selected:
                 try:
-                    bounds.append(crop_bounds(polygon, padding, session.source.size))
+                    result, _, _ = prepare_overlay(session, polygon)
+                    if result is not None:
+                        bounds.append(result)
                 except ValueError:
                     pass
             if not bounds:
@@ -1344,19 +1339,17 @@ class MainWindow(QMainWindow):
             elif len(bounds) == 1:
                 x, y, right, bottom = bounds[0]
                 detail = self.t(
-                    "PNG: {width} × {height} (+{margin} px)",
+                    "PNG: {width} × {height}",
                     width=right - x,
                     height=bottom - y,
-                    margin=3 + padding,
                 )
             else:
                 largest = max(bounds, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
                 detail = self.t(
-                    "PNG: {count} · max {width} × {height} (+{margin} px)",
+                    "PNG: {count} · max {width} × {height}",
                     count=len(bounds),
                     width=largest[2] - largest[0],
                     height=largest[3] - largest[1],
-                    margin=3 + padding,
                 )
         self.map_info.setText(
             self.t(
@@ -1378,7 +1371,7 @@ class MainWindow(QMainWindow):
             self.t(
                 "Closed: connected closed regions in current geometry. "
                 "Open: connected groups of unresolved lines. "
-                "Export bounds include 3 px on every side."
+                "PNG bounds include every nonzero bicubic alpha pixel, clipped to the source JPG."
             )
         )
         self.view.viewport().update()
@@ -1454,16 +1447,14 @@ class MainWindow(QMainWindow):
         default = self.output_directory or (
             self.project_path.parent if self.project_path else Path.cwd()
         )
-        path = QFileDialog.getExistingDirectory(
-            self, self.t("Export separate PNGs with 3 px edge guard"), str(default)
-        )
+        path = QFileDialog.getExistingDirectory(self, self.t("Export separate PNGs"), str(default))
         if not path:
             return
         self.remember_directory("output", Path(path))
         self.export_action.setEnabled(False)
         self.export_regions_action.setEnabled(False)
         self.progress = QProgressDialog(
-            self.t("Exporting separate PNGs with 3 px edge guard…"), self.t("Cancel"), 0, 100, self
+            self.t("Exporting separate PNGs…"), self.t("Cancel"), 0, 100, self
         )
         self.progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.progress.setAutoClose(False)
@@ -1475,7 +1466,6 @@ class MainWindow(QMainWindow):
             placement,
             self,
             self.selected_regions,
-            self.export_padding_control.value(),
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.outcome.connect(self.record_outcome)
@@ -1569,7 +1559,7 @@ def main():
                 "tool_set": window.current_tool_set,
                 "show_walls": window.view.show_walls,
                 "selected_regions": window.selected_regions,
-                "export_padding_px": window.export_padding_control.value(),
+                "artwork_offset_px": window.contour_offset.value(),
                 "raster_diameters": window.view.raster_diameters,
                 "move_related_lines": window.view.move_related,
                 "project_schema_version": SCHEMA_VERSION,

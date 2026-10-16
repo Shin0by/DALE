@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "dedicated_rotation_and_active_geometry_visibility",
+  "phase": "foundry_semantic_research_and_exact_bicubic_alpha_export",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -15,12 +15,15 @@
     "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
     "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
     "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales; a separate Rotate regions button uses plain wheel at 0.1 degree per notch around stable shared pivot; raster and mask snapshots stay fixed.",
-    "Separate PNGs retain mandatory 3px artwork guard plus optional transparent padding; clamp every crop to JPG. Signed contour offset remains source-pixel geometry.",
+    "The only artwork margin is the left Regions Artwork offset, signed -4096..4096 source pixels. Current offset applies to export outside boundaries; original raster and preview mask snapshots stay fixed. Bicubic 2x alpha smoothing preserves native RGB. Exact crop includes every nonzero byte (even 1/255), clamped to JPG. No mandatory 3px guard or global transparent-padding parameter.",
     "Portable merged preferences retain language, Foundry version, related-line choice, independent input/output folders shared across file types. Never persist extraction directories.",
     "Current .dale JSON catalog preserves original and additional updated documents. Generation of updated Foundry JSON remains future work.",
     "Chat Russian, technical text English, bilingual UI/tooltips with actual shortcuts; no private example uploads.",
     "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels.",
-    "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines."
+    "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines.",
+    "Transform isolation requirement: freeze selected/optional related geometry before move/scale/rotation; do not snap, repair or extend stationary lines toward it. Owner-reported defect is pending NEXT-009, not fixed in this research task.",
+    "Foundry semantic export is research only: distinct v13/v14 serializers, explicit floors/Regions/doors/teleport semantics, ordered endpoints/shapes and ID/UUID remapping. Preserve original/updated catalog separation; no legacy .dale support.",
+    "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded."
   ],
   "validated": [
     {
@@ -201,6 +204,17 @@
       "check": "plain_wheel_rotation_and_active_only_walls",
       "result": "179 tests pass, ruff clean. Qt checks cover rotation button/plain wheel/direction/no zoom/common center/undo/project restore/right-click configuration, right-drag in Rotate regions, hidden inactive geometry in all 11 tools, selected-cell exceptions and white eraser previews with Walls off. Audited 84 controls RU/EN/RU and inspected 1024x768 screenshots.",
       "command": "python -m pytest -q; python artifacts/verify_current_ui.py; python artifacts/verify_rotation_visibility.py"
+    },
+    {
+      "check": "owner_foundry_scene_probe",
+      "result": "Read-only analysis of the 20,764-byte Foundry 13.351 / dnd5e 5.3.3 probe: 12 walls, 9 Regions, 13 shapes, 2 holes, 4 enabled same-scene directed teleports, 1 token and 2 drawings. IDs/links checked; source SHA-256 unchanged. Sequential local geometry evaluation yields 7 nonempty Regions. Official v13/v14 schemas and module author sources compared; no live Foundry validation.",
+      "details": "docs/foundry-scene-format.md",
+      "profile": "project/foundry-format-profile.json"
+    },
+    {
+      "check": "exact_bicubic_alpha_and_left_artwork_offset",
+      "result": "190 tests pass; ruff clean. Regression PNGs retain native JPG RGB, apply 300px artwork offset with/without prior outside masks, preserve eraser history, clip to JPG and use exact smoothed-alpha bounds. A fractional triangle contains real alpha 1/255; reconstructing its tight crop matches the full-canvas result byte for byte. Export stripes/crops have matching bicubic edges; empty/cancelled exports leave no output. UI checks cover the left artwork tile, absent global padding control, sidebar sizes and duplicate-free RU/EN/RU Ctrl+wheel help. Audited 82 controls through RU/EN/RU and inspected the final Regions layout at 1024x768.",
+      "command": "python -m pytest -q; python -m ruff check .; python -m ruff format --check ."
     }
   ],
   "completed": [
@@ -232,24 +246,33 @@
     },
     {
       "id": "NEXT-008",
-      "task": "Generate updated Foundry JSON documents from working geometry with version-specific validation; preserve the original and expose every snapshot in the existing catalog chooser."
+      "task": "Implement semantic Foundry scene generation only after the documented design is validated: typed wall/Region/floor model, explicit split/merge/orientation rules, v13/v14 serializers and ID/UUID remapping. Preserve original and expose updated snapshots in the existing catalog. See docs/foundry-export-feasibility.md."
+    },
+    {
+      "id": "NEXT-009",
+      "task": "Investigate owner-reported unwanted line extensions during region movement/rotation. Freeze selected/optional related membership before transforms; disable snapping/repair/auto-extension toward stationary geometry during move/scale/rotation. No new connectors or growing group; preserve raster, stationary boundaries, lineage and undo. Recorded only; fix remains pending."
+    },
+    {
+      "id": "NEXT-010",
+      "task": "Expand Foundry semantic evidence: equivalent v14 native-level/portal scene export, exact v13 module builds, runtime padded dimensions, missing door/animation/shape/link combinations and live import UUID/arrival-height checks. Follow docs/foundry-export-feasibility.md before generation."
     }
   ],
   "limitations": [
     "No semantic terrain/object segmentation.",
     "No live Foundry connection, scene generation or verified floor placement; coordinate manifests require manual placement.",
-    "Historical real sample profile is recorded separately; current examples contain no owner maps. Current changes validated with synthetic data.",
+    "Six owner Dungeon Alchemist JPG/JSON pairs and one independent Foundry 13.351 semantic probe are present locally. The probe has no JPG; padded-canvas alignment and runtime behavior remain unverified. Export-margin regressions use synthetic data.",
     "Missing roof boundaries require manual tracing; automatic boundary reuse across floors remains future work.",
     "Geometry transforms leave raster and prior mask snapshots fixed; moved regions can lie outside JPG, where export bounds may be unavailable.",
     "Old .dale formats are intentionally unsupported. Updated JSON generation is not implemented; declared additional documents already round-trip and import.",
-    "Low-level third-party errors may remain English technical detail."
+    "Low-level third-party errors may remain English technical detail.",
+    "Owner-reported transform snapping/extension defect is pending NEXT-009; documenting isolation is not a fix. No semantic exporter or height normalization implementation was added during research."
   ],
   "ui_languages": [
     "en",
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.14",
+  "current_version": "0.3.16",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -272,5 +295,5 @@
   },
   "project_schema_version": 2,
   "legacy_support": false,
-  "validation_history_note": "Older records describe historical released versions; current behavior is defined by decisions and requirements, with no legacy support."
+  "validation_history_note": "Older records describe historical released versions and superseded controls/guards. Current behavior is defined by decisions and requirements, with no legacy support."
 }

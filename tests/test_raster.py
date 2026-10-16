@@ -5,7 +5,7 @@ from PIL import Image, ImageChops
 from shapely.geometry import Polygon
 
 from dale.placement import Placement
-from dale.raster import ExportCancelled, export_png, render_alpha
+from dale.raster import ExportCancelled, export_png, render_alpha, render_export_alpha
 from dale.scene import open_source
 from dale.session import Closure, ContourMask, Session, Stroke
 
@@ -26,6 +26,18 @@ def test_mask_brush_and_restore_apply_in_order(pair_factory):
     inside = render_alpha(source.size, source.size, [ContourMask(area, "inside")])
     assert inside.getpixel((0, 0)) == 255
     assert inside.getpixel((30, 50)) == 0
+
+
+def test_export_alpha_softens_only_a_narrow_edge_and_is_crop_invariant():
+    mask = ContourMask(Polygon([(20, 20), (100, 100), (20, 100)]), "outside")
+    alpha = render_export_alpha((130, 300), (130, 300), [mask])
+    assert 0 < alpha.getpixel((50, 50)) < 255
+    assert alpha.getpixel((30, 70)) == 255
+    assert alpha.getpixel((80, 30)) == 0
+    assert alpha.getpixel((17, 70)) == 0  # No wide blur beyond the contour.
+    assert alpha.getpixel((23, 70)) == 255
+    patch = render_export_alpha((30, 40), (130, 300), [mask], top=35, left=35)
+    assert patch.tobytes() == alpha.crop((35, 35, 65, 75)).tobytes()
 
 
 @pytest.mark.parametrize("mode", ["outside", "inside"])
@@ -55,7 +67,7 @@ def test_export_stripes_match_full_render_preserve_rgb_and_source(pair_factory, 
     path = source.image_path.parent / "overlay.png"
     progress = []
     export_png(source, operations, path, progress.append, placement=Placement(13, 17))
-    expected = render_alpha(source.size, source.size, operations)
+    expected = render_export_alpha(source.size, source.size, operations)
     with Image.open(path) as result, open_source(source.image_path) as original:
         assert result.mode == "RGBA"
         assert result.size == original.size == source.size

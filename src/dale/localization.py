@@ -127,11 +127,20 @@ RUSSIAN = {
     ("Export only the highlighted regions as separate PNGs."): (
         "Экспортировать только выделенные области отдельными PNG."
     ),
-    ("Export padding (px)"): ("Дополнительный отступ PNG (px)"),
-    ("Additional transparent pixels around each region box, beyond the mandatory 3 px guard."): (
-        "Дополнительные прозрачные пиксели вокруг прямоугольника каждой области"
-        " сверх обязательного запаса 3 px. Отступ обрезается границами исходног"
-        "о JPG."
+    ("Artwork offset (px)"): ("Отступ изображения (px)"),
+    (
+        "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
+        "negative cuts inward."
+    ): (
+        "Сохранить пиксели JPG снаружи линий. Положительное значение расширяет изображение, "
+        "отрицательное срезает внутрь."
+    ),
+    (
+        "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
+        "negative cuts inward. Ctrl+wheel: change this value."
+    ): (
+        "Сохранить пиксели JPG снаружи линий. Положительное значение расширяет изображение, "
+        "отрицательное срезает внутрь. Ctrl+колесо: изменить значение."
     ),
     (
         "Distance to existing vertices or lines. Vertices take priority. Click "
@@ -189,10 +198,8 @@ RUSSIAN = {
         "Выберите хотя бы одну замкнутую область на карте."
     ),
     ("Selected: {count}"): ("Выбрано: {count}"),
-    ("PNG: {width} × {height} (+{margin} px)"): ("PNG: {width} × {height} (+{margin} px)"),
-    ("PNG: {count} · max {width} × {height} (+{margin} px)"): (
-        "PNG: {count} · макс. {width} × {height} (+{margin} px)"
-    ),
+    ("PNG: {width} × {height}"): ("PNG: {width} × {height}"),
+    ("PNG: {count} · max {width} × {height}"): ("PNG: {count} · макс. {width} × {height}"),
     ("The selected region lies outside the source image."): (
         "Выбранная область находится вне исходного изображения."
     ),
@@ -266,10 +273,6 @@ RUSSIAN = {
         "Версия Foundry изменена, но сохранить настройки не удалось."
     ),
     "PNG: none": "PNG: нет",
-    "PNG: {width} × {height} (+3 px)": "PNG: {width} × {height} (+3 px)",
-    "PNG: {count} · max {width} × {height} (+3 px)": (
-        "PNG: {count} · макс. {width} × {height} (+3 px)"
-    ),
     "Map: {width} × {height} | {detail} | Closed: {closed} | Open: {open}": (
         "Карта: {width} × {height} | {detail} | Замкнутых: {closed} | Незамкнутых: {open}"
     ),
@@ -333,11 +336,13 @@ RUSSIAN = {
     "All regions": "Все области",
     (
         "Closed: connected closed regions in current geometry. "
-        "Open: connected groups of unresolved lines. Export bounds include 3 px on every side."
+        "Open: connected groups of unresolved lines. "
+        "PNG bounds include every nonzero bicubic alpha pixel, clipped to the source JPG."
     ): (
         "Замкнутые — связанные замкнутые области текущей геометрии. "
         "Незамкнутые — связанные группы незамкнутых линий. "
-        "Габариты экспорта включают запас 3 px с каждой стороны."
+        "PNG включает каждый пиксель с альфа-каналом больше нуля после bicubic-сглаживания "
+        "в пределах исходного JPG."
     ),
     "Region {number}": "Область {number}",
     "Choose all closed regions or one region to highlight and export.": (
@@ -345,12 +350,6 @@ RUSSIAN = {
     ),
     "Map: not loaded | Closed: 0 | Open: 0": "Карта не загружена | Замкнутых: 0 | Незамкнутых: 0",
     "Export: no closed region": "Экспорт: нет замкнутых областей",
-    "Export (+3 px): {width} × {height} px | X: {x}, Y: {y}": (
-        "Экспорт (+3 px): {width} × {height} px | X: {x}, Y: {y}"
-    ),
-    "Export: {count} PNGs | Largest crop (+3 px): {width} × {height} px": (
-        "Экспорт: {count} PNG | Наибольший PNG (+3 px): {width} × {height} px"
-    ),
     "Map: {width} × {height} px | Closed: {closed} | Open: {open}\n{detail}": (
         "Карта: {width} × {height} px | Замкнутых: {closed} | Незамкнутых: {open}\n{detail}"
     ),
@@ -366,7 +365,7 @@ RUSSIAN = {
         "Double-click circle: delete\nGeometry erasers: drag the circle\n"
         "Escape: cancel current gesture\n\n"
         "Snapping (px): distance to existing geometry.\nVertices take priority over lines.\n\n"
-        "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
+        "Ctrl+S: save complete project\nPNG: cropped regions with configurable margin."
     ): (
         "Правая кнопка: перемещение\nКолесо: масштаб у курсора\n"
         "Ctrl + колесо: размер инструмента\n\n"
@@ -375,7 +374,7 @@ RUSSIAN = {
         "Двойной клик: удалить точку\nЛастик геометрии: тяните круг\n"
         "Escape: отменить текущий жест\n\n"
         "Прилипание (px) — расстояние до разметки.\nПриоритет у вершин, затем у линий.\n\n"
-        "Ctrl+S: сохранить проект\nPNG: отдельные области + 3 px запаса"
+        "Ctrl+S: сохранить проект\nPNG: отдельные области с заданным отступом"
     ),
     "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size.": (
         "Диаметр ластика геометрии в экранных пикселях. Ctrl + колесо меняет размер инструмента."
@@ -495,8 +494,8 @@ RUSSIAN = {
     ("Save sources, masks, geometry, preferences, and undo/redo in one .dale file."): (
         "Сохранить исходники, маски, линии, настройки и Undo/Redo в один файл .dale."
     ),
-    ("Export separate cropped PNGs with a 3 px guard and a placement manifest."): (
-        "Экспортировать отдельные PNG по контурам с запасом 3 px и файлом координат."
+    ("Export separate cropped PNGs with the configured margin and a placement manifest."): (
+        "Экспортировать отдельные PNG по контурам с заданным отступом и файлом координат."
     ),
     ("Drag to move the map. Right-drag works in every tool."): (
         "Перемещайте карту мышью. Правая кнопка работает во всех инструментах."
@@ -534,8 +533,8 @@ RUSSIAN = {
     ),
     "Enter a whole-number elevation in feet.": "Введите высоту в футах целым числом.",
     "Elevation must be a whole number of feet.": "Высота должна быть целым числом футов.",
-    ("Placement in Foundry is configured separately. PNG edge guard: 3 px."): (
-        "Высота размещения настраивается в Foundry. Запас у края PNG: 3 px."
+    ("Placement in Foundry is configured separately. PNG margin is configurable."): (
+        "Размещение настраивается в Foundry. Отступ PNG задаётся отдельно."
     ),
     ("Contour preview updated. Apply Remove outside/inside to use these settings."): (
         "Предпросмотр контура обновлён. Примените «Удалить снаружи/внутри», чтобы изменить маску."
@@ -571,8 +570,8 @@ RUSSIAN = {
         "Замкнутая область исчезла. Уменьшите отступ внутрь или замкните контур."
     ),
     "Invalid elevation": "Некорректная высота",
-    "Export separate PNGs with 3 px edge guard": "Экспорт отдельных PNG с запасом 3 px",
-    "Exporting separate PNGs with 3 px edge guard…": "Экспорт отдельных PNG с запасом 3 px…",
+    "Export separate PNGs": "Экспорт отдельных PNG",
+    "Exporting separate PNGs…": "Экспорт отдельных PNG…",
     "Export failed": "Ошибка экспорта",
     "Exported {path}": "Экспортировано: {path}",
     "Cancel": "Отмена",

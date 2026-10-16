@@ -1,0 +1,854 @@
+{
+  "schema_version": 1,
+  "status": "research_only_not_an_export_contract",
+  "checked": "2026-10-16",
+  "source": {
+    "local_path": "examples/fvtt-Scene-test-2WsAkxPbpDPmK2o4.json",
+    "sha256": "a2fc432fde70b8009ef9691e1501005e658522040528b1ab0613d333684627d2",
+    "bytes": 20764,
+    "encoding": "UTF-8",
+    "core_version": "13.351",
+    "system_id": "dnd5e",
+    "system_version": "5.3.3",
+    "installed_module_versions": null,
+    "root_id_present": false,
+    "native_levels_present": false,
+    "private_world_and_document_ids_omitted": true
+  },
+  "aliases": {
+    "Wn": "/walls/n (zero-based)",
+    "Rn": "/regions/n (zero-based)"
+  },
+  "counts": {
+    "walls": 12,
+    "regions": 9,
+    "tokens": 1,
+    "drawings": 2,
+    "lights": 0,
+    "notes": 0,
+    "sounds": 0,
+    "templates": 0,
+    "tiles": 0
+  },
+  "scene": {
+    "width": 4000,
+    "height": 3000,
+    "padding": 0.25,
+    "grid": {
+      "type": 1,
+      "size": 100,
+      "style": "solidLines",
+      "thickness": 1,
+      "color": "#000000",
+      "alpha": 0.2,
+      "distance": 5,
+      "units": "ft"
+    },
+    "background": {
+      "src": null,
+      "anchorX": 0,
+      "anchorY": 0,
+      "offsetX": 0,
+      "offsetY": 0,
+      "fit": "fill",
+      "scaleX": 1,
+      "scaleY": 1,
+      "rotation": 0,
+      "tint": "#ffffff",
+      "alphaThreshold": 0
+    },
+    "flags": {
+      "wall-height": {
+        "advancedVision": true
+      }
+    }
+  },
+  "coordinate_status": {
+    "padded_canvas_requires_adapter": true,
+    "matching_jpg_supplied": false,
+    "candidate_scene_origin": [
+      1000,
+      800
+    ],
+    "candidate_canvas_size": [
+      6000,
+      4600
+    ],
+    "candidate_status": "inferred_not_runtime_verified"
+  },
+  "enums_v13": {
+    "sense": {
+      "NONE": 0,
+      "LIMITED": 10,
+      "NORMAL": 20,
+      "PROXIMITY": 30,
+      "DISTANCE": 40
+    },
+    "movement": {
+      "NONE": 0,
+      "NORMAL": 20
+    },
+    "direction": {
+      "BOTH": 0,
+      "LEFT": 1,
+      "RIGHT": 2
+    },
+    "door": {
+      "NONE": 0,
+      "DOOR": 1,
+      "SECRET": 2
+    },
+    "door_state": {
+      "CLOSED": 0,
+      "OPEN": 1,
+      "LOCKED": 2
+    },
+    "region_visibility": {
+      "LAYER": 0,
+      "GAMEMASTER": 1,
+      "ALWAYS": 2
+    }
+  },
+  "walls": [
+    {
+      "alias": "W0",
+      "light": 20,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "c": [
+        1200,
+        1100,
+        1700,
+        1100
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W1",
+      "light": 10,
+      "sight": 10,
+      "sound": 10,
+      "move": 20,
+      "c": [
+        1200,
+        1200,
+        1700,
+        1200
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W2",
+      "light": 0,
+      "sight": 0,
+      "sound": 0,
+      "move": 20,
+      "c": [
+        1200,
+        1300,
+        1700,
+        1300
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W3",
+      "light": 20,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "door": 1,
+      "c": [
+        1200,
+        1500,
+        1700,
+        1500
+      ],
+      "dir": 0,
+      "ds": 2,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": {
+        "type": "",
+        "texture": null,
+        "flip": false,
+        "double": false,
+        "direction": 1,
+        "duration": 750,
+        "strength": 1
+      },
+      "flags": {
+        "wall-height": {
+          "top": null,
+          "bottom": null
+        }
+      },
+      "doorSound": ""
+    },
+    {
+      "alias": "W4",
+      "light": 20,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "door": 2,
+      "c": [
+        1200,
+        1700,
+        1700,
+        1700
+      ],
+      "dir": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W5",
+      "light": 30,
+      "sight": 30,
+      "sound": 20,
+      "move": 20,
+      "threshold": {
+        "light": 10,
+        "sight": 10,
+        "attenuation": true,
+        "sound": null
+      },
+      "c": [
+        1200,
+        1800,
+        1700,
+        1800
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W6",
+      "light": 20,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "door": 1,
+      "c": [
+        1200,
+        1400,
+        1700,
+        1400
+      ],
+      "dir": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {}
+    },
+    {
+      "alias": "W7",
+      "light": 20,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "door": 1,
+      "c": [
+        1200,
+        1600,
+        1700,
+        1600
+      ],
+      "dir": 0,
+      "ds": 1,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": {
+        "type": "",
+        "texture": null,
+        "flip": false,
+        "double": false,
+        "direction": 1,
+        "duration": 750,
+        "strength": 1
+      },
+      "flags": {
+        "wall-height": {
+          "top": null,
+          "bottom": null
+        }
+      },
+      "doorSound": ""
+    },
+    {
+      "alias": "W8",
+      "light": 30,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "c": [
+        1200,
+        1900,
+        1700,
+        1900
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": 5,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {
+        "wall-height": {
+          "top": null,
+          "bottom": null
+        }
+      }
+    },
+    {
+      "alias": "W9",
+      "light": 10,
+      "sight": 40,
+      "sound": 0,
+      "move": 0,
+      "c": [
+        1200,
+        2000,
+        1700,
+        2000
+      ],
+      "dir": 0,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {
+        "wall-height": {
+          "top": 10,
+          "bottom": 100
+        }
+      }
+    },
+    {
+      "alias": "W10",
+      "light": 10,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "c": [
+        1200,
+        2100,
+        1700,
+        2100
+      ],
+      "dir": 1,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": null,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {
+        "wall-height": {
+          "top": null,
+          "bottom": null
+        }
+      }
+    },
+    {
+      "alias": "W11",
+      "light": 30,
+      "sight": 20,
+      "sound": 20,
+      "move": 20,
+      "c": [
+        1200,
+        2200,
+        1700,
+        2200
+      ],
+      "dir": 2,
+      "door": 0,
+      "ds": 0,
+      "threshold": {
+        "light": 10,
+        "sight": null,
+        "sound": null,
+        "attenuation": false
+      },
+      "animation": null,
+      "flags": {
+        "wall-height": {
+          "top": null,
+          "bottom": null
+        }
+      }
+    }
+  ],
+  "regions": [
+    {
+      "alias": "R0",
+      "color": "#ccca28",
+      "elevation": {
+        "bottom": null,
+        "top": null
+      },
+      "visibility": 0,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 1900,
+          "y": 1100,
+          "width": 700,
+          "height": 100,
+          "rotation": 0,
+          "hole": false
+        },
+        {
+          "type": "rectangle",
+          "x": 1900,
+          "y": 1300,
+          "width": 700,
+          "height": 100,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 140000.0,
+      "positive_components": 2
+    },
+    {
+      "alias": "R1",
+      "color": "#4fcc28",
+      "elevation": {
+        "bottom": -100,
+        "top": 100
+      },
+      "visibility": 1,
+      "locked": false,
+      "shapes": [],
+      "flags": {},
+      "effective_empty": true,
+      "effective_area_approx_px2": 0.0,
+      "positive_components": 0
+    },
+    {
+      "alias": "R2",
+      "color": "#cc284b",
+      "elevation": {
+        "bottom": 10,
+        "top": 20
+      },
+      "visibility": 0,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "ellipse",
+          "x": 2143.75,
+          "y": 1687.5,
+          "radiusX": 118.75,
+          "radiusY": 125,
+          "rotation": 0,
+          "hole": false
+        },
+        {
+          "type": "ellipse",
+          "x": 2468.75,
+          "y": 1693.75,
+          "radiusX": 106.25,
+          "radiusY": 31.25,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 57063.727,
+      "positive_components": 2
+    },
+    {
+      "alias": "R3",
+      "color": "#3ccc28",
+      "elevation": {
+        "bottom": null,
+        "top": null
+      },
+      "visibility": 2,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 1987.5,
+          "y": 1937.5,
+          "width": 337.5,
+          "height": 162.5,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 54843.75,
+      "positive_components": 1
+    },
+    {
+      "alias": "R4",
+      "color": "#cc8e28",
+      "elevation": {
+        "bottom": null,
+        "top": null
+      },
+      "visibility": 0,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 1975,
+          "y": 2262.5,
+          "width": 187.5,
+          "height": 175,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 32812.5,
+      "positive_components": 1
+    },
+    {
+      "alias": "R5",
+      "color": "#cc283a",
+      "elevation": {
+        "bottom": 20,
+        "top": 20
+      },
+      "visibility": 0,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "polygon",
+          "points": [
+            2312.5,
+            2375,
+            2312.5,
+            2300,
+            2475,
+            2250,
+            2550,
+            2362.5,
+            2500,
+            2475,
+            2462.5,
+            2400,
+            2425,
+            2325,
+            2325,
+            2362.5
+          ],
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 22265.625,
+      "positive_components": 1
+    },
+    {
+      "alias": "R6",
+      "color": "#00178a",
+      "elevation": {
+        "bottom": 20,
+        "top": 30
+      },
+      "visibility": 2,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 2000,
+          "y": 2700,
+          "width": 100,
+          "height": 500,
+          "rotation": 0,
+          "hole": false
+        },
+        {
+          "type": "ellipse",
+          "x": 2100,
+          "y": 3056.25,
+          "radiusX": 50,
+          "radiusY": 43.75,
+          "rotation": 0,
+          "hole": false
+        },
+        {
+          "type": "ellipse",
+          "x": 2062.5,
+          "y": 3062.5,
+          "radiusX": 25,
+          "radiusY": 25,
+          "rotation": 0,
+          "hole": false
+        },
+        {
+          "type": "ellipse",
+          "x": 2068.75,
+          "y": 3075,
+          "radiusX": 31.25,
+          "radiusY": 25,
+          "rotation": 0,
+          "hole": true
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 50981.742,
+      "positive_components": 1
+    },
+    {
+      "alias": "R7",
+      "color": "#9028cc",
+      "elevation": {
+        "bottom": 30,
+        "top": 40
+      },
+      "visibility": 2,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 2400,
+          "y": 2700,
+          "width": 100,
+          "height": 500,
+          "rotation": 0,
+          "hole": false
+        }
+      ],
+      "flags": {},
+      "effective_empty": false,
+      "effective_area_approx_px2": 50000.0,
+      "positive_components": 1
+    },
+    {
+      "alias": "R8",
+      "color": "#cc28b1",
+      "elevation": {
+        "bottom": 30,
+        "top": 40
+      },
+      "visibility": 2,
+      "locked": false,
+      "shapes": [
+        {
+          "type": "rectangle",
+          "x": 2500,
+          "y": 2700,
+          "width": 100,
+          "height": 500,
+          "rotation": 0,
+          "hole": true
+        }
+      ],
+      "flags": {},
+      "effective_empty": true,
+      "effective_area_approx_px2": 0.0,
+      "positive_components": 0
+    }
+  ],
+  "region_geometry_evaluation": {
+    "order": "sequential positive union / hole difference within the same Region",
+    "nonempty_regions": 7,
+    "empty_aliases": [
+      "R1",
+      "R8"
+    ],
+    "shape_types": {
+      "rectangle": 7,
+      "ellipse": 5,
+      "polygon": 1
+    },
+    "holes": 2,
+    "ellipse_approximation_segments": 1024,
+    "engine": "local Shapely, not live Foundry Clipper"
+  },
+  "teleports": [
+    {
+      "from": "R4",
+      "to": "R5",
+      "same_scene": true,
+      "type": "teleportToken",
+      "disabled": false,
+      "choice": true,
+      "system_fields": [
+        "choice",
+        "destination"
+      ]
+    },
+    {
+      "from": "R5",
+      "to": "R4",
+      "same_scene": true,
+      "type": "teleportToken",
+      "disabled": false,
+      "choice": false,
+      "system_fields": [
+        "choice",
+        "destination"
+      ]
+    },
+    {
+      "from": "R6",
+      "to": "R7",
+      "same_scene": true,
+      "type": "teleportToken",
+      "disabled": false,
+      "choice": false,
+      "system_fields": [
+        "choice",
+        "destination"
+      ]
+    },
+    {
+      "from": "R7",
+      "to": "R4",
+      "same_scene": true,
+      "type": "teleportToken",
+      "disabled": false,
+      "choice": false,
+      "system_fields": [
+        "choice",
+        "destination"
+      ]
+    }
+  ],
+  "normalization_policy": {
+    "accept_foundry_permitted_setting_combinations": true,
+    "source_bytes_immutable": true,
+    "finite_swapped_wall_height_bounds": "may normalize working/generated bottom=min, top=max; retain originals and record difference",
+    "null_wall_bounds": "unbounded, never zero",
+    "observed_case": {
+      "wall": "W9",
+      "original": {
+        "top": 10,
+        "bottom": 100
+      },
+      "normalized_candidate": {
+        "bottom": 10,
+        "top": 100
+      }
+    },
+    "implemented_in_app": false
+  },
+  "target_differences_v14": {
+    "native_scene_levels": true,
+    "wall_levels_field": "SceneLevelsSetField",
+    "region_levels_and_other_new_fields": true,
+    "teleport_system_fields": [
+      "choice",
+      "destinations",
+      "dialog",
+      "placement",
+      "revealed",
+      "snap",
+      "transition"
+    ],
+    "floor_behaviors": [
+      "ChangeLevelRegionBehaviorType",
+      "DefineSurfaceRegionBehaviorType"
+    ],
+    "owner_v14_probe_available": false,
+    "serializer_implemented": false
+  },
+  "unverified": [
+    "Runtime interpretation of unusual restriction/null-threshold combinations",
+    "Installed Wall Height version and exact runtime behavior",
+    "Padded scene origin from 13.351 runtime",
+    "Teleport arrival elevation, placement and player confirmation",
+    "Scene clone/import ID and destination UUID remapping",
+    "Native v14 Level membership, surfaces and floor transitions",
+    "Rotated shapes, circles, hole refill order, animations/audio and cross-scene links"
+  ],
+  "documents": [
+    "docs/foundry-scene-format.md",
+    "docs/foundry-export-feasibility.md"
+  ],
+  "evidence": {
+    "wall_v13": "https://foundryvtt.com/api/v13/classes/foundry.documents.BaseWall.html",
+    "wall_sense_enum": "https://foundryvtt.com/api/v13/variables/CONST.WALL_SENSE_TYPES.html",
+    "region_v13": "https://foundryvtt.com/api/v13/classes/foundry.documents.BaseRegion.html",
+    "region_visibility": "https://foundryvtt.com/api/v13/variables/CONST.REGION_VISIBILITY.html",
+    "regions_guide": "https://foundryvtt.com/article/scene-regions/",
+    "teleport_v13": "https://foundryvtt.com/api/v13/classes/foundry.data.regionBehaviors.TeleportTokenRegionBehaviorType.html",
+    "teleport_v14": "https://foundryvtt.com/api/v14/classes/foundry.data.regionBehaviors.TeleportTokenRegionBehaviorType.html",
+    "level_v14": "https://foundryvtt.com/api/v14/classes/foundry.documents.BaseLevel.html",
+    "wall_height_bounds": "https://github.com/theripper93/wall-height/blob/main/scripts/utils.js",
+    "scene_dimensions": "https://foundryvtt.com/api/v13/classes/foundry.documents.Scene.html#getDimensions"
+  }
+}

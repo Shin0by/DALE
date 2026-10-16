@@ -46,10 +46,10 @@ The files contain one scene object each, encoded as JSON, without embedded image
 
 Calling this a legacy-style profile is an inference from the field layout, supported by the official [v9 SceneData reference](https://foundryvtt.com/api/v9/data.SceneData.html). It does not date the Dungeon Alchemist application that produced the files. The modern [v13 Wall model](https://foundryvtt.com/api/v13/classes/foundry.documents.BaseWall.html) uses separate `sight`/`light` restriction fields rather than the observed `sense` field. A future scene exporter must migrate the actual schemas and enumeration values and account for v14 Level documents; changing an image path or height alone is not a complete JSON conversion. Native Foundry import/migration has not been tested here.
 
-## Contour settings confirmed by owner feedback
+## Current contour settings and historical measurements
 
-- **Join gaps up to (px)**: original-image distance, default 0 (disabled), range 0–4,096 with hundredth-pixel input. Node exact intersections first. Prefer nearby free endpoint pairs, then connect remaining ends to the nearest eligible segment, including its interior for T junctions. Use deterministic local bridges; do not chain an endpoint through multiple automatic joins. Generated joins remain editor-only and follow the same cyan-closed/red-open classification as other lines.
-- **Contour offset (px)**: signed integer pixels, range -4,096 through 4,096. Union the closed faces, then buffer outward for positive values or inward for negative values, using mitered corners. Show the effective boundary as dashed cyan. A positive offset retains more pixels for Remove outside and removes more for Remove inside. A fully eliminated inward region is rejected.
+- Historical gap measurements above used the earlier source-pixel join policy. Current Auto-close and Close all contours are explicit directional-extension tools with separate 1-256 screen-pixel tolerances and confirmation. The passive global gap control and standalone bridges are retired; do not reproduce them from this historical evidence.
+- **Artwork offset (px)**: left Regions numeric tool, signed source pixels -4,096 through 4,096. Buffer contours outward for positive values or inward for negative values, using mitered corners; preview the boundary. A positive offset retains more JPG artwork. A fully eliminated inward region is rejected. Export uses the current offset; the automatic 3px guard and global transparent-padding parameter were removed. Bicubic alpha bounds determine the exact crop.
 - Settings update contour previews immediately. Applied masks remain snapshots; undo an old mask and apply again to replace its result. Changing the numbers alone does not mutate an already applied mask or the source JSON. Zoom does not affect the numerical distances.
 
 ## Real-image export check
@@ -58,7 +58,9 @@ The daytime `lvl2` image was decoded and exported through the existing stripe-ba
 
 The original full-canvas output was **680,799,171 bytes** (about 649 MiB), because that encoder retained RGB under fully transparent pixels. This was a historical pipeline check; the current encoder zeroes RGB only where alpha is zero and restores edits from the unchanged source image.
 
-The current default was checked separately on the same upper-floor source: one cropped **3,451 × 3,523** PNG, **15,510,058 bytes**, **1.36 seconds**, with the mandatory 3-pixel guard and placement manifest. A self-contained `.dale` archive was **49,828,685 bytes**, including exact JPG/JSON and history. These use the existing incomplete contour, not a finished floor or a Foundry import test. Private results remain under ignored `artifacts/sample-analysis/`.
+The earlier separate-crop pipeline was checked on the same upper-floor source: one **3,451 × 3,523** PNG, **15,510,058 bytes**, **1.36 seconds**, with the then-required 3-pixel guard. The owner has since removed that guard; these figures describe the historical output. A self-contained `.dale` archive was **49,828,685 bytes**, including exact JPG/JSON and history. These use the existing incomplete contour, not a finished floor or a Foundry import test. Private results remain under ignored `artifacts/sample-analysis/`.
+
+The separately supplied Foundry 13.351 test scene has a modern grid object, nonzero padding and Regions/behaviors. It is not one of these Dungeon Alchemist pairs. See [the scene atlas](foundry-scene-format.md).
 
 ## Reproduce locally
 

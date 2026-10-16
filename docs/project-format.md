@@ -23,7 +23,7 @@ Splits create child IDs; merges union parent/source references. New contact line
 ## State
 History stores origin, gap_tolerance, contour_offset, operations, redo, UI. All coordinates are source pixels; masks/geometry are immutable snapshots.
 
-Current UI stores tool set/mode, language, Foundry target, viewport/wall visibility, independent eraser/brush sizes, snap enablement/distance, local/global auto-close tolerance, selected cell indices, extra padding, active related-line choice.
+Current UI stores tool set/mode, language, Foundry target, viewport/wall visibility, independent eraser/brush sizes, snap enablement/distance, local/global auto-close tolerance, selected cell indices and active related-line choice. Artwork offset is history.contour_offset and appears in the left Regions tile. No global transparent-padding setting is serialized; exact nonzero bicubic alpha bounds are computed at export.
 
 Remember choice and two input/output directories are portable preferences, not project paths. Retired modes, unfinished-draft migration, shared-size fallbacks, export-region aliases, and component-selection migrations are unsupported.
 Rotate regions is a persisted current tool mode; rotation uses ordinary wheel, not Alt-wheel in Move regions. Wall visibility is restored independently of active selection.

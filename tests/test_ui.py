@@ -680,7 +680,7 @@ def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists
     assert len(window.selected_regions) == 2
     assert window.view.selected_path.contains(QPointF(140, 70))
     assert not window.view.selected_path.contains(QPointF(70, 100))
-    window.export_padding_control.setValue(500)
+    window.contour_offset.setValue(500)
     assert "200 × 200" in window.map_info.text()
     window.brush_control.setValue(31)
     window.restore_brush_control.setValue(79)
@@ -690,7 +690,7 @@ def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists
     assert restored.load_project_file(window.project_path)
     assert restored.selected_regions == window.selected_regions
     assert restored.current_tool_set == "regions"
-    assert restored.export_padding_control.value() == 500
+    assert restored.contour_offset.value() == 500
     assert restored.view.raster_diameters == {"Erase": 31, "Restore": 79}
     assert restored.tool_set_actions["geometry"].text() == "Контуры"
     assert restored.tool_set_actions["regions"].text() == "Области"
@@ -1054,14 +1054,14 @@ def test_ctrl_wheel_resizes_tools_globally_without_zooming_or_changing_language(
     window.close()
 
 
-def test_sidebar_selection_shows_guarded_dimensions_and_language(app, pair_factory):
+def test_sidebar_selection_shows_margin_dimensions_and_language(app, pair_factory):
     source = pair_factory()
     window = MainWindow()
     window.load_sources(source.image_path, source.json_path)
     window.region_control.setCurrentIndex(1)
     assert window.selected_region == 0
     assert "80 × 300" in window.map_info.text()
-    assert "57 × 257" in window.map_info.text()
+    assert "52 × 252" in window.map_info.text()
     assert "Замкнутых: 1" in window.map_info.text()
     assert "Незамкнутых: 0" in window.map_info.text()
     assert not window.view.selected_path.isEmpty()
@@ -1074,6 +1074,37 @@ def test_sidebar_selection_shows_guarded_dimensions_and_language(app, pair_facto
     restored = MainWindow()
     assert restored.load_project_file(window.project_path)
     assert restored.selected_region == 0
-    assert "57 × 257" in restored.map_info.text()
+    assert "52 × 252" in restored.map_info.text()
     window.close()
     restored.close()
+
+
+def test_export_margin_tooltip_has_one_description_and_keeps_wheel_help(app):
+    window = MainWindow()
+    tile = window.sized_tools["Artwork offset (px)"]
+    for language in ("ru", "en", "ru"):
+        window.set_language(language, persist=False)
+        for control in (tile, tile.editor(), tile.editor().lineEdit()):
+            lines = control.toolTip().splitlines()
+            assert len(lines) == len(set(lines))
+            assert len(lines) == 3  # Name, source-artwork meaning, Ctrl+wheel.
+            assert "Ctrl" in lines[-1]
+            assert "3 px" not in control.toolTip()
+        assert "JPG" in tile.toolTip()
+    window.close()
+
+
+def test_artwork_control_is_left_and_global_padding_is_absent(app, pair_factory):
+    source = pair_factory()
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    window.select_tool_set("regions")
+    tile = window.sized_tools["Artwork offset (px)"]
+    assert tile.editor() is window.contour_offset
+    assert not hasattr(window, "export_padding_control")
+    assert "export_padding_px" not in window.ui_state()
+    window.region_control.setCurrentIndex(1)
+    window.contour_offset.setValue(5)
+    assert "62 × 262" in window.map_info.text()
+    window.saved_state = window.document_state()
+    window.close()

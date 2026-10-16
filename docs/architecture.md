@@ -16,7 +16,7 @@ Python 3.11+, PySide6, Pillow, Shapely, psutil; PyInstaller directory bundle. Co
 | region_transform.py | Frozen affine plans, related-line reachability, stationary shared-wall copies, common pivot. |
 | canvas.py | Rendering/pointer/modifier input; no file dialogs. |
 | raster.py | Reduced preview and chronological alpha, cancellable stripe PNG. |
-| overlay_export.py | Cell/component crops, guards/padding/clamping, staged placement manifest. |
+| overlay_export.py | Current cell/component cutouts, exact bicubic alpha bounds/cache, clamping and staged manifest. |
 | project_io.py | Bounded checksummed schema-2 ZIP and multiple JSON catalog. |
 | preferences.py | Atomic merged language/version/related choice/input-output folders. |
 | toolbar.py / localization.py | Drawn icons, embedded numeric buttons, theme/bilingual help. |
@@ -41,13 +41,21 @@ Expose minimum polygonized cells separately from mask union. Toggle smallest cov
 
 Move regions freezes a geometry plan. Related-line mode uses indexed transitive reachability within snap tolerance. Without related lines detach branches and retain shared walls for stationary neighbors. Move regions drag translates and Ctrl-wheel scales 5%. A separate Rotate regions mode consumes plain wheel for 0.1 degree clockwise/counterclockwise rotation per notch without view zoom. Both modes share related-line settings/right-click configuration and persist their active mode. Remove the Alt-wheel rotation handler. Common bounding-box center remains fixed through scaling/rotation, moves with translation. Undo/redo stores geometry only; raster/masks stay fixed. Yes/No/Cancel dialog, optional remembered choice; right-click reopens; loading never prompts.
 
+Required isolation, pending NEXT-009: freeze membership before the transform. Do not snap, repair, extend lines toward stationary neighbors or grow the group during the gesture. The owner reported unwanted extensions while moving/rotating; the research update records the defect without claiming an implementation fix.
+
 ## ADR-005: ancestry and project format
 Source identity is exact JSON SHA-256 plus original /walls/index, preserving skipped zero-length array positions; optional Foundry ID need not be unique. Working edges have persistent ID, parents, root source references, origin. Splits/clones get child IDs, merges union parents, new contacts inherit incident parents, detached lines become editor roots. Moves/extensions preserve identity. Deleted ancestors remain in snapshot catalogs. Contact nodes expose line/parent/source records.
 
 Schema 2 requires lineage and JSON catalog. Older/unknown versions rejected; no migrations or historical-coordinate ancestry inference. See project-format.md. JSON import lists every declared package document without decoding/extracting its JPG. Current archives preserve additional documents; automatic generation of updated Foundry JSON is future work.
 
 ## ADR-006: separate bounded exports
-All-regions exports components; explicit selection exports cells. Signed offset, mandatory 3px artwork guard, extra transparent box padding 0-4096, then clamp all bounds to JPG. Share bounds with UI; fully outside selections report no bounds without crashing. Preserve native visible RGB and alpha history; never burn overlays. Stage complete new directory and rename on success.
+All-regions exports current connected components; explicit selection exports cells. The left Artwork offset (-4096..4096 source pixels, stored as contour_offset) expands/contracts retained JPG pixels relative to lines. It is the only margin control: no automatic 3px guard or global transparent-padding setting.
+
+For export, substitute the current offset union for outside-mask boundaries at their existing history positions. Replay brushes and inside masks in order, then constrain each item to its own current offset contour. Project/preview mask snapshots remain immutable; geometry still never moves source artwork. This makes changing the live artwork offset effective in export even after a previous outside mask.
+
+Render alpha only at 2x resolution and reduce with Pillow BICUBIC. Two-source-pixel filter halos on all stripe/crop sides avoid seams and discover complete filter support; they are an internal sampling extent, not an exported fixed border. Scan source-aligned alpha stripes before RGB decoding; getbbox includes every nonzero byte, even 1/255. Crop to this actual alpha box, clipped to JPG. The same renderer encodes PNG and supplies Information dimensions. A 32-entry cache keyed by size/immutable raster operations/contour avoids repeated sidebar scans. No full native alpha bitmap is retained. Native source RGB is unchanged, including under partial alpha; zero-alpha RGB stays compacted.
+
+Fully transparent items are skipped, an entirely transparent set is rejected, and outside selections report no bounds. Stage a complete new directory and rename on success. Placement manifest schema 2 records artwork_offset_px, alpha_antialiasing, bounds_mode and each item's source-coordinate content_bounds. Removed guard/padding metadata has no fallback. Current project UI serialization omits the retired export-padding preference; no migration or alias is added.
 
 placement.json is a DALE coordinate manifest, not native Foundry import. Foundry 13/14/elevation primitives retain placement intent; actual elevation/visibility is set in Foundry.
 
@@ -64,5 +72,5 @@ Refresh full root DALE/ and source hashes; preserve UserData/projects/running ed
 ## Resource and evidence boundaries
 JPG max 16384 per side; warn above 8192. Reduced preview, decoded source plus 128-row export stripes, memory preflight/cancellable worker. Source decoding is not interruptible; no bitmap undo history.
 
-Historical real sample evidence: docs/sample-formats.md. Owner maps are currently absent from examples. Current changes use synthetic fixtures. No semantic segmentation, live Foundry connection/native scene generation/verified live floor assembly.
+Real sample evidence: docs/sample-formats.md; six owner JPG/JSON pairs and the independent Foundry 13.351 scene probe are present locally. Semantic evidence and future export design: docs/foundry-scene-format.md and docs/foundry-export-feasibility.md. Current export-margin regression checks use synthetic fixtures. No semantic segmentation, live Foundry connection/native scene generation/verified live floor assembly.
 Archive ownership checks resolve both source and workspace paths before comparing containment; Windows short-name/junction aliases must not cause active assets to be deleted. Retain active extracted JPG/JSON until their session is replaced or closed.

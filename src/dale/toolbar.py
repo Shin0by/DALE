@@ -168,7 +168,8 @@ def tool_icon(name):
         painter.drawPolygon(
             QPolygonF([QPointF(12, 11), QPointF(22, 17), QPointF(17, 18), QPointF(15, 23)])
         )
-    elif name == "Export padding (px)":
+    elif name == "Artwork offset (px)":
+        painter.setBrush(QColor(88, 217, 236, 90))
         painter.drawRect(QRectF(7, 7, 10, 10))
         painter.setPen(QPen(QColor("#58d9ec"), 1.2, Qt.PenStyle.DashLine))
         painter.drawRect(QRectF(2, 2, 20, 20))
@@ -325,16 +326,20 @@ class SizedToolButton(QToolButton):
                 ),
                 "Ctrl+wheel: change this value.",
             ),
-            "Export padding (px)": (
-                "Export padding (px)",
+            "Artwork offset (px)": (
+                "Artwork offset (px)",
                 (
-                    "Additional transparent pixels around each region box, beyond the manda"
-                    "tory 3 px guard."
+                    "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
+                    "negative cuts inward."
                 ),
                 "Ctrl+wheel: change this value.",
             ),
         }[tool_name]
-        parts = [*self.defaultAction().property("dale_tooltip_parts"), title, description]
+        parts = list(
+            dict.fromkeys(
+                [*self.defaultAction().property("dale_tooltip_parts"), title, description]
+            )
+        )
         if modifier not in parts:
             parts.append(modifier)
         for control in (self, self.editor(), self.editor().lineEdit()):

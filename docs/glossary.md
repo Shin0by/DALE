@@ -25,7 +25,6 @@
 | Gap tolerance | join distance, допуск соединения | Independent screen-pixel distance for directional local or whole-map contour repair. |
 | T junction | Т-образное соединение | A wall endpoint meets, or lies near, the interior of another segment. |
 | Contour offset | margin, отступ контура | Signed image-pixel expansion (positive) or contraction (negative) of the closed region. |
-| Edge guard | export padding, запас 3 пикселя | Mandatory 3-source-pixel expansion beyond the effective contour for each cropped PNG; retains available source edge detail. |
 | Point handle | drag circle, кружок | Circular 10-screen-pixel control for moving/deleting a working geometry vertex; its size is independent of zoom. |
 | DALE project | .dale, проект | Self-contained ZIP archive with exact source assets, editing and redo history, geometry, placement, and UI settings. |
 | Portable package | portable, портейбл | Complete `DALE/` runtime folder with executable and dependencies; launch without installing Python and move by copying the entire folder. |
@@ -37,6 +36,11 @@
 | Source wall reference | JSON parent | Exact JSON SHA-256 plus original /walls/index and optional Foundry ID. |
 | Contact node | shared point | Geometric endpoint with incident line IDs and their parent/source references. |
 | Minimum cell | selected region | Smallest polygonized closed face containing the cursor; independent of touching neighbors. |
-| Extra export padding | additional box margin | Transparent space beyond mandatory 3px; every bound is clipped to source JPG. |
+| Artwork offset | image margin, Отступ изображения | Left Regions numeric tool, -4096..4096 source pixels; expands retained JPG artwork outside lines or cuts inward. Stored as contour_offset. No global transparent-padding parameter. |
+| Alpha bounds | visible pixel box | Smallest pixel rectangle containing every nonzero final alpha byte after bicubic smoothing, including 1/255. Clipped to the JPG extent. |
 | JSON catalog | document list | Declared immutable original/updated JSON members within a current .dale package. |
 | Rotate regions | Вращение областей | Separate Regions tool; ordinary wheel rotates geometry 0.1 degree per notch about common center. |
+| Foundry Region | Scene Region | Explicit composite shapes, one elevation interval and behaviors; distinct from DALE extraction cells and native Scene Levels. |
+| Teleport portal | teleportToken, портал | Directed Region-to-Region behavior identified by destination UUID; distinct from an ordinary/secret wall door. |
+| Wall Height | wall-height | Foundry module namespace for wall top/bottom and related vision settings; not a core v13 floor model. |
+| Height normalization | wall bound normalization | Preserve original values, optionally order finite wall bounds as bottom=min and top=max in working/generated data. Null remains unbounded. |

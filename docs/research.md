@@ -31,6 +31,8 @@ The owner requires both generations. The [v13 Tile model](https://foundryvtt.com
 
 ## Validation still required
 
+The independent owner scene probe identifies Foundry **13.351**, dnd5e **5.3.3**, 12 walls, 9 Regions and 4 teleport behaviors. Its detailed [field atlas](foundry-scene-format.md) separates observed records from official-schema interpretation, module flags and untested runtime behavior. The [export design](foundry-export-feasibility.md) compares v13/v14, including native Levels and changed teleport fields. The [machine profile](../project/foundry-format-profile.json) provides counts, paths, aliases and evidence for agent navigation. Semantic export remains future work.
+
 Confirm exact owner builds for the requested Foundry 13/14 targets, JSON coordinate conventions, background offsets, and floor workflows. Verify cropped transparent PNG placement using recorded source/scene positions on the owner's actual Foundry clients. Successful synthetic tests do not establish this external validation.
 
 The six supplied real pairs have now been inspected for image dimensions, zero offsets/padding, wall/light layout, day/night geometry equality, and contour topology. Their observed legacy-style field layout is documented in [the sample profile](sample-formats.md), with an official v9 scene-model comparison and a v13 wall-schema comparison. Real-image import/preview and one full-resolution PNG export have passed; live Foundry placement remains untested.

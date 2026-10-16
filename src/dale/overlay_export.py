@@ -1,4 +1,4 @@
-"""Separate contour PNGs with a three-pixel edge guard and placement coordinates."""
+"""Separate PNGs with signed artwork offset and exact bicubic alpha bounds."""
 
 from __future__ import annotations
 
@@ -6,35 +6,27 @@ import json
 import math
 import os
 import tempfile
+from functools import lru_cache
 from pathlib import Path
-
-from shapely.geometry import box
 
 from dale.geometry import offset_region
 from dale.placement import Placement
-from dale.raster import ExportCancelled, export_png
-from dale.session import ContourMask, Session
-
-EDGE_GUARD = 3
+from dale.raster import ALPHA_FILTER_HALO, ExportCancelled, alpha_bounds, export_png
+from dale.session import ContourMask, Session, Stroke
 
 
 def export_regions(session: Session, *, individual=False):
     if individual:
         return session.analysis().cells
-    masks = [
-        op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
-    ]
-    mask = masks[-1] if masks else session.make_mask("outside")
-    polygons = [mask.area] if mask.area.geom_type == "Polygon" else list(mask.area.geoms)
+    area = offset_region(session.analysis().area, session.contour_offset)
+    polygons = [area] if area.geom_type == "Polygon" else list(area.geoms)
     return tuple(
         sorted((p for p in polygons if not p.is_empty), key=lambda p: (p.bounds[1], p.bounds[0]))
     )
 
 
-def crop_bounds(polygon, extra_padding=0, source_size=None):
-    if type(extra_padding) is not int or not 0 <= extra_padding <= 4096:
-        raise ValueError("Export padding must be an integer from 0 to 4096 pixels.")
-    margin = EDGE_GUARD + extra_padding
+def _candidate_bounds(polygon, source_size):
+    margin = ALPHA_FILTER_HALO
     x0, y0, x1, y1 = polygon.bounds
     bounds = (
         math.floor(x0) - margin,
@@ -55,6 +47,34 @@ def crop_bounds(polygon, extra_padding=0, source_size=None):
     return bounds
 
 
+@lru_cache(maxsize=32)
+def _cached_alpha_bounds(size, operations, candidate):
+    return alpha_bounds(size, operations, candidate)
+
+
+def prepare_overlay(session, polygon, cancelled=None):
+    """Share exact alpha-derived placement between the sidebar and PNG export."""
+    candidate = _candidate_bounds(polygon, session.source.size)
+    area = offset_region(session.analysis().area, session.contour_offset)
+    outside = ContourMask(area, "outside")
+    operations = tuple(
+        outside if isinstance(op, ContourMask) and op.mode == "outside" else op
+        for op in session.operations
+        if isinstance(op, (ContourMask, Stroke))
+    )
+    if not any(isinstance(op, ContourMask) and op.mode == "outside" for op in operations):
+        operations = (outside, *operations)
+    operations = (*operations, ContourMask(polygon, "outside"))
+    content = (
+        alpha_bounds(session.source.size, operations, candidate, cancelled)
+        if cancelled is not None
+        else _cached_alpha_bounds(session.source.size, operations, candidate)
+    )
+    if content is None:
+        return None, operations, None
+    return content, operations, content
+
+
 def export_overlays(
     session: Session,
     directory: Path,
@@ -63,14 +83,9 @@ def export_overlays(
     cancelled=None,
     region_index=None,
     region_indices=None,
-    extra_padding=0,
     individual_regions=False,
 ) -> Path:
     directory = directory.resolve()
-    masks = [
-        op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
-    ]
-    mask = masks[-1] if masks else session.make_mask("outside")
     polygons = export_regions(session, individual=individual_regions)
     if not polygons:
         raise ValueError("No closed contour is available for separate PNG export.")
@@ -91,15 +106,6 @@ def export_overlays(
         selected = tuple(
             (i, offset_region(polygon, session.contour_offset)) for i, polygon in selected
         )
-    crop_bounds(selected[0][1], extra_padding)  # Validate before creating output.
-    operations = [
-        ContourMask(op.area.buffer(EDGE_GUARD), "outside")
-        if isinstance(op, ContourMask) and op.mode == "outside"
-        else op
-        for op in session.operations
-    ]
-    if not masks:
-        operations.insert(0, ContourMask(mask.area.buffer(EDGE_GUARD), "outside"))
     source = session.source
     stem = source.image_path.stem
     if stem == "map" and session.source.raw.get("name"):
@@ -112,14 +118,15 @@ def export_overlays(
         suffix += 1
     manifest = {
         "format": "dale-overlay-set",
-        "schema_version": 1,
+        "schema_version": 2,
         "foundry_major": placement.foundry_major,
         "elevation_ft": placement.elevation_ft,
         "source_image_size": source.size,
-        "edge_guard_px": EDGE_GUARD,
         "selected_region": region_index,
         "selected_regions": [i for i, _ in selected],
-        "extra_padding_px": extra_padding,
+        "artwork_offset_px": session.contour_offset,
+        "bounds_mode": "all nonzero bicubic alpha, clipped to source JPG",
+        "alpha_antialiasing": "2x supersampling, bicubic reduction",
         "region_mode": "faces" if individual_regions else "components",
         "coordinate_units": "source-image pixels",
         "items": [],
@@ -132,14 +139,11 @@ def export_overlays(
         for part, (index, polygon) in enumerate(selected):
             if cancelled and cancelled():
                 raise ExportCancelled("Separate PNG export cancelled.")
-            bounds = crop_bounds(polygon, extra_padding, source.size)
+            bounds, object_operations, content = prepare_overlay(session, polygon, cancelled)
+            if bounds is None:
+                continue
             x, y, right, bottom = bounds
             name = f"{stem}-part-{index + 1:03d}-{placement.elevation_ft}ft.png"
-            guarded = polygon.buffer(EDGE_GUARD)
-            object_operations = operations + [
-                ContourMask(guarded, "outside"),
-                ContourMask(box(0, 0, source.size[0] - 1, source.size[1] - 1), "outside"),
-            ]
 
             def part_progress(percent, part=part):
                 if progress:
@@ -156,8 +160,8 @@ def export_overlays(
                 metadata={
                     "DALE.SourceX": str(x),
                     "DALE.SourceY": str(y),
-                    "DALE.EdgeGuardPixels": str(EDGE_GUARD),
-                    "DALE.ExtraPaddingPixels": str(extra_padding),
+                    "DALE.ArtworkOffsetPixels": str(session.contour_offset),
+                    "DALE.AlphaAntialiasing": "bicubic-2x",
                 },
             )
             if not visible:
@@ -171,6 +175,7 @@ def export_overlays(
                     "y": y,
                     "width": right - x,
                     "height": bottom - y,
+                    "content_bounds": content,
                     "scene_x": session.origin[0] + source.background_offset[0] + x * sx,
                     "scene_y": session.origin[1] + source.background_offset[1] + y * sy,
                     "scene_width": (right - x) * sx,

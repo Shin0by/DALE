@@ -20,6 +20,7 @@ from dale.session import ContourMask, Operation, Stroke
 
 PREVIEW_SIDE = 2048
 STRIPE_ROWS = 128
+ALPHA_FILTER_HALO = 2
 
 
 class ExportCancelled(Exception):
@@ -102,6 +103,54 @@ def render_preview(source: Image.Image, native_size, operations) -> Image.Image:
     return result
 
 
+def render_export_alpha(size, native_size, operations, top=0, left=0):
+    """Minimal 2x alpha supersampling with bicubic reduction and seam-safe filter halos."""
+    width, height = size
+    halo = ALPHA_FILTER_HALO
+    padded = (width + 2 * halo, height + 2 * halo)
+    alpha = render_alpha(
+        (padded[0] * 2, padded[1] * 2),
+        native_size,
+        operations,
+        top=(top - halo) * 2,
+        left=(left - halo) * 2,
+        scale=(2, 2),
+    )
+    alpha = alpha.resize(padded, Image.Resampling.BICUBIC)
+    return alpha.crop((halo, halo, halo + width, halo + height))
+
+
+def alpha_bounds(native_size, operations, crop, cancelled=None):
+    """Find the exact nonzero-alpha box without decoding RGB or allocating a full mask."""
+    left, top, right, bottom = crop
+    result = None
+    for row in range(top, bottom, STRIPE_ROWS):
+        if cancelled and cancelled():
+            raise ExportCancelled("PNG export cancelled.")
+        alpha = render_export_alpha(
+            (right - left, min(STRIPE_ROWS, bottom - row)),
+            native_size,
+            operations,
+            top=row,
+            left=left,
+        )
+        found = alpha.getbbox()
+        if found is not None:
+            x0, y0, x1, y1 = found
+            found = (left + x0, row + y0, left + x1, row + y1)
+            result = (
+                found
+                if result is None
+                else (
+                    min(result[0], found[0]),
+                    min(result[1], found[1]),
+                    max(result[2], found[2]),
+                    max(result[3], found[3]),
+                )
+            )
+    return result
+
+
 def _chunk(stream, kind: bytes, data: bytes):
     stream.write(struct.pack(">I", len(data)))
     stream.write(kind)
@@ -170,12 +219,11 @@ def export_png(
                     stripe = image.crop((left, origin_y + top, right, origin_y + bottom)).convert(
                         "RGBA"
                     )
-                    alpha = render_alpha(
+                    alpha = render_export_alpha(
                         stripe.size,
                         source.size,
                         operations,
                         top=origin_y + top,
-                        scale=(1, 1),
                         left=left,
                     )
                     visible = visible or alpha.getextrema()[1] > 0

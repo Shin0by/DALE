@@ -4,24 +4,22 @@ from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
-    QFrame,
-    QHBoxLayout,
     QLabel,
     QSpinBox,
-    QStackedWidget,
     QStyle,
     QStyleOptionToolButton,
     QStylePainter,
     QToolBar,
     QToolButton,
-    QVBoxLayout,
 )
 
 from dale.localization import translate
 
 
 def tool_icon(name):
-    name = {"Lines and vertices": "Edit points", "Pixels": "Erase"}.get(name, name)
+    name = {"Contours": "Edit points", "Regions": "Select regions", "Raster": "Erase"}.get(
+        name, name
+    )
     canvas = QPixmap(24, 24)
     canvas.fill(Qt.GlobalColor.transparent)
     painter = QPainter(canvas)
@@ -61,7 +59,7 @@ def tool_icon(name):
         if name == "Save project as…":
             line((16, 12), (22, 12))
             line((19, 9), (19, 15))
-    elif name == "Export PNGs":
+    elif name in ("Export PNGs", "Export selected regions"):
         line((4, 13), (4, 20))
         line((4, 20), (20, 20))
         line((20, 20), (20, 13))
@@ -80,7 +78,7 @@ def tool_icon(name):
         line((20, 12), (20, 19))
         line((4, 9), (9, 4))
         line((4, 9), (9, 14))
-    elif name == "Pan":
+    elif name in ("Pan", "Move regions"):
         line((12, 3), (12, 21))
         line((3, 12), (21, 12))
         for a, b in [
@@ -101,15 +99,15 @@ def tool_icon(name):
     elif name == "Show walls":
         painter.drawRoundedRect(QRectF(3, 7, 18, 11), 6, 6)
         circle(12, 12.5, 3)
-    elif name == "Auto-close":
+    elif name in ("Auto-close", "Close all contours"):
         painter.drawPolyline(
             QPolygonF([QPointF(4, 9), QPointF(4, 19), QPointF(20, 19), QPointF(20, 9)])
         )
         painter.setPen(QPen(QColor("#58d9ec"), 1.8, Qt.PenStyle.DashLine))
         line((4, 9), (20, 9))
-        painter.setPen(QPen(QColor("#f1f6ff"), 1.8))
-        line((9, 4), (12, 7))
-        line((12, 7), (15, 4))
+        if name == "Close all contours":
+            painter.setPen(QPen(QColor("#f1f6ff"), 1.5))
+            circle(12, 14, 3)
     elif name in ("New line", "Edit points"):
         points = [(4, 18), (20, 6)]
         if name == "Edit points":
@@ -147,11 +145,27 @@ def tool_icon(name):
         ]:
             line(a, b)
     elif name in ("Snap", "Snapping (px)"):
-        painter.drawArc(QRectF(4, 4, 16, 16), 180 * 16, 180 * 16)
-        line((4, 12), (4, 5))
-        line((20, 12), (20, 5))
-        line((2, 5), (6, 5))
-        line((18, 5), (22, 5))
+        painter.setBrush(QColor("#58d9ec"))
+        circle(5, 19, 3)
+        circle(19, 5, 3)
+        line((10, 14), (14, 10))
+        line((14, 10), (10, 10))
+        line((14, 10), (14, 14))
+    elif name == "Select regions":
+        painter.setBrush(QColor(88, 217, 236, 90))
+        painter.drawPolygon(
+            QPolygonF(
+                [QPointF(3, 4), QPointF(16, 4), QPointF(20, 13), QPointF(8, 20), QPointF(3, 4)]
+            )
+        )
+        painter.setBrush(QColor("#f1f6ff"))
+        painter.drawPolygon(
+            QPolygonF([QPointF(12, 11), QPointF(22, 17), QPointF(17, 18), QPointF(15, 23)])
+        )
+    elif name == "Export padding (px)":
+        painter.drawRect(QRectF(7, 7, 10, 10))
+        painter.setPen(QPen(QColor("#58d9ec"), 1.2, Qt.PenStyle.DashLine))
+        painter.drawRect(QRectF(2, 2, 20, 20))
     elif name == "Brush diameter":
         circle(12, 12, 9)
         line((5, 12), (19, 12))
@@ -205,94 +219,6 @@ class ToolSpinBox(QSpinBox):
 
     def fit_editor(self):
         self.lineEdit().setGeometry(3, 2, max(1, self.width() - 6), self.height() - 4)
-
-
-class NumericToolTile(QFrame):
-    """A double-height tool tile with an icon, centered editor, and explicit step buttons."""
-
-    def __init__(self, editor, icon_name, action=None):
-        super().__init__()
-        self.editor_widget = editor
-        self.setObjectName("numericToolTile")
-        self.setFixedSize(48, 96)
-        self.setStyleSheet("""
-            QFrame#numericToolTile { background: #383838; border: 1px solid #696969;
-                border-radius: 2px; }
-            QToolButton { background: transparent; color: #f4f4f4; border: 0; padding: 0; }
-            QToolButton:hover { background: #505050; }
-            QToolButton:checked { background: #485966; border: 1px solid #9aafbd; }
-            QToolButton[stepButton="true"] { background: #505050; border: 1px solid #888888;
-                border-radius: 2px; font-size: 13px; }
-            QToolButton[stepButton="true"]:hover { background: #686868; }
-            QSpinBox { background: #202020; color: #f4f4f4; border: 1px solid #777777;
-                border-radius: 2px; padding: 1px; }
-        """)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
-        self.icon_button = QToolButton()
-        self.icon_button.setFixedSize(40, 40)
-        self.icon_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.icon_button.setIconSize(QSize(24, 24))
-        if action is not None:
-            self.icon_button.setDefaultAction(action)
-        else:
-            self.icon_button.setIcon(tool_icon(icon_name))
-            self.icon_button.clicked.connect(self.focus_editor)
-        layout.addWidget(self.icon_button, 0, Qt.AlignmentFlag.AlignHCenter)
-        editors = (
-            [editor.widget(i) for i in range(editor.count())]
-            if isinstance(editor, QStackedWidget)
-            else [editor]
-        )
-        for control in editors:
-            control.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            control.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            control.lineEdit().setTextMargins(2, 0, 2, 0)
-            control.setFixedSize(40, 24)
-        editor.setFixedSize(40, 24)
-        layout.addWidget(editor, 0, Qt.AlignmentFlag.AlignHCenter)
-        steps = QHBoxLayout()
-        steps.setContentsMargins(0, 0, 0, 0)
-        steps.setSpacing(2)
-        self.decrease_button, self.increase_button = QToolButton(), QToolButton()
-        for button, text, amount in (
-            (self.decrease_button, "−", -1),
-            (self.increase_button, "+", 1),
-        ):
-            button.setText(text)
-            button.setProperty("stepButton", True)
-            button.setFixedSize(20, 20)
-            button.clicked.connect(
-                lambda checked=False, amount=amount: self.editor().stepBy(amount)
-            )
-            steps.addWidget(button)
-        layout.addLayout(steps)
-
-    def editor(self):
-        return (
-            self.editor_widget.currentWidget()
-            if isinstance(self.editor_widget, QStackedWidget)
-            else self.editor_widget
-        )
-
-    def focus_editor(self):
-        control = self.editor()
-        control.setFocus(Qt.FocusReason.MouseFocusReason)
-        control.lineEdit().selectAll()
-
-    def set_help(self, title, description, language):
-        for control in (self, self.icon_button, self.editor(), self.editor().lineEdit()):
-            parts = [title, description, "Ctrl+wheel: change this value."]
-            control.setProperty("dale_tooltip_parts", parts)
-            control.setToolTip("\n".join(translate(part, language) for part in parts))
-        for button, description in (
-            (self.decrease_button, "Decrease by 1 px."),
-            (self.increase_button, "Increase by 1 px."),
-        ):
-            parts = [title, description, "Ctrl+wheel: change this value."]
-            button.setProperty("dale_tooltip_parts", parts)
-            button.setToolTip("\n".join(translate(part, language) for part in parts))
 
 
 class SizedToolButton(QToolButton):
@@ -353,18 +279,58 @@ class SizedToolButton(QToolButton):
 
     def set_help(self, language):
         tool_name = self.defaultAction().property("dale_tooltip_parts")[0]
-        auto_close = tool_name == "Auto-close"
-        parts = [
-            *self.defaultAction().property("dale_tooltip_parts"),
-            {
-                "Erase lines": "Line eraser diameter (px)",
-                "Erase vertices": "Vertex eraser diameter (px)",
-                "Auto-close": "Auto-close distance (px)",
-            }[tool_name],
-            "Independent distance in screen pixels; ordinary snapping is unchanged."
-            if auto_close
-            else "This tool keeps its own diameter in screen pixels.",
-        ]
+        title, description, modifier = {
+            "Erase lines": (
+                "Line eraser diameter (px)",
+                "This tool keeps its own diameter in screen pixels.",
+                "Ctrl+wheel: change this tool's diameter.",
+            ),
+            "Erase vertices": (
+                "Vertex eraser diameter (px)",
+                "This tool keeps its own diameter in screen pixels.",
+                "Ctrl+wheel: change this tool's diameter.",
+            ),
+            "Auto-close": (
+                "Auto-close distance (px)",
+                "Independent distance in screen pixels; ordinary snapping is unchanged.",
+                "Ctrl+wheel: change the auto-close distance.",
+            ),
+            "Close all contours": (
+                "Whole-map close distance (px)",
+                "Extend eligible lines across the whole map after confirmation. "
+                "Distance uses screen pixels.",
+                "Ctrl+wheel: change this value.",
+            ),
+            "Erase": (
+                "Pixel eraser diameter (px)",
+                "Diameter in original image pixels. Ctrl+wheel changes it.",
+                "Ctrl+wheel: change this tool's diameter.",
+            ),
+            "Restore": (
+                "Restore brush diameter (px)",
+                "Diameter in original image pixels. Ctrl+wheel changes it.",
+                "Ctrl+wheel: change this tool's diameter.",
+            ),
+            "Snapping (px)": (
+                "Snapping (px)",
+                (
+                    "Distance to existing vertices or lines. Vertices take priority. Click "
+                    "the icon to toggle snapping."
+                ),
+                "Ctrl+wheel: change this value.",
+            ),
+            "Export padding (px)": (
+                "Export padding (px)",
+                (
+                    "Additional transparent pixels around each region box, beyond the manda"
+                    "tory 3 px guard."
+                ),
+                "Ctrl+wheel: change this value.",
+            ),
+        }[tool_name]
+        parts = [*self.defaultAction().property("dale_tooltip_parts"), title, description]
+        if modifier not in parts:
+            parts.append(modifier)
         for control in (self, self.editor(), self.editor().lineEdit()):
             control.setProperty("dale_tooltip_parts", parts)
             control.setToolTip("\n".join(translate(part, language) for part in parts))
@@ -372,13 +338,7 @@ class SizedToolButton(QToolButton):
             (self.decrease_button, "Decrease by 1 px."),
             (self.increase_button, "Increase by 1 px."),
         ):
-            parts = [
-                self.defaultAction().property("dale_tooltip_parts")[0],
-                description,
-                "Ctrl+wheel: change the auto-close distance."
-                if auto_close
-                else "Ctrl+wheel: change this tool's diameter.",
-            ]
+            parts = [tool_name, description, modifier]
             button.setProperty("dale_tooltip_parts", parts)
             button.setToolTip("\n".join(translate(part, language) for part in parts))
 

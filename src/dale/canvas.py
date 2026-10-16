@@ -6,7 +6,7 @@ import math
 from itertools import pairwise
 
 from PIL import Image
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
@@ -15,6 +15,7 @@ from dale.editing import (
     add_line,
     delete_vertex,
     erase_geometry,
+    geometry_targets,
     hit_edge,
     hit_vertex,
     insert_vertex,
@@ -25,6 +26,7 @@ from dale.editing import (
 )
 from dale.geometry import analyze_regions, offset_region
 from dale.raster import render_preview
+from dale.region_transform import plan_region_transform
 from dale.session import Stroke
 
 HANDLE_DIAMETER = 10
@@ -53,6 +55,9 @@ class MapView(QGraphicsView):
     changed = Signal()
     message = Signal(str)
     size_changed = Signal()
+    auto_close_requested = Signal(object)
+    region_clicked = Signal(object)
+    regions_transformed = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -74,7 +79,7 @@ class MapView(QGraphicsView):
         self.image_rect = QRectF()
         self.mode = "Pan"
         self.show_walls = True
-        self.diameter = 40
+        self.raster_diameters = {"Erase": 40, "Restore": 40}
         self.geometry_diameters = {mode: 24 for mode in GEOMETRY_ERASERS}
         self.snap_distance = 14
         self.snap_enabled = True
@@ -82,7 +87,10 @@ class MapView(QGraphicsView):
         self.auto_close_index = None
         self.auto_close_key = None
         self.auto_close_plan = AutoClosePlan()
+        self.auto_close_review = False
         self.hover_path = QPainterPath()
+        self.hover_edge = None
+        self.eraser_vertices = ()
         self.auto_join_path = QPainterPath()
         self.stroke = []
         self.cursor_point = None
@@ -104,8 +112,16 @@ class MapView(QGraphicsView):
         self.drag_original = None
         self.drag_vertex = None
         self.drag_offset = None
+        self.drag_axis = None
+        self.axis_constrained = False
         self.line_start = None
         self.line_end = None
+        self.region_polygons = ()
+        self.region_pivot = None
+        self.move_related = False
+        self.region_drag_start = None
+        self.region_plan = None
+        self.region_original_path = None
         self.geometry_stroke = None
         self.render_timer = QTimer(self)
         self.render_timer.setSingleShot(True)
@@ -211,7 +227,11 @@ class MapView(QGraphicsView):
         self.cancel_pending()
         self.mode = mode
         self.setCursor(
-            Qt.CursorShape.OpenHandCursor if mode == "Pan" else Qt.CursorShape.CrossCursor
+            Qt.CursorShape.OpenHandCursor
+            if mode in ("Pan", "Move regions")
+            else Qt.CursorShape.PointingHandCursor
+            if mode == "Select regions"
+            else Qt.CursorShape.CrossCursor
         )
         self.update_hover()
         self.viewport().update()
@@ -225,6 +245,11 @@ class MapView(QGraphicsView):
         was_editing = self.edit_preview is not None
         self.edit_preview = self.drag_base = self.drag_original = self.drag_vertex = None
         self.drag_offset = None
+        self.drag_axis = None
+        self.axis_constrained = False
+        if self.region_original_path is not None:
+            self.selected_path = self.region_original_path
+        self.region_drag_start = self.region_plan = self.region_original_path = None
         self.line_start = self.line_end = self.geometry_stroke = None
         if was_editing:
             self.refresh(render_image=False)
@@ -239,6 +264,7 @@ class MapView(QGraphicsView):
 
     def update_hover(self):
         self.auto_close_plan = AutoClosePlan()
+        self.eraser_vertices = ()
         edges = ()
         if self.session and self.cursor_point:
             geometry = self.edit_preview or self.session.geometry()
@@ -250,6 +276,40 @@ class MapView(QGraphicsView):
                     self.auto_close_key = key
                 self.auto_close_plan = self.auto_close_index.at(self.cursor_point)
                 edges = self.auto_close_plan.segments
+            elif self.mode in GEOMETRY_ERASERS:
+                targets = geometry_targets(
+                    geometry,
+                    self.cursor_point,
+                    self.cursor_point,
+                    self.geometry_diameter / 2 / max(self.transform().m11(), 1e-9),
+                    "lines" if self.mode == "Erase lines" else "vertices",
+                )
+                if self.mode == "Erase lines":
+                    edges = targets
+                else:
+                    self.eraser_vertices = targets
+                    erased = erase_geometry(
+                        geometry,
+                        self.cursor_point,
+                        self.cursor_point,
+                        self.geometry_diameter / 2 / max(self.transform().m11(), 1e-9),
+                        "vertices",
+                    )
+                    remaining = {
+                        tuple(sorted(edge))
+                        for edge in (
+                            *erased.walls,
+                            *(edge for path in erased.closures for edge in pairwise(path)),
+                        )
+                    }
+                    edges = tuple(
+                        edge
+                        for edge in (
+                            *geometry.walls,
+                            *(edge for path in geometry.closures for edge in pairwise(path)),
+                        )
+                        if tuple(sorted(edge)) not in remaining
+                    )
             elif self.mode in ("Edit points", "New line"):
                 point = self.snap or self.cursor_point
                 vertex = hit_vertex(geometry, point, self._handle_tolerance())
@@ -257,6 +317,19 @@ class MapView(QGraphicsView):
                     *geometry.walls,
                     *(edge for path in geometry.closures for edge in pairwise(path)),
                 )
+                hit = hit_edge(geometry, point, self._handle_tolerance())
+                if hit and (
+                    vertex is None
+                    or self.hover_edge is None
+                    or math.dist(project(vertex, self.hover_edge)[0], vertex) > 1e-7
+                ):
+                    self.hover_edge = (
+                        geometry.walls[hit.path_index]
+                        if hit.kind == "wall"
+                        else tuple(
+                            geometry.closures[hit.path_index][hit.edge_index : hit.edge_index + 2]
+                        )
+                    )
                 if vertex is not None:
                     edges = tuple(
                         edge
@@ -282,7 +355,20 @@ class MapView(QGraphicsView):
 
     @property
     def active_gesture(self):
-        return bool(self.stroke) or self.drag_base is not None or self.line_start is not None
+        return (
+            bool(self.stroke)
+            or self.drag_base is not None
+            or self.line_start is not None
+            or self.region_drag_start is not None
+        )
+
+    @property
+    def diameter(self):
+        return self.raster_diameters[self.mode if self.mode in ("Erase", "Restore") else "Erase"]
+
+    @diameter.setter
+    def diameter(self, value):
+        self.raster_diameters[self.mode if self.mode in ("Erase", "Restore") else "Erase"] = value
 
     @property
     def geometry_diameter(self):
@@ -295,6 +381,9 @@ class MapView(QGraphicsView):
         self.geometry_diameters[mode] = value
 
     def resize_tool(self, steps):
+        if self.mode == "Move regions":
+            self.transform_regions(scale=1.05**steps)
+            return
         if self.mode == "Auto-close":
             self.auto_close_distance = max(1, min(256, self.auto_close_distance + round(steps)))
             self.size_changed.emit()
@@ -310,14 +399,61 @@ class MapView(QGraphicsView):
             value += 1 if steps > 0 else -1
         setattr(self, attribute, max(1, min(limit, value)))
         self.size_changed.emit()
+        self.update_hover()
         self.viewport().update()
 
-    def _drag_destination(self, point):
+    def _region_plan(self):
+        analysis = self.session.analysis()
+        return plan_region_transform(
+            self.session.geometry(),
+            self.region_polygons,
+            analysis.cells,
+            self.move_related,
+            self.snap_distance / max(self.transform().m11(), 1e-9),
+            analysis.joins,
+            self.region_pivot,
+        )
+
+    def transform_regions(self, scale=1.0, angle=0.0):
+        if not self.session or not self.region_polygons or self.active_gesture:
+            return
+        plan = self._region_plan()
+        geometry, polygons = plan.apply(scale=scale, angle=angle)
+        if geometry != plan.original:
+            self.session.add(geometry)
+            self.changed.emit()
+            self.regions_transformed.emit({"polygons": polygons, "pivot": plan.pivot})
+
+    def _preview_region_move(self, point):
+        dx, dy = point[0] - self.region_drag_start[0], point[1] - self.region_drag_start[1]
+        self.edit_preview, _ = self.region_plan.apply(dx=dx, dy=dy)
+        self.selected_path = QTransform.fromTranslate(dx, dy).map(self.region_original_path)
+        self.refresh(render_image=False)
+
+    def _drag_destination(self, point, modifiers=Qt.KeyboardModifier.NoModifier):
         destination = (point[0] + self.drag_offset[0], point[1] + self.drag_offset[1])
+        self.axis_constrained = (
+            bool(modifiers & Qt.KeyboardModifier.AltModifier) and self.drag_axis is not None
+        )
+        if self.axis_constrained:
+            distance = sum(
+                (value - origin) * axis
+                for value, origin, axis in zip(
+                    destination, self.drag_vertex, self.drag_axis, strict=True
+                )
+            )
+            destination = tuple(
+                origin + distance * axis
+                for origin, axis in zip(self.drag_vertex, self.drag_axis, strict=True)
+            )
         if math.dist(destination, self.drag_vertex) > 0.5 / self.transform().m11():
             self.snap = snap_point(
                 self.drag_base, destination, self._snap_tolerance(), exclude=self.drag_vertex
             )
+            if self.snap and self.axis_constrained:
+                delta = self.snap[0] - self.drag_vertex[0], self.snap[1] - self.drag_vertex[1]
+                if abs(delta[0] * self.drag_axis[1] - delta[1] * self.drag_axis[0]) > 1e-7:
+                    self.snap = None
             return self.snap or destination
         self.snap = None
         return destination
@@ -351,6 +487,18 @@ class MapView(QGraphicsView):
                 vertex = hit.point
         self.drag_base, self.drag_original = geometry, original
         self.drag_vertex = vertex
+        edge = hit_edge(geometry, point, self._handle_tolerance())
+        if edge:
+            segment = (
+                geometry.walls[edge.path_index]
+                if edge.kind == "wall"
+                else geometry.closures[edge.path_index][edge.edge_index : edge.edge_index + 2]
+            )
+            if self.hover_edge and math.dist(project(vertex, self.hover_edge)[0], vertex) <= 1e-7:
+                segment = self.hover_edge
+            a, b = segment
+            length = math.dist(a, b)
+            self.drag_axis = ((b[0] - a[0]) / length, (b[1] - a[1]) / length) if length else None
         self.drag_offset = (vertex[0] - point[0], vertex[1] - point[1])
         self.edit_preview = geometry
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -369,17 +517,27 @@ class MapView(QGraphicsView):
         if not self.session or event.button() != Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
         point = self._point(event)
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         self.cursor_point = point
+        if self.mode == "Move regions":
+            if self.selected_path.contains(QPointF(*point)) and self.region_polygons:
+                self.region_drag_start = point
+                self.region_plan = self._region_plan()
+                self.region_original_path = QPainterPath(self.selected_path)
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+        if self.mode == "Select regions":
+            self.region_clicked.emit(point)
+            event.accept()
+            return
         if self.mode == "Auto-close":
             self.update_hover()
-            if self.auto_close_plan.extensions:
-                self.session.add(self.auto_close_plan.apply(self.session.geometry()))
-                self.changed.emit()
-                self.refresh(render_image=False)
-            else:
-                self.message.emit(
-                    "No eligible gaps here. Increase the auto-close distance or draw a new line."
-                )
+            self.auto_close_review = True
+            try:
+                self.auto_close_requested.emit(self.auto_close_plan)
+            finally:
+                self.auto_close_review = False
             event.accept()
             return
         if self.mode == "Edit points":
@@ -419,6 +577,10 @@ class MapView(QGraphicsView):
             return
         point = self._point(event)
         self.cursor_point = point
+        if self.mode == "Move regions" and self.region_drag_start is not None:
+            self._preview_region_move(point)
+            event.accept()
+            return
         if self.mode == "Auto-close" and self.session:
             self.update_hover()
             event.accept()
@@ -426,7 +588,7 @@ class MapView(QGraphicsView):
         if self.mode in GEOMETRY_ERASERS and self.session:
             if self.drag_base is not None and event.buttons() & Qt.MouseButton.LeftButton:
                 self._erase_geometry(point)
-            self.viewport().update()
+            self.update_hover()
             event.accept()
             return
         if self.mode == "New line" and self.session:
@@ -439,7 +601,7 @@ class MapView(QGraphicsView):
             return
         if self.mode == "Edit points" and self.session:
             if self.drag_base is not None and event.buttons() & Qt.MouseButton.LeftButton:
-                destination = self._drag_destination(point)
+                destination = self._drag_destination(point, event.modifiers())
                 self.edit_preview = move_vertex(self.drag_base, self.drag_vertex, destination)
                 self.refresh(render_image=False)
             else:
@@ -467,10 +629,29 @@ class MapView(QGraphicsView):
             self.panning = False
             self.pan_button = None
             self.setCursor(
-                Qt.CursorShape.OpenHandCursor if self.mode == "Pan" else Qt.CursorShape.CrossCursor
+                Qt.CursorShape.OpenHandCursor
+                if self.mode in ("Pan", "Move regions")
+                else Qt.CursorShape.CrossCursor
             )
             self.cursor_point = self._point(event)
             self.update_hover()
+            event.accept()
+            return
+        if self.region_drag_start is not None and event.button() == Qt.MouseButton.LeftButton:
+            point = self._point(event)
+            dx, dy = point[0] - self.region_drag_start[0], point[1] - self.region_drag_start[1]
+            plan = self.region_plan
+            geometry, polygons = plan.apply(dx=dx, dy=dy)
+            self.region_drag_start = self.region_plan = self.region_original_path = None
+            self.edit_preview = None
+            if geometry != plan.original:
+                self.session.add(geometry)
+                self.changed.emit()
+                self.regions_transformed.emit(
+                    {"polygons": polygons, "pivot": (plan.pivot[0] + dx, plan.pivot[1] + dy)}
+                )
+            self.refresh(render_image=False)
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
             event.accept()
             return
         if self.drag_base is not None and event.button() == Qt.MouseButton.LeftButton:
@@ -479,11 +660,13 @@ class MapView(QGraphicsView):
                 self._erase_geometry(point)
                 geometry = self.edit_preview
             else:
-                destination = self._drag_destination(point)
+                destination = self._drag_destination(point, event.modifiers())
                 geometry = move_vertex(self.drag_base, self.drag_vertex, destination)
             original = self.drag_original
             self.edit_preview = self.drag_base = self.drag_original = self.drag_vertex = None
             self.drag_offset = None
+            self.drag_axis = None
+            self.axis_constrained = False
             self.geometry_stroke = None
             if geometry != original:
                 self.session.add(geometry)
@@ -541,6 +724,12 @@ class MapView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def wheelEvent(self, event):
+        if self.mode == "Move regions" and event.modifiers() & Qt.KeyboardModifier.AltModifier:
+            steps = event.angleDelta().y() / 120
+            if steps:
+                self.transform_regions(angle=(round(steps) or (1 if steps > 0 else -1)) / 10)
+            event.accept()
+            return
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             steps = event.angleDelta().y() / 120
             if steps:
@@ -561,12 +750,20 @@ class MapView(QGraphicsView):
         event.accept()
 
     def leaveEvent(self, event):
-        if not self.active_gesture and not self.panning:
+        if not self.active_gesture and not self.panning and not self.auto_close_review:
             self.cursor_point = None
             self.update_hover()
         super().leaveEvent(event)
 
     def keyPressEvent(self, event):
+        if (
+            event.key() == Qt.Key.Key_Alt
+            and self.mode == "Edit points"
+            and self.drag_base is not None
+        ):
+            self._update_axis_drag(Qt.KeyboardModifier.AltModifier)
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Escape:
             self.cancel_pending()
             self.update_image()
@@ -574,8 +771,31 @@ class MapView(QGraphicsView):
             return
         super().keyPressEvent(event)
 
+    def keyReleaseEvent(self, event):
+        if (
+            event.key() == Qt.Key.Key_Alt
+            and self.mode == "Edit points"
+            and self.drag_base is not None
+        ):
+            self._update_axis_drag(Qt.KeyboardModifier.NoModifier)
+            event.accept()
+            return
+        super().keyReleaseEvent(event)
+
+    def _update_axis_drag(self, modifiers):
+        if self.cursor_point is not None:
+            destination = self._drag_destination(self.cursor_point, modifiers)
+            self.edit_preview = move_vertex(self.drag_base, self.drag_vertex, destination)
+            self.refresh(render_image=False)
+
     def contextMenuEvent(self, event):
         event.accept()
+
+    def viewportEvent(self, event):
+        if event.type() == QEvent.Type.ToolTip:
+            event.accept()
+            return True
+        return super().viewportEvent(event)
 
     def drawForeground(self, painter, rect):
         super().drawForeground(painter, rect)
@@ -604,12 +824,14 @@ class MapView(QGraphicsView):
         def path(shape, color, dashed=False):
             outlined(lambda: painter.drawPath(shape), color, dashed)
 
-        def circle(point, radius, color):
-            outlined(lambda: painter.drawEllipse(QPointF(*point), radius, radius), color)
+        def circle(point, radius, color, backing="#000000"):
+            outlined(
+                lambda: painter.drawEllipse(QPointF(*point), radius, radius), color, backing=backing
+            )
 
-        if self.show_walls or self.mode in GEOMETRY_TOOLS:
+        if self.show_walls or self.mode in (*GEOMETRY_TOOLS, "Select regions", "Move regions"):
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(88, 217, 236, 38))
+            painter.setBrush(QColor(88, 217, 236, 64))
             painter.drawPath(self.selected_path)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             path(self.original_path, "#58d9ec")
@@ -635,6 +857,11 @@ class MapView(QGraphicsView):
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
             for point in (self.line_start, self.line_end):
                 circle(point, radius, "#ff0000")
+        if self.axis_constrained and self.drag_vertex is not None:
+            reach = max(self.session.source.size)
+            a = tuple(p - reach * v for p, v in zip(self.drag_vertex, self.drag_axis, strict=True))
+            b = tuple(p + reach * v for p, v in zip(self.drag_vertex, self.drag_axis, strict=True))
+            path(line_path(((a, b),)), "#58d9ec", True)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if self.snap:
             radius = 5 / self.transform().m11()
@@ -649,4 +876,6 @@ class MapView(QGraphicsView):
             radius = HANDLE_DIAMETER / 2 / self.transform().m11()
             painter.setBrush(QColor("#effbff"))
             for vertex in vertices(self.working_geometry):
-                circle(vertex, radius, "#183244")
+                targeted = vertex in self.eraser_vertices
+                painter.setBrush(QColor("#ffffff" if targeted else "#effbff"))
+                circle(vertex, radius, "#183244", "#ffffff" if targeted else "#000000")

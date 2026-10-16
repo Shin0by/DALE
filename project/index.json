@@ -13,7 +13,8 @@
     "user_workflow": "docs/workflow.md",
     "private_samples": "examples/README.md",
     "portable_startup": "docs/portable-start.txt",
-    "application_icon": "src/dale/assets/README.md"
+    "application_icon": "src/dale/assets/README.md",
+    "project_format": "docs/project-format.md"
   },
   "code": {
     "import_and_coordinates": "src/dale/scene.py",
@@ -41,7 +42,9 @@
     "toolbar_icons_and_style": "src/dale/toolbar.py",
     "build_revision": "tools/bump_revision.py",
     "application_icon_asset": "src/dale/assets/favicon.ico",
-    "directional_auto_close": "src/dale/autoclose.py"
+    "directional_auto_close": "src/dale/autoclose.py",
+    "line_ancestry": "src/dale/provenance.py",
+    "selected_region_transforms": "src/dale/region_transform.py"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git.",
   "build_environment_lock": "requirements-build.lock"

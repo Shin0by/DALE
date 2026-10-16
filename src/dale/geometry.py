@@ -39,6 +39,7 @@ class RegionAnalysis:
     faces: int
     unresolved: tuple[Segment, ...]
     joins: tuple[Segment, ...] = ()
+    cells: tuple = ()
 
 
 def open_contour_count(segments: tuple[Segment, ...]) -> int:
@@ -159,5 +160,9 @@ def analyze_regions(
             coords = list(line.coords)
             unresolved.extend((tuple(a), tuple(b)) for a, b in pairwise(coords))
     return RegionAnalysis(
-        unary_union(list(polygons.geoms)), len(polygons.geoms), tuple(unresolved), joins
+        unary_union(list(polygons.geoms)),
+        len(polygons.geoms),
+        tuple(unresolved),
+        joins,
+        tuple(sorted(polygons.geoms, key=lambda p: (p.bounds[1], p.bounds[0], p.area))),
     )

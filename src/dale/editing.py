@@ -10,6 +10,7 @@ from typing import Literal
 from shapely.geometry import LineString
 from shapely.geometry import Point as ShapePoint
 
+from dale.provenance import LineageBuilder, LineRecord, edge_key, geometry_edges
 from dale.scene import Point, Segment
 from dale.session import GeometryEdit
 
@@ -94,29 +95,44 @@ def snap_point(
 def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
     if _same(start, end):
         return geometry
-    walls = _split_at(_split_at(geometry.walls, start), end)
+    geometry = node_geometry(geometry, (start, end))
+    builder = LineageBuilder(geometry)
+    walls = list(geometry.walls)
+    overrides = {}
     if tuple(sorted((start, end))) not in {tuple(sorted(edge)) for edge in walls}:
         walls.append((start, end))
+        overrides[edge_key((start, end))] = LineRecord.child(
+            builder.contacts((start, end)), (start, end), manual=True
+        )
     closures = tuple(
         tuple(_expanded_path(tuple(_expanded_path(path, start)), end)) for path in geometry.closures
     )
-    return GeometryEdit(tuple(walls), closures)
+    return builder.build(walls, closures, overrides)
+
+
+def geometry_targets(geometry, start, end, radius, target):
+    """Use the same circle/capsule hit test for hover previews and deletion."""
+    sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
+    if target == "vertices":
+        return tuple(p for p in vertices(geometry) if sweep.distance(ShapePoint(p)) <= radius)
+    if target != "lines":
+        raise ValueError("Unknown geometry eraser target.")
+    edges = (*geometry.walls, *(edge for path in geometry.closures for edge in pairwise(path)))
+    return tuple(edge for edge in edges if sweep.distance(LineString(edge)) <= radius)
 
 
 def erase_geometry(geometry, start, end, radius, target):
     """Erase touched edges or vertices across a swept circular brush, including fast drags."""
-    sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
+    selected = geometry_targets(geometry, start, end, radius, target)
     if target == "vertices":
-        selected = [p for p in vertices(geometry) if sweep.distance(ShapePoint(p)) <= radius]
         for point in selected:
             if hit_vertex(geometry, point, EPSILON) is not None:
                 geometry = delete_vertex(geometry, point)
         return geometry
-    if target != "lines":
-        raise ValueError("Unknown geometry eraser target.")
+    selected = set(selected)
 
     def touched(edge):
-        return sweep.distance(LineString(edge)) <= radius
+        return edge in selected
 
     walls = tuple(edge for edge in geometry.walls if not touched(edge))
     closures = []
@@ -133,7 +149,7 @@ def erase_geometry(geometry, start, end, radius, target):
                 run.append(b)
         if len(run) >= 2:
             closures.append(tuple(run))
-    return GeometryEdit(walls, tuple(closures))
+    return LineageBuilder(geometry).build(walls, closures)
 
 
 def insert_vertex(geometry: GeometryEdit, hit: EdgeHit) -> GeometryEdit:
@@ -143,7 +159,7 @@ def insert_vertex(geometry: GeometryEdit, hit: EdgeHit) -> GeometryEdit:
         if _same(a, hit.point) or _same(b, hit.point):
             return geometry
         walls[hit.path_index : hit.path_index + 1] = [(a, hit.point), (hit.point, b)]
-        return GeometryEdit(tuple(walls), geometry.closures)
+        return LineageBuilder(geometry).build(walls, geometry.closures)
     closures = list(geometry.closures)
     points = list(closures[hit.path_index])
     a, b = points[hit.edge_index : hit.edge_index + 2]
@@ -151,7 +167,7 @@ def insert_vertex(geometry: GeometryEdit, hit: EdgeHit) -> GeometryEdit:
         return geometry
     points.insert(hit.edge_index + 1, hit.point)
     closures[hit.path_index] = tuple(points)
-    return GeometryEdit(geometry.walls, tuple(closures))
+    return LineageBuilder(geometry).build(geometry.walls, closures)
 
 
 def _split_at(segments, point):
@@ -176,6 +192,8 @@ def move_vertex(geometry: GeometryEdit, point: Point, destination: Point) -> Geo
     def replace(value):
         return destination if _same(value, point) else value
 
+    geometry = node_geometry(geometry, (point,))
+
     walls = [(replace(a), replace(b)) for a, b in _split_at(geometry.walls, point)]
     closures = []
     for path in geometry.closures:
@@ -184,7 +202,31 @@ def move_vertex(geometry: GeometryEdit, point: Point, destination: Point) -> Geo
         clean.extend(p for a, p in pairwise(points) if not _same(a, p))
         if len(clean) >= 2:
             closures.append(tuple(clean))
-    return GeometryEdit(tuple((a, b) for a, b in walls if not _same(a, b)), tuple(closures))
+    moved = tuple(
+        (replace(a), replace(b)) for a, b in geometry_edges(geometry.walls, geometry.closures)
+    )
+    builder = LineageBuilder(geometry)
+    contacts = tuple(
+        record
+        for edge, record in zip(builder.edges, geometry.lineage, strict=True)
+        if not any(_same(p, point) for p in edge)
+        and _same(project(destination, edge)[0], destination)
+    )
+    overrides = {
+        edge_key(edge): (
+            LineRecord.child((record, *contacts), edge)
+            if contacts
+            and any(_same(p, destination) for p in edge)
+            and edge_key(edge) != edge_key(old)
+            else record
+        )
+        for old, edge, record in zip(builder.edges, moved, geometry.lineage, strict=True)
+        if not _same(*edge)
+    }
+    result = builder.build(
+        tuple((a, b) for a, b in walls if not _same(a, b)), tuple(closures), overrides
+    )
+    return node_geometry(result, (destination,))
 
 
 def extend_lines(geometry: GeometryEdit, extensions: tuple[Segment, ...]) -> GeometryEdit:
@@ -194,13 +236,23 @@ def extend_lines(geometry: GeometryEdit, extensions: tuple[Segment, ...]) -> Geo
     closures = tuple(
         tuple(destinations.get(point, point) for point in path) for path in geometry.closures
     )
-    for destination in sorted(set(destinations.values())):
+    return node_geometry(
+        GeometryEdit(walls, closures, geometry.lineage, geometry.ancestry), destinations.values()
+    )
+
+
+def node_geometry(geometry: GeometryEdit, points) -> GeometryEdit:
+    """Materialize shared connections without changing the drawn line shapes."""
+    walls, closures = geometry.walls, geometry.closures
+    for destination in sorted(set(points)):
         walls = tuple(_split_at(walls, destination))
         closures = tuple(tuple(_expanded_path(path, destination)) for path in closures)
-    return GeometryEdit(walls, closures)
+    return LineageBuilder(geometry).build(walls, closures)
 
 
 def delete_vertex(geometry: GeometryEdit, point: Point) -> GeometryEdit:
+    geometry = node_geometry(geometry, (point,))
+    builder = LineageBuilder(geometry)
     walls, neighbors = [], set()
     for a, b in _split_at(geometry.walls, point):
         if _same(a, point):
@@ -218,4 +270,20 @@ def delete_vertex(geometry: GeometryEdit, point: Point) -> GeometryEdit:
             closures.append(points)
     # Keep duplicate edges out of the working graph after a merge.
     unique = dict.fromkeys(tuple(sorted(edge)) for edge in walls if not _same(*edge))
-    return GeometryEdit(tuple(unique), tuple(closures))
+    overrides = {}
+    incident = tuple(
+        record
+        for edge, record in zip(
+            geometry_edges(geometry.walls, geometry.closures), geometry.lineage, strict=True
+        )
+        if any(_same(p, point) for p in edge)
+    )
+    for edge in geometry_edges(tuple(unique), closures):
+        if edge_key(edge) not in builder.exact:
+            parents = tuple(
+                record
+                for record in incident
+                if any(record in builder.exact.get(edge_key((p, point)), ()) for p in edge)
+            )
+            overrides[edge_key(edge)] = LineRecord.child(parents, edge)
+    return builder.build(tuple(unique), closures, overrides)

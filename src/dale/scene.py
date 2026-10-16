@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import threading
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
+
+from dale.provenance import SourceWall
 
 MAX_SIDE = 16_384
 COMPATIBILITY_SIDE = 8_192
@@ -58,6 +61,7 @@ class SceneInput:
     scene_size: tuple[float, float]
     background_offset: Point
     warnings: tuple[str, ...]
+    wall_sources: tuple[SourceWall, ...] = ()
 
     def image_walls(self, origin: Point = (0.0, 0.0)) -> tuple[Segment, ...]:
         sx = self.size[0] / self.scene_size[0]
@@ -76,7 +80,9 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
         size = image.size
     if json_path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError("JSON exceeds the 32 MiB prototype input limit.")
-    raw = json.loads(json_path.read_text(encoding="utf-8-sig"))
+    source_bytes = json_path.read_bytes()
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    raw = json.loads(source_bytes.decode("utf-8-sig"))
     if not isinstance(raw, dict) or not isinstance(raw.get("walls"), list):
         raise ValueError("Expected a Foundry scene object with a walls array.")
     if len(raw.get("walls", [])) > 100_000:
@@ -96,6 +102,7 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
         number(background.get("offsetY", 0), "Background offsetY"),
     )
     walls = []
+    references = []
     for i, wall in enumerate(raw.get("walls", [])):
         c = wall.get("c") if isinstance(wall, dict) else None
         if not isinstance(c, list) or len(c) != 4:
@@ -103,6 +110,10 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
         x1, y1, x2, y2 = [number(v, f"Wall {i} coordinate") for v in c]
         if (x1, y1) != (x2, y2):
             walls.append(((x1, y1), (x2, y2)))
+            wall_id = wall.get("_id", wall.get("id"))
+            if wall_id is not None and len(str(wall_id)) > 256:
+                raise ValueError(f"Wall {i}: identifier exceeds 256 characters.")
+            references.append(SourceWall(digest, i, str(wall_id) if wall_id is not None else None))
     warnings = []
     if max(size) > COMPATIBILITY_SIDE:
         warnings.append("Above 8,192 pixels: check the texture limit of every Foundry client.")
@@ -117,5 +128,13 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
     if "levels" in raw:
         warnings.append("Scene levels detected. This prototype uses only top-level walls.")
     return SceneInput(
-        image_path, json_path, size, raw, tuple(walls), (width, height), offset, tuple(warnings)
+        image_path,
+        json_path,
+        size,
+        raw,
+        tuple(walls),
+        (width, height),
+        offset,
+        tuple(warnings),
+        tuple(references),
     )

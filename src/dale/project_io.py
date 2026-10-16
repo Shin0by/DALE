@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -15,17 +16,99 @@ from shapely.geometry import mapping, shape
 
 from dale import __version__
 from dale.placement import Placement
+from dale.provenance import decode_record, encode_record
 from dale.scene import load_pair, number
 from dale.session import Closure, ContourMask, GeometryEdit, Session, Stroke
 
 FORMAT = "dale-project"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 LIMITS = {
     "manifest.json": 64 * 1024,
     "history.json": 64 * 1024 * 1024,
     "sources/map.jpg": 1024 * 1024 * 1024,
     "sources/scene.json": 32 * 1024 * 1024,
 }
+
+
+@dataclass(frozen=True)
+class JsonDocument:
+    id: str
+    name: str
+    kind: str
+    data: bytes
+
+
+def _archive_manifest(archive):
+    entries = archive.infolist()
+    names = [entry.filename for entry in entries]
+    if len(names) != len(set(names)) or "manifest.json" not in names:
+        raise ValueError(
+            "Project archive must contain exactly the four expected members "
+            "and declared JSON files."
+        )
+    if archive.getinfo("manifest.json").file_size > LIMITS["manifest.json"]:
+        raise ValueError("Oversized project manifest.")
+    manifest = json.loads(archive.read("manifest.json"))
+    if manifest.get("format") != FORMAT or manifest.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(
+            "Unsupported DALE project format or version. Older projects are not supported."
+        )
+    documents = manifest.get("json_documents")
+    if not isinstance(documents, list) or not 1 <= len(documents) <= 100:
+        raise ValueError("A current project requires a JSON document catalog.")
+    expected = dict(LIMITS)
+    identifiers, members = set(), set()
+    for document in documents:
+        if not isinstance(document, dict):
+            raise ValueError("Invalid project JSON document.")
+        identifier, member = document.get("id"), document.get("member")
+        if (
+            not isinstance(identifier, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", identifier)
+            or identifier in identifiers
+            or not isinstance(member, str)
+            or member in members
+            or member
+            != (
+                "sources/scene.json"
+                if identifier == "source"
+                else f"sources/json/{identifier}.json"
+            )
+            or not isinstance(document.get("name"), str)
+            or not 1 <= len(document["name"]) <= 256
+            or document.get("kind") not in ("original", "updated")
+        ):
+            raise ValueError("Invalid project JSON catalog entry.")
+        identifiers.add(identifier)
+        members.add(member)
+        expected[member] = LIMITS["sources/scene.json"]
+    if "sources/scene.json" not in members or set(names) != set(expected):
+        raise ValueError(
+            "Project archive must contain exactly the four expected members "
+            "and declared JSON files."
+        )
+    for entry in entries:
+        if entry.flag_bits & 1 or not 0 <= entry.file_size <= expected[entry.filename]:
+            raise ValueError("Encrypted or oversized project member.")
+    if sum(archive.getinfo(member).file_size for member in members) > 128 * 1024 * 1024:
+        raise ValueError("Project JSON documents exceed the 128 MiB combined limit.")
+    return manifest
+
+
+def _read_json_documents(archive, manifest):
+    documents = []
+    for entry in manifest["json_documents"]:
+        data = archive.read(entry["member"])
+        if hashlib.sha256(data).hexdigest() != manifest.get("sha256", {}).get(entry["member"]):
+            raise ValueError(f"Project checksum mismatch: {entry['member']}.")
+        documents.append(JsonDocument(entry["id"], entry["name"], entry["kind"], data))
+    return tuple(documents)
+
+
+def read_json_documents(path: Path):
+    """Read the declared JSON catalog without extracting or decoding the source JPG."""
+    with zipfile.ZipFile(path) as archive:
+        return _read_json_documents(archive, _archive_manifest(archive))
 
 
 def _hash(path):
@@ -47,7 +130,11 @@ def _points(values):
 
 def _encode(operation):
     if isinstance(operation, Closure):
-        return {"type": "closure", "points": operation.points}
+        return {
+            "type": "closure",
+            "points": operation.points,
+            "lineage": [encode_record(record) for record in operation.lineage],
+        }
     if isinstance(operation, Stroke):
         return {
             "type": "stroke",
@@ -58,7 +145,14 @@ def _encode(operation):
     if isinstance(operation, ContourMask):
         return {"type": "mask", "area": mapping(operation.area), "mode": operation.mode}
     if isinstance(operation, GeometryEdit):
-        return {"type": "geometry", "walls": operation.walls, "closures": operation.closures}
+        return {
+            "type": "geometry",
+            "walls": operation.walls,
+            "closures": operation.closures,
+            "lineage": [encode_record(record) for record in operation.lineage],
+            "ancestry": [encode_record(record) for record in operation.ancestry],
+            "vertices": operation.vertex_lineage,
+        }
     raise ValueError("Unsupported editing operation.")
 
 
@@ -70,7 +164,10 @@ def _decode(value):
         points = _points(value["points"])
         if len(points) < 2:
             raise ValueError("A project closure needs at least two points.")
-        return Closure(points)
+        lineage = value.get("lineage")
+        if not isinstance(lineage, list) or len(lineage) != len(points) - 1:
+            raise ValueError("Path provenance is required in the current project format.")
+        return Closure(points, tuple(decode_record(record) for record in lineage))
     if kind == "stroke":
         points = _points(value["points"])
         radius = number(value["radius"], "Brush radius")
@@ -92,7 +189,20 @@ def _decode(value):
         closures = tuple(_points(path) for path in value["closures"])
         if any(len(edge) != 2 for edge in walls) or any(len(path) < 2 for path in closures):
             raise ValueError("Invalid project wall or closure geometry.")
-        return GeometryEdit(walls, closures)
+        lineage, ancestry = value.get("lineage"), value.get("ancestry")
+        if any(
+            not isinstance(records, list) or len(records) > 2_000_000
+            for records in (lineage, ancestry)
+        ):
+            raise ValueError("Invalid or excessive line provenance.")
+        if len(lineage) != len(walls) + sum(len(path) - 1 for path in closures):
+            raise ValueError("Line provenance is required in the current project format.")
+        return GeometryEdit(
+            walls,
+            closures,
+            tuple(decode_record(r) for r in lineage),
+            tuple(decode_record(r) for r in ancestry),
+        )
     raise ValueError(f"Unsupported project operation type: {kind!r}.")
 
 
@@ -132,6 +242,22 @@ def save_project(session: Session, destination: Path, ui_state: dict | None = No
             "history.json": hashlib.sha256(history_bytes).hexdigest(),
         },
     }
+    documents = (
+        JsonDocument("source", session.source.json_path.name, "original", sources[1].read_bytes()),
+        *session.json_documents,
+    )
+    manifest["json_documents"] = []
+    payloads = {}
+    for document in documents:
+        member = (
+            "sources/scene.json" if document.id == "source" else f"sources/json/{document.id}.json"
+        )
+        manifest["json_documents"].append(
+            {"id": document.id, "name": document.name, "kind": document.kind, "member": member}
+        )
+        manifest["sha256"][member] = hashlib.sha256(document.data).hexdigest()
+        if document.id != "source":
+            payloads[member] = document.data
     temporary = None
     try:
         fd, name = tempfile.mkstemp(prefix=".dale-project-", suffix=".tmp", dir=destination.parent)
@@ -149,8 +275,12 @@ def save_project(session: Session, destination: Path, ui_state: dict | None = No
                         zipfile.ZIP_STORED if member.endswith(".jpg") else zipfile.ZIP_DEFLATED
                     )
                     archive.write(path, member, compress_type=compression)
+                for member, data in payloads.items():
+                    archive.writestr(member, data, zipfile.ZIP_DEFLATED)
             stream.flush()
             os.fsync(stream.fileno())
+        with zipfile.ZipFile(temporary) as verification:
+            _archive_manifest(verification)
         os.replace(temporary, destination)
         temporary = None
     finally:
@@ -179,21 +309,16 @@ def _load_ui(value):
         raise ValueError("Invalid project UI settings.")
     placement = Placement(value.get("foundry_major", 14), value.get("elevation_ft", 5))
     mode = value.get("mode", "Pan")
-    if mode == "Closure":
-        mode = "New line"
     tool_set = value.get("tool_set", "geometry")
     language = value.get("language", "ru")
-    brush = number(value.get("brush_diameter", 40), "Brush diameter")
-    geometry_diameter = number(value.get("geometry_diameter", 24), "Geometry eraser diameter")
-    line_diameter = number(
-        value.get("line_eraser_diameter", geometry_diameter), "Line eraser diameter"
-    )
-    vertex_diameter = number(
-        value.get("vertex_eraser_diameter", geometry_diameter), "Vertex eraser diameter"
-    )
+    raster_erase = number(value.get("raster_erase_diameter", 40), "Raster eraser diameter")
+    raster_restore = number(value.get("raster_restore_diameter", 40), "Restore brush diameter")
+    export_padding = number(value.get("export_padding_px", 0), "Export padding")
+    line_diameter = number(value.get("line_eraser_diameter", 24), "Line eraser diameter")
+    vertex_diameter = number(value.get("vertex_eraser_diameter", 24), "Vertex eraser diameter")
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
     auto_distance = number(value.get("auto_close_distance_px", 14), "Auto-close distance")
-    export_region = value.get("export_region", -1)
+    global_distance = number(value.get("global_close_distance_px", 14), "Whole-map close distance")
     zoom = number(value.get("zoom", 1), "Viewport zoom")
     if mode not in (
         "Pan",
@@ -204,27 +329,46 @@ def _load_ui(value):
         "New line",
         "Erase lines",
         "Erase vertices",
+        "Select regions",
+        "Move regions",
     ):
         raise ValueError("Invalid project editing mode.")
-    if not 1 <= brush <= 4096 or not 0 < zoom <= 10000:
+    if (
+        any(size != int(size) or not 1 <= size <= 4096 for size in (raster_erase, raster_restore))
+        or not 0 < zoom <= 10000
+    ):
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
-    if tool_set not in ("geometry", "pixels"):
+    if tool_set not in ("geometry", "pixels", "regions"):
         raise ValueError("Invalid project tool set.")
     if (
         any(
-            not 1 <= diameter <= 512
-            for diameter in (geometry_diameter, line_diameter, vertex_diameter)
+            diameter != int(diameter) or not 1 <= diameter <= 512
+            for diameter in (line_diameter, vertex_diameter)
         )
         or not 0 <= snap_distance <= 256
         or auto_distance != int(auto_distance)
         or not 1 <= auto_distance <= 256
+        or global_distance != int(global_distance)
+        or not 1 <= global_distance <= 256
     ):
         raise ValueError("Invalid project tool sizes or snap distance.")
-    if type(export_region) is not int or not -1 <= export_region < 100_000:
-        raise ValueError("Invalid project export region.")
+    selected_regions = value.get("export_regions")
+    if selected_regions is not None:
+        if (
+            not isinstance(selected_regions, list)
+            or len(selected_regions) > 100_000
+            or any(type(i) is not int or not 0 <= i < 100_000 for i in selected_regions)
+        ):
+            raise ValueError("Invalid project region selection.")
+        selected_regions = tuple(sorted(set(selected_regions)))
+    if export_padding != int(export_padding) or not 0 <= export_padding <= 4096:
+        raise ValueError("Invalid project export padding.")
     snap_enabled = value.get("snap_enabled", True)
+    move_related = value.get("move_related_lines", False)
+    if type(move_related) is not bool:
+        raise ValueError("Invalid project related-line preference.")
     if type(snap_enabled) is not bool:
         raise ValueError("Invalid project snapping preference.")
     return {
@@ -233,18 +377,20 @@ def _load_ui(value):
         "mode": mode,
         "tool_set": tool_set,
         "language": language,
-        "brush_diameter": int(brush),
-        "geometry_diameter": int(geometry_diameter),
+        "raster_erase_diameter": int(raster_erase),
+        "raster_restore_diameter": int(raster_restore),
+        "export_padding_px": int(export_padding),
+        "export_regions": selected_regions,
         "line_eraser_diameter": int(line_diameter),
         "vertex_eraser_diameter": int(vertex_diameter),
         "snap_distance_px": int(snap_distance),
         "auto_close_distance_px": int(auto_distance),
+        "global_close_distance_px": int(global_distance),
         "snap_enabled": snap_enabled,
-        "export_region": export_region,
+        "move_related_lines": move_related,
         "show_walls": bool(value.get("show_walls", True)),
         "zoom": zoom,
         "center": _point(value.get("center", [0, 0])),
-        "pending_closure": _points(value.get("pending_closure", [])),
     }
 
 
@@ -253,16 +399,8 @@ def load_project(path: Path) -> LoadedProject:
     try:
         root = Path(workspace.name)
         with zipfile.ZipFile(path) as archive:
-            entries = archive.infolist()
-            names = [entry.filename for entry in entries]
-            if len(names) != len(set(names)) or set(names) != set(LIMITS):
-                raise ValueError("Project archive must contain exactly the four expected members.")
-            for entry in entries:
-                if entry.flag_bits & 1 or not 0 <= entry.file_size <= LIMITS[entry.filename]:
-                    raise ValueError("Encrypted or oversized project member.")
-            manifest = json.loads(archive.read("manifest.json"))
-            if manifest.get("format") != FORMAT or manifest.get("schema_version") != SCHEMA_VERSION:
-                raise ValueError("Unsupported DALE project format or version.")
+            manifest = _archive_manifest(archive)
+            documents = _read_json_documents(archive, manifest)
             for member in ("sources/map.jpg", "sources/scene.json", "history.json"):
                 destination = root / Path(member).name
                 with archive.open(member) as source, destination.open("wb") as target:
@@ -288,7 +426,25 @@ def load_project(path: Path) -> LoadedProject:
             future=[_decode(op) for op in redo],
             gap_tolerance=gap,
             contour_offset=offset,
+            json_documents=tuple(document for document in documents if document.id != "source"),
         )
+        references = {reference.id: reference for reference in session.source.wall_sources}
+        catalog = {}
+        for operation in (*session.operations, *session.future):
+            if isinstance(operation, (Closure, GeometryEdit)):
+                records = (
+                    *operation.lineage,
+                    *(operation.ancestry if isinstance(operation, GeometryEdit) else ()),
+                )
+                for record in records:
+                    if record.id in catalog and catalog[record.id] != record:
+                        raise ValueError("Conflicting line provenance identities.")
+                    catalog[record.id] = record
+                    if any(references.get(ref.id) != ref for ref in record.sources):
+                        raise ValueError("Line provenance does not match the embedded source JSON.")
+        known_ids = set(catalog) | set(references)
+        if any(parent not in known_ids for record in catalog.values() for parent in record.parents):
+            raise ValueError("Line provenance contains an unknown parent.")
         return LoadedProject(session, _load_ui(history.get("ui", {})), workspace)
     except Exception:
         workspace.cleanup()

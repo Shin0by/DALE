@@ -10,6 +10,7 @@ from pathlib import Path
 
 from shapely.geometry import box
 
+from dale.geometry import offset_region
 from dale.placement import Placement
 from dale.raster import ExportCancelled, export_png
 from dale.session import ContourMask, Session
@@ -17,7 +18,9 @@ from dale.session import ContourMask, Session
 EDGE_GUARD = 3
 
 
-def export_regions(session: Session):
+def export_regions(session: Session, *, individual=False):
+    if individual:
+        return session.analysis().cells
     masks = [
         op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
     ]
@@ -28,14 +31,28 @@ def export_regions(session: Session):
     )
 
 
-def crop_bounds(polygon):
+def crop_bounds(polygon, extra_padding=0, source_size=None):
+    if type(extra_padding) is not int or not 0 <= extra_padding <= 4096:
+        raise ValueError("Export padding must be an integer from 0 to 4096 pixels.")
+    margin = EDGE_GUARD + extra_padding
     x0, y0, x1, y1 = polygon.bounds
-    return (
-        math.floor(x0) - EDGE_GUARD,
-        math.floor(y0) - EDGE_GUARD,
-        math.floor(x1) + EDGE_GUARD + 1,
-        math.floor(y1) + EDGE_GUARD + 1,
+    bounds = (
+        math.floor(x0) - margin,
+        math.floor(y0) - margin,
+        math.floor(x1) + margin + 1,
+        math.floor(y1) + margin + 1,
     )
+    if source_size is not None:
+        left, top, right, bottom = bounds
+        bounds = (
+            max(0, left),
+            max(0, top),
+            min(source_size[0], right),
+            min(source_size[1], bottom),
+        )
+        if bounds[0] >= bounds[2] or bounds[1] >= bounds[3]:
+            raise ValueError("The selected region lies outside the source image.")
+    return bounds
 
 
 def export_overlays(
@@ -45,20 +62,36 @@ def export_overlays(
     progress=None,
     cancelled=None,
     region_index=None,
+    region_indices=None,
+    extra_padding=0,
+    individual_regions=False,
 ) -> Path:
     directory = directory.resolve()
     masks = [
         op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
     ]
     mask = masks[-1] if masks else session.make_mask("outside")
-    polygons = export_regions(session)
+    polygons = export_regions(session, individual=individual_regions)
     if not polygons:
         raise ValueError("No closed contour is available for separate PNG export.")
     selected = tuple(enumerate(polygons))
+    if region_index is not None and region_indices is not None:
+        raise ValueError("Choose either one region or a region selection.")
     if region_index is not None:
         if type(region_index) is not int or not 0 <= region_index < len(polygons):
             raise ValueError("The selected export region is no longer available.")
         selected = ((region_index, polygons[region_index]),)
+    if region_indices is not None:
+        if not region_indices or any(
+            type(i) is not int or not 0 <= i < len(polygons) for i in region_indices
+        ):
+            raise ValueError("Select at least one available export region.")
+        selected = tuple((i, polygons[i]) for i in sorted(set(region_indices)))
+    if individual_regions:
+        selected = tuple(
+            (i, offset_region(polygon, session.contour_offset)) for i, polygon in selected
+        )
+    crop_bounds(selected[0][1], extra_padding)  # Validate before creating output.
     operations = [
         ContourMask(op.area.buffer(EDGE_GUARD), "outside")
         if isinstance(op, ContourMask) and op.mode == "outside"
@@ -85,6 +118,9 @@ def export_overlays(
         "source_image_size": source.size,
         "edge_guard_px": EDGE_GUARD,
         "selected_region": region_index,
+        "selected_regions": [i for i, _ in selected],
+        "extra_padding_px": extra_padding,
+        "region_mode": "faces" if individual_regions else "components",
         "coordinate_units": "source-image pixels",
         "items": [],
         "note": "DALE placement manifest; not a Foundry scene import document.",
@@ -96,7 +132,7 @@ def export_overlays(
         for part, (index, polygon) in enumerate(selected):
             if cancelled and cancelled():
                 raise ExportCancelled("Separate PNG export cancelled.")
-            bounds = crop_bounds(polygon)
+            bounds = crop_bounds(polygon, extra_padding, source.size)
             x, y, right, bottom = bounds
             name = f"{stem}-part-{index + 1:03d}-{placement.elevation_ft}ft.png"
             guarded = polygon.buffer(EDGE_GUARD)
@@ -121,6 +157,7 @@ def export_overlays(
                     "DALE.SourceX": str(x),
                     "DALE.SourceY": str(y),
                     "DALE.EdgeGuardPixels": str(EDGE_GUARD),
+                    "DALE.ExtraPaddingPixels": str(extra_padding),
                 },
             )
             if not visible:

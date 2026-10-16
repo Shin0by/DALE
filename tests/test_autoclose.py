@@ -110,7 +110,7 @@ def test_angled_projection_traces_the_target_through_floating_point_roundoff():
     assert original.difference(changed.buffer(1e-7)).is_empty
 
 
-def test_legacy_paths_and_all_lines_within_cursor_radius_are_included():
+def test_editor_paths_and_all_lines_within_cursor_radius_are_included():
     geometry = GeometryEdit(
         (((0, 0), (100, 0)),),
         (((104, 0), (200, 0)), ((0, 3), (100, 3))),
@@ -125,6 +125,27 @@ def test_legacy_paths_and_all_lines_within_cursor_radius_are_included():
 @pytest.mark.parametrize("distance", [0, 2])
 def test_empty_geometry_has_no_targets(distance):
     assert not AutoCloseIndex(GeometryEdit(()), distance).at((0, 0)).extensions
+
+
+def test_touching_t_junction_is_committed_as_a_shared_vertex_without_extension():
+    geometry = GeometryEdit((((0, 0), (100, 0)), ((50, 0), (50, 50))))
+    plan = AutoCloseIndex(geometry, 5).at((10, 0))
+    assert not plan.extensions
+    assert plan.connections == ((50, 0),)
+    assert plan.apply(geometry).walls == (
+        ((0, 0), (50, 0)),
+        ((50, 0), (100, 0)),
+        ((50, 0), (50, 50)),
+    )
+
+
+def test_sub_epsilon_gap_keeps_both_tips_in_the_same_plan_and_really_closes():
+    geometry = GeometryEdit((((0, 0), (100, 0)), ((100 + 1e-10, 0), (200, 0))))
+    plan = AutoCloseIndex(geometry, 1).at((50, 0))
+    assert len(plan.segments) == 2
+    assert len(plan.extensions) == 2
+    result = plan.apply(geometry)
+    assert result.walls[0][1] == result.walls[1][0]
 
 
 @pytest.mark.parametrize("distance", [-1, math.nan, math.inf])

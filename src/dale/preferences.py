@@ -46,3 +46,31 @@ def save_language(path: Path, language: str):
 
 def save_foundry_major(path: Path, foundry_major: int):
     _save(path, foundry_major=foundry_major)
+
+
+def load_move_related(path: Path) -> bool | None:
+    value = _load(path).get("move_related_lines")
+    return value if type(value) is bool else None
+
+
+def save_move_related(path: Path, choice: bool | None):
+    _save(path, move_related_lines=choice)
+
+
+def load_directory(path: Path, purpose: str) -> Path | None:
+    if purpose not in ("input", "output"):
+        raise ValueError("Directory purpose must be input or output.")
+    value = _load(path).get(f"{purpose}_directory")
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        directory = Path(value)
+        return directory if directory.is_absolute() and directory.is_dir() else None
+    except (ValueError, OSError):
+        return None
+
+
+def save_directory(path: Path, purpose: str, directory: Path):
+    if purpose not in ("input", "output"):
+        raise ValueError("Directory purpose must be input or output.")
+    _save(path, **{f"{purpose}_directory": str(directory.resolve())})

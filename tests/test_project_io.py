@@ -4,15 +4,12 @@ import zipfile
 import pytest
 
 from dale.editing import hit_edge, insert_vertex
-from dale.project_io import LIMITS, load_project, save_project
+from dale.project_io import LIMITS, JsonDocument, load_project, read_json_documents, save_project
 from dale.raster import render_alpha
 from dale.session import Closure, Session, Stroke
 
 
-@pytest.mark.parametrize("legacy_policy", ["continue", "remove"])
-def test_portable_archive_preserves_sources_operations_redo_and_settings(
-    pair_factory, tmp_path, legacy_policy
-):
+def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_factory, tmp_path):
     source = pair_factory()
     original = source.image_path.read_bytes(), source.json_path.read_bytes()
     session = Session(source, gap_tolerance=3, contour_offset=2)
@@ -31,9 +28,8 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(
             "foundry_major": 13,
             "elevation_ft": 17,
             "mode": "Edit points",
-            "pending_closure": [[10, 20]],
-            "junction_policy": legacy_policy,
-            "geometry_diameter": 37,
+            "line_eraser_diameter": 37,
+            "vertex_eraser_diameter": 61,
         },
     )
     source.image_path.unlink()
@@ -47,10 +43,8 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(
         assert loaded.session.contour_offset == 2
         assert loaded.ui_state["elevation_ft"] == 17
         assert loaded.ui_state["mode"] == "Edit points"
-        assert loaded.ui_state["pending_closure"] == ((10, 20),)
-        assert "junction_policy" not in loaded.ui_state
         assert loaded.ui_state["line_eraser_diameter"] == 37
-        assert loaded.ui_state["vertex_eraser_diameter"] == 37
+        assert loaded.ui_state["vertex_eraser_diameter"] == 61
         assert (
             render_alpha(source.size, source.size, loaded.session.operations).tobytes()
             == expected_alpha
@@ -131,3 +125,43 @@ def test_failed_save_is_atomic_and_source_files_are_protected(pair_factory, tmp_
     assert not list(tmp_path.glob(".dale-project-*.tmp"))
     with pytest.raises(ValueError, match="source"):
         save_project(session, session.source.image_path)
+
+
+def test_json_catalog_preserves_original_and_multiple_updated_documents(pair_factory, tmp_path):
+    source = pair_factory()
+    updated = json.dumps(dict(source.raw, name="Updated")).encode()
+    session = Session(
+        source,
+        json_documents=(
+            JsonDocument("edit-1", "Edited walls.json", "updated", updated),
+            JsonDocument("edit-2", "Second edit.json", "updated", updated + b"\n"),
+        ),
+    )
+    path = tmp_path / "versions.dale"
+    save_project(session, path)
+    documents = read_json_documents(path)
+    assert len(documents) == 3
+    assert documents[0].data == source.json_path.read_bytes()
+    assert documents[0].kind == "original"
+    assert documents[1:] == session.json_documents
+    with load_project(path) as loaded:
+        assert loaded.session.json_documents == session.json_documents
+        save_project(loaded.session, tmp_path / "resaved.dale")
+    assert [d.data for d in read_json_documents(tmp_path / "resaved.dale")] == [
+        d.data for d in documents
+    ]
+    _rewrite(path, lambda members: members.update({"sources/json/edit-1.json": b"{}"}))
+    with pytest.raises(ValueError, match="checksum"):
+        read_json_documents(path)
+
+
+def test_json_catalog_rejects_unexpected_paths_atomically(pair_factory, tmp_path):
+    path = tmp_path / "protected.dale"
+    path.write_bytes(b"existing")
+    session = Session(
+        pair_factory(), json_documents=(JsonDocument("../escape", "bad.json", "updated", b"{}"),)
+    )
+    with pytest.raises(ValueError, match="catalog"):
+        save_project(session, path)
+    assert path.read_bytes() == b"existing"
+    assert not (tmp_path / "escape.json").exists()

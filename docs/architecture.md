@@ -1,121 +1,67 @@
 # Architecture and decisions
 
-## ADR-001: local Python desktop editor
+Current owner decisions supersede earlier UI/format choices. .dale schema 2 only; no backward compatibility.
 
-Decision date: 2026-10-16. Use Python 3.11+ with PySide6 (desktop UI), Pillow (JPEG preview/raster operations), Shapely (robust planar geometry), and psutil (memory preflight). The task is local image editing with large files and geometry, so a desktop process avoids server transfers and browser canvas texture limits. Deliver a PyInstaller directory bundle with its interpreter and native dependencies; ordinary users launch `DALE/DALE.exe` directly.
+## ADR-001: local editor
+Python 3.11+, PySide6, Pillow, Shapely, psutil; PyInstaller directory bundle. Core import/geometry/provenance/transforms/history/export are independent of Qt.
 
-The UI owns dialogs and input state. The import, geometry, editing, and export modules do not import Qt. This allows the agent to verify image/geometry behavior without automating a desktop.
+| Module | Contract |
+| --- | --- |
+| scene.py | Bounded validated JPG/JSON, coordinates, exact source wall references. |
+| geometry.py | Intersection noding, minimum polygon cells, union masks, unresolved diagnostics. |
+| session.py | Immutable operation/redo snapshots; GeometryEdit with lineage/ancestry. |
+| provenance.py | Persistent edge/parent/source records and contact nodes, explicit inheritance. |
+| editing.py | Insert/move/split/delete/create edges; swept geometry erasing. |
+| autoclose.py | Indexed reachable groups, directional extensions, shared intersections/tiny gaps. |
+| region_transform.py | Frozen affine plans, related-line reachability, stationary shared-wall copies, common pivot. |
+| canvas.py | Rendering/pointer/modifier input; no file dialogs. |
+| raster.py | Reduced preview and chronological alpha, cancellable stripe PNG. |
+| overlay_export.py | Cell/component crops, guards/padding/clamping, staged placement manifest. |
+| project_io.py | Bounded checksummed schema-2 ZIP and multiple JSON catalog. |
+| preferences.py | Atomic merged language/version/related choice/input-output folders. |
+| toolbar.py / localization.py | Drawn icons, embedded numeric buttons, theme/bilingual help. |
+| ui.py | Dialogs, sets/selection, JSON catalog, persistence/export worker. |
 
-## Module contracts
+## ADR-002: coordinates and raster
+Positions use original JPG pixels:
+image_x = (wall_x - origin_x - background_offset_x) * image_width / scene_width, likewise Y.
+Reject nonidentity background scale/rotation and EXIF rotation. Padding needs alignment evidence. No visible height/origin controls. Internal placement/coordinate primitives are not a compatibility adapter or Foundry importer.
 
-- `scene.py`: validated scene input, map dimension limits, source image metadata, explicit scene-to-image transformation. Never mutates the raw JSON.
-- `geometry.py`: point-to-source-segment projection, intersection noding, polygonization, and unresolved line diagnostics. Original segments and editor closure segments stay distinct.
-- `session.py`: immutable operation records and undo/redo; authoritative positions use native image pixels. A contour mask is a snapshot of the current closed geometry. Later closures do not retroactively change a previously applied mask; apply the mask again to use them.
-- Session contour settings store explicit gap tolerance and signed offset in original image pixels. They change the next mask and its geometric preview, not prior mask snapshots.
-- `raster.py`: deterministic alpha rendering shared by preview/export; preview max side 2,048. Export uses original image data and 128-row RGBA stripes with incremental PNG/zlib encoding. No full-size RGBA canvas or full-size undo bitmap is stored.
-- `canvas.py`: map rendering, live snapping, temporary paths, brush input, and right-button panning in every mode, with navigation space around the image even at fit zoom.
-- `placement.py`: independent validation of Foundry 13/14 targets and integer-foot elevation; version-aware guidance and PNG text metadata.
-- `editing.py`: graph-aware point insertion, shared-node movement, segment splitting, and ordinary vertex deletion. Each committed drag stores one geometry snapshot in history; live movement does not rerender the full mask raster.
-- `project_io.py`: bounded, checksummed `.dale` ZIP serialization, exact source assets, operations plus redo, geometry and UI settings. Loading uses fixed temporary destinations, never arbitrary archive extraction paths.
-- `overlay_export.py`: connected-region PNG crops, mandatory 3-pixel edge guards, source/scene placement manifest, staged all-or-nothing export folders.
-- `localization.py`: English source strings, Russian translations, static controls and dynamic message templates; internal tool keys remain language-independent.
-- `preferences.py`: portable language and Foundry-major settings beside the executable in `UserData/settings.json`, with atomic merged updates that preserve other fields. Invalid/missing values default to Russian and Foundry 14. Development settings live under ignored artifacts.
-- `ui.py`: import/export dialogs, controls, alignment changes, export worker, and unsaved-edit prompts.
+Masks are immutable snapshots. Geometry edits never move artwork or regenerate masks. Preview does not limit export resolution.
 
-## Coordinates
+## ADR-003: graph editing
+Snapping prefers vertices, then interiors; exclude dragged-node incident edges. Alt-drag projects onto the original approached segment vector; toggle mid-drag. Reconciliation epsilon is 1e-7 source pixels.
 
-Image coordinates are the only editing coordinate system. For a supported unrotated scene background:
+Cursor Auto-close and Close all contours extend existing free ends forward along vectors. Required travel distances must fit configured screen tolerance; facing collinear tips meet halfway when the full gap fits. T/shared contacts are noded. No standalone bridge or sideways movement. White edges/dashed extensions preview a frozen plan; Cancel/Yes precedes mutation; one undo snapshot. No-op clicks explain.
 
-```text
-image_x = (wall_x - scene_origin_x - background_offset_x) * image_width / scene_width
-image_y = (wall_y - scene_origin_y - background_offset_y) * image_height / scene_height
-```
+Eraser hover/deletion share hit tests; swept circles prevent missed edges. Ordinary vertex deletion reconnects two neighbors; branches remove incident edges. No source writes.
 
-Default scene origin is `(0, 0)`. Nonzero padding triggers a warning and requires alignment review; do not guess a Foundry-version-specific padding rounding algorithm. The owner can enter the actual scene origin in source scene pixels. Scene dimensions can differ from JPG dimensions and yield explicit scaling. Reject nonidentity background scale/rotation, malformed wall coordinates, and unsupported JSON layouts rather than silently cutting with misaligned walls. EXIF-oriented images are rejected until their coordinates can be explicitly reconciled.
+## ADR-004: selected cells and transforms
+Expose minimum polygonized cells separately from mask union. Toggle smallest covering cell; neighboring cells remain independent. Fill continuous closed QPainterPath rings translucent cyan.
 
-## Geometry policy
+Move regions freezes a geometry plan. Related-line mode uses indexed transitive reachability within snap tolerance. Without related lines detach branches and retain shared walls for stationary neighbors. Drag translates, Ctrl-wheel scales 5%, Alt-wheel rotates 0.1 degree per notch. Common bounding-box center remains fixed through scaling/rotation, moves with translation. Undo/redo stores geometry only; raster/masks stay fixed. Yes/No/Cancel dialog, optional remembered choice; right-click reopens; loading never prompts.
 
-Node intersections with Shapely before polygonization. Use the left Snapping (px) tile distance (default 14, range 0-256 screen pixels), preferring vertices over segment projections. New lines and moved nodes snap to working walls and local paths. Exclude the moving node and its incident edges from snap targets. The retired Closure tool and Alt-click gesture are replaced by cursor Auto-close (ADR-009); legacy closure paths remain editable. Reconcile projected closure anchors with nearby source lines at 1e-7 image pixels to handle floating-point error on angled segments; this is numerical reconciliation, not automatic gap repair. Classify source lines, local closures, and automatic joins consistently: closed geometry cyan, unresolved lines red, all with cosmetic 3-pixel black strokes and 1-pixel color centers. An unfinished path is red; an offset boundary is dashed cyan. Diagnose dangles, cuts, and invalid rings after polygonization; these may be exterior lines or internal partitions rather than actual gaps. The UI therefore asks for review when enclosed regions coexist with unresolved segments. Never silently bridge a gap or invent a wall.
+## ADR-005: ancestry and project format
+Source identity is exact JSON SHA-256 plus original /walls/index, preserving skipped zero-length array positions; optional Foundry ID need not be unique. Working edges have persistent ID, parents, root source references, origin. Splits/clones get child IDs, merges union parents, new contacts inherit incident parents, detached lines become editor roots. Moves/extensions preserve identity. Deleted ancestors remain in snapshot catalogs. Contact nodes expose line/parent/source records.
 
-The explicit gap-tolerance setting described below authorizes visible editor-only bridge generation. It is disabled by default and is distinct from numerical reconciliation and cursor snapping.
+Schema 2 requires lineage and JSON catalog. Older/unknown versions rejected; no migrations or historical-coordinate ancestry inference. See project-format.md. JSON import lists every declared package document without decoding/extracting its JPG. Current archives preserve additional documents; automatic generation of updated Foundry JSON is future work.
 
-All bounded faces are unioned for each mask operation. This is geometric extraction, not ground recognition. Brush edits are applied in chronological order after or between mask operations; restore recovers the source alpha. No geometry is burned into the export.
+## ADR-006: separate bounded exports
+All-regions exports components; explicit selection exports cells. Signed offset, mandatory 3px artwork guard, extra transparent box padding 0-4096, then clamp all bounds to JPG. Share bounds with UI; fully outside selections report no bounds without crashing. Preserve native visible RGB and alpha history; never burn overlays. Stage complete new directory and rename on success.
 
-## ADR-003: configurable joins and contour offsets
+placement.json is a DALE coordinate manifest, not native Foundry import. Foundry 13/14/elevation primitives retain placement intent; actual elevation/visibility is set in Foundry.
 
-Real samples contain small gaps, unclosed artwork, and T junctions. Exact line intersections are noded before tolerance repair. An explicit nonnegative gap tolerance (0 disables joining) creates editor-only bridge segments: prioritize nearby free endpoint pairs, then project remaining free endpoints to eligible source segments, including segment interiors. Use spatial indexes and deterministic distance/coordinate ordering. Each free end receives at most one automatic bridge. Generated joins are visible and never enter source JSON. This does not guarantee a useful polygon where wall metadata is absent or incomplete.
+## ADR-007: compact localized UI
+Two text-only top rows; Contours/Regions/Raster, one left column. 48x48 icons; 48x72 numeric tools with independent captions/arrows. Snapping only in Contours. Right Information/Settings replace footer; minimum 1024x768. No default map tooltip; all controls describe actual shortcuts/modifiers.
 
-After polygonization and face union, buffer the region by the signed offset. Positive expands, negative contracts; mitered corners preserve straight building edges. Reject empty results from excessive contraction. Settings affect image-space geometry independently of viewport zoom. Keep source walls unchanged, classify working lines and joins by closed/open topology, and show the offset boundary as dashed cyan. Diagnostics retain the join/segment counts without separate diagnostic colors. Previously applied masks remain immutable snapshots and can be undone.
+Closed cyan/open pure red RGB(255,0,0). Black 3px backing + colored 1px center; white hover edges. Fixed 10-screen-pixel handles.
 
-The owner tests `DALE/DALE.exe`. A positional `.dale` path or `--image` and `--scene` arguments support preloaded testing. Python console/development scripts remain implementation tools.
+## ADR-008: identity and portable delivery
+Title Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>). Every build invocation advances revision once, including failed attempts; major/minor only owner direction. Supplied ICO unchanged in Qt/PE.
 
-## ADR-004: point editing and portable projects
+Refresh full root DALE/ and source hashes; preserve UserData/projects/running editors. Move locked old EXE into unique ignored storage if needed; never kill user process. Changed locked libraries may require restart.
 
-Use fixed 10-screen-pixel circular handles, pointing-hand hover, and a minimum insertion distance of one handle diameter. Editing positions stay in source pixels at every zoom. Move shared graph vertices together and split segments at connection points when needed. The owner retired the dedicated T-junction deletion setting and automatic main-wall choice. Deleting a wall point reconnects exactly two neighbors; a branching point removes its incident edges. Closure points use ordinary polyline deletion. Source JSON remains unchanged, and mask snapshots are not retroactively regenerated by geometry edits.
+## Resource and evidence boundaries
+JPG max 16384 per side; warn above 8192. Reduced preview, decoded source plus 128-row export stripes, memory preflight/cancellable worker. Source decoding is not interruptible; no bitmap undo history.
 
-The `.dale` schema-1 ZIP has exactly four members: `manifest.json`, `history.json`, `sources/map.jpg`, and `sources/scene.json`. Preserve source bytes, SHA-256 hashes, applied operations and redo stacks, origin/gap/offset, placement, viewport, current tool, language, and independent Auto-close distance. Map legacy Closure mode to New line. The UI restores legacy pending_closure paths of at least two points as editable Closure history records, retains redo, and marks the project changed until saved. A single old anchor has no drawn segment and is discarded. New UI state omits pending_closure. Ignore the retired `junction_policy` UI field in older archives and omit it from new UI state; saved geometry/history still loads unchanged. Never pickle executable objects. Bound member sizes (64 KiB manifest, 64 MiB history, 1 GiB JPG, 32 MiB JSON), reject unexpected/duplicate/encrypted members and invalid data, and load source assets to a disposable fixed-name workspace. Saving is atomic and independent of original paths.
-
-## ADR-005: separate PNG crops and edge guards
-
-The owner's later instruction supersedes the original full-canvas default. Export one PNG per disconnected component of the selected mask union, not per room. Expand retained outside-mask boundaries by 3 source pixels after the signed user offset, retain real source pixels in this guard, and bound each output by the contour's inclusive pixel limits plus 3 on each side. Areas beyond the original image remain transparent. Preserve brush history; clip each part independently. Fully transparent RGB is zeroed for compact compression; visible RGB is unchanged. Preview remains on the source canvas and does not display the extra export guard.
-
-`placement.json` records each crop's image origin/size, transformed scene position/size, elevation, version, and guard. Include the origin in PNG text metadata as well. This manifest does not claim native Foundry import compatibility. Stage the complete set in a new sibling directory, then rename it only on success; avoid replacing an existing export set.
-
-## ADR-006: maintained portable delivery and localization
-
-After every project update, run `tools/build_windows.ps1` and refresh root `DALE/` with the complete directory bundle, startup note, and source SHA-256 build provenance. Preserve `UserData` and user files during refresh. Never commit generated runtimes or user projects. The package runs without external Python and can be copied as a whole.
-
-Skip copying identical runtime files. When only the executable is locked by an open editor, move that old executable into an ignored, uniquely named artifacts folder before copying the new one; do not terminate the process or discard its edits. An open editor continues its current version until restarted. Changed locked runtime libraries still require the editor to close before deployment can finish.
-
-Keep technical documentation and serialized field names English; switch UI actions, tooltips, guidance, and dialogs between English and Russian at runtime. Russian is the initial default. Persist the choice beside the portable executable and in project preferences. Unknown low-level import/ZIP/library diagnostics can remain English technical detail; application-owned user flows are translated.
-
-## ADR-002: Foundry version and elevation are placement intent
-
-Owner clarification: support Foundry 13 and 14. The raster asset remains RGBA PNG for both. Foundry 13 tile/module workflows differ from Foundry 14 native Scene Levels; do not generate one guessed scene document for both. The prototype provides a version selector and editable elevation dropdown: presets -20 through 100 ft in 5-ft increments, custom integers from -1,000,000 through 1,000,000 ft. Negative elevation supports basements. Fractions are rejected.
-
-PNG `tEXt` keys `DALE.FoundryMajor`, `DALE.ElevationFeet`, `DALE.Placement`, and `DALE.Note` retain the intended placement. Foundry does **not** read these keys to set elevation. They are editor metadata and the user must configure placement in Foundry. Default export names include elevation. A real Foundry adapter must eventually encode scene-unit conversion, v13 module configuration, or v14 Level range/visibility after installation validation. These are explicitly pending, not simulated by PNG metadata.
-
-## Resource policy
-
-Reject images above 16,384 per side before decoding. Locally raise Pillow's decompression-bomb threshold only for the bounded, validated source open, then restore it. JPEG preview uses decoder reduction before thumbnailing. Export retains one decoded RGB JPEG (Pillow storage may use four bytes per pixel), a small stripe, vector operations, and zlib state. Memory preflight estimates 4 bytes per source pixel plus 256 MiB headroom and declines if available RAM is lower. This is an estimate, not an allocation guarantee; errors are surfaced and partial output is removed.
-
-Export cancellation is checked per stripe and progress covers the export stripes. Source JPEG decoding cannot be interrupted inside Pillow. Worker completion is required before closing the application; cancellation must not destroy a running QThread. Output is atomic and source paths are protected.
-
-## Delivery boundaries
-
-No direct Foundry mutation or floor-module dependency in the prototype. Preserve native resolution and source JSON while exporting separate crops. The observed legacy zero-shift/zero-padding profile is validated; other profiles require evidence. Manual free outlines can be assembled with New line. Per-face selection within a connected object, automatic boundary reuse across floors, semantic segmentation, refined edge antialiasing, and live Foundry assembly remain follow-up work.
-
-
-## ADR-007: toolbar tools, snapping, and status footer
-
-The latest owner color rule supersedes earlier diagnostic colors and 2-pixel thickness: draw resolved closed geometry cyan and unresolved segments pure RGB (255, 0, 0) red. All map strokes use a cosmetic 3-pixel black backing and a 1-pixel colored center, leaving black 1-pixel edges at every zoom. Match dash patterns in device pixels across both strokes. Keep fixed 10-screen-pixel circular handles.
-
-Use exactly two text-only top rows: unframed general commands, then tool-set selection plus Hand, Fit, and Walls. A QStackedWidget left of the map displays one tool column. Ordinary buttons are 48 x 48. Each geometry eraser and Auto-close use a SizedToolButton at 48 x 72, painting its icon above a small borderless numeric caption with gray left/right arrows. The checked border covers the entire button; numeric/arrow child clicks do not activate a different tool. Each button has its own diameter. NumericToolTile remains for the pixel brush and Snapping (px); hide the pixel-size tile in the geometry set. ToolSpinBox sizes its inner editor explicitly to avoid Qt's styled NoButtons layout collapsing the text. Compute toolbar heights after polishing. Mark icon actions independently of toolbar membership because sized tools are embedded QWidgetActions. Use localized help, a neutral dark-gray palette, and minimum window dimensions 1024 x 768. Switching sets restores the last tool; close-map offers saving.
-
-New line captures a first endpoint on press and commits the second on release, with a live preview. Prefer existing vertices over closer line projections within the configured screen-space radius. Split target edges at connection points. Moving a node excludes its own incident edges from snap candidates; minimum handle spacing prevents crowded new points.
-
-Geometry erasers remove entire touched edges or vertices, not raster pixels. Sweep a capsule between mouse samples so fast drags do not miss geometry. Split local polylines into surviving runs. Preview immutable GeometryEdit snapshots and commit one per drag; Escape cancels. Vertex erasing reuses ordinary point deletion, with no separate T-junction policy. Automatic gap joins remain generated from tolerance rather than independently persisted walls.
-
-Pixel brush diameter uses source pixels; line and vertex erasers each keep an independent screen-pixel diameter (1-512, default 24) in MapView.geometry_diameters. The geometry_diameter property resolves the active geometry eraser for footprint drawing and resizing; outside eraser modes it exposes the line size for legacy compatibility. Ctrl+wheel changes the active sized tool globally, or the particular size control/button under the pointer, without changing the other eraser. Auto-close uses its own screen-space distance; standard Ctrl shortcuts remain available.
-
-The single-row permanent footer contains source map dimensions, current closed components and connected unresolved-group counts, export dimensions with the mandatory 3-pixel guard, an all/one-region selector, and language. An open count is a connected graph-component count, not inferred missing polygons. Closed counts use the current face union, while crop bounds and selection use the effective export mask snapshot. For multiple selected outputs show the largest actual PNG by pixel area; for one show exact dimensions. Coordinates remain in placement.json. Share `crop_bounds` between export and footer. Highlight the selected region without burning it into PNGs, and export only that region when selected.
-
-Every application control has localized hover help. Copy source help into embedded numeric editors and popup scrollbars, provide overflow/menu help, and translate tool names and descriptions separately for icon-only buttons. Include tool-specific Escape cancellation, Ctrl+wheel diameter/distance changes. Numeric captions and arrows expose their Ctrl+wheel behavior. During localization, append the actual QAction shortcut through a translated template, using its PortableText key sequence; do not maintain a second shortcut map. Keep source tooltip parts separate so switching language does not duplicate shortcut lines. Dynamic selectors refresh their own localized help.
-
-Save optional tool-set choice, snap enablement/radius, independent line_eraser_diameter and vertex_eraser_diameter, current tools, and region selection in schema-1 project UI settings. Missing individual diameters fall back to legacy geometry_diameter or 24, preserving older archives. Retain geometry_diameter as a compatibility field when saving. Validate both individual ranges before loading. Geometry and raster history serialization stay independent of Qt.
-
-## ADR-008: application title and automatic build revision
-
-Use the constant English product identity `Dungeon Alchemist Levels Export` in the window title, followed by `(v.<major>.<minor:02d>.<revision:03d>)`. Loading, saving, closing, and changing language do not replace it with a filename. The map information panel provides file context.
-
-The Windows build script invokes `tools/bump_revision.py` before PyInstaller. It validates agreement between `src/dale/__init__.py`, `pyproject.toml`, and `project/state.json`, then increments only the revision component and updates all three records. Each build invocation consumes one revision, including an attempt that later fails. Do not increment versions manually for ordinary changes. Major/minor changes require the owner's explicit instruction; a revision above 999 is not carried into minor. Store the actual version in portable `build-info.json`. Build-revision tests run against disposable repositories and never mutate the working version.
-
-The owner supplied both `src/dale/assets/shin0by.png` as original artwork and `src/dale/assets/favicon.ico` as the ready-made Windows icon. Use the ICO unchanged for QApplication before creating windows and for PyInstaller `--icon`; it contains 16/32/48-pixel representations. Resolve the Qt asset relative to `ui.py`, not the working directory. Setuptools package data includes both image formats and PyInstaller `--add-data` includes the asset directory. Record both source hashes in portable provenance. Asset origin and checksums are recorded beside them in `assets/README.md`.
-
-## ADR-009: directional Auto-close and white hover edges
-
-Replace the legacy multi-click Closure tool with Auto-close. Keep Closure operation decoding/rendering/editing for archive compatibility. Auto-close has a 48 x 72 SizedToolButton with a directly editable distance and gray arrows, independent of both ordinary snapping and session gap tolerance. Store auto_close_distance_px (integer 1-256, default 14); older archives use 14. Ctrl+wheel changes the active distance globally or the hovered numeric control.
-
-AutoCloseIndex nodes working walls and legacy paths, indexes segments and free tips, and proposes forward extensions along each tip's segment vector. Prefer eligible pairs of outward rays, extending both to their future intersection; both travel distances must fit the limit. Facing collinear tips meet at their midpoint when their complete gap fits the limit. Extend remaining free tips forward to the nearest eligible existing segment. Offset parallel lines receive no sideways connection. Choose deterministically by distance/coordinates, using each free end once. Node the candidate network, including any crossed lines, and reconcile numerical projection error at 1e-7 source pixels. Query every line inside the circular cursor radius and trace its complete reachable group. Cache the index by geometry and distance converted through zoom; pointer movement only queries the cache. This explicit clicked repair is separate from generated global gap-tolerance joins.
-
-Replace black side edges by white on the complete affected group, retaining exact cyan/red 1-pixel centers. Show prospective continuations dashed red with white edges. Edit-points and New-line hover targets also use white edges. These overlays never enter exported pixels. Click uses a simultaneous old-tip-to-intersection mapping to lengthen existing walls/paths, nodes target segments, and stores one GeometryEdit. Do not add standalone connectors. The original portions stay covered and directions do not change; only free ends move forward. Undo restores the complete prior geometry. This is the owner's final clarification and supersedes the earlier proposed bridge-addition approach.
+Historical real sample evidence: docs/sample-formats.md. Owner maps are currently absent from examples. Current changes use synthetic fixtures. No semantic segmentation, live Foundry connection/native scene generation/verified live floor assembly.

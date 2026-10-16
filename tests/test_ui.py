@@ -1,20 +1,21 @@
 """Exercise actual Qt pointer events offscreen, without controlling the owner's desktop."""
 
+import json
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QTransform, QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QListWidget, QMessageBox
 
 from dale.canvas import HANDLE_DIAMETER, MapView
 from dale.editing import vertices
-from dale.project_io import load_project, save_project
+from dale.project_io import JsonDocument, load_project, save_project
 from dale.raster import load_preview
-from dale.session import Closure, Session, Stroke
+from dale.session import Session, Stroke
 from dale.ui import MainWindow
 
 
@@ -39,6 +40,8 @@ def isolated_preferences(monkeypatch, tmp_path):
         "New line",
         "Erase lines",
         "Erase vertices",
+        "Select regions",
+        "Move regions",
     ],
 )
 @pytest.mark.parametrize("zoomed", [False, True])
@@ -89,6 +92,7 @@ def test_auto_close_hover_click_and_undo_extend_existing_lines(app, pair_factory
     view.set_mode("Auto-close")
     app.processEvents()
     point = view.mapFromScene(70, 20)
+    QTest.mouseMove(view.viewport(), point + QPoint(2, 2))
     QTest.mouseMove(view.viewport(), point)
     assert len(view.auto_close_plan.segments) == 4
     assert view.auto_close_plan.extensions == (((20, 26), (20, 20)),)
@@ -99,7 +103,12 @@ def test_auto_close_hover_click_and_undo_extend_existing_lines(app, pair_factory
     sample = view.mapFromScene(90, 20)
     colors = [image.pixelColor(sample.x(), sample.y() + dy).name() for dy in range(-3, 4)]
     assert any(colors[i : i + 3] == ["#ffffff", "#ff0000", "#ffffff"] for i in range(5))
+    requested = []
+    view.auto_close_requested.connect(requested.append)
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert not view.session.operations
+    view.session.add(requested[0].apply(view.session.geometry()))
+    view.refresh()
     assert len(view.session.operations) == 1
     assert len(view.session.walls) == len(original.walls)
     assert view.session.walls[3] == ((20, 120), (20, 20))
@@ -111,29 +120,437 @@ def test_auto_close_hover_click_and_undo_extend_existing_lines(app, pair_factory
     view.close()
 
 
-def test_retired_closure_draft_loads_as_editable_geometry_and_retains_redo(
+def test_retired_closure_mode_is_not_migrated(pair_factory, tmp_path):
+    path = tmp_path / "retired-mode.dale"
+    save_project(Session(pair_factory()), path, {"mode": "Closure"})
+    with pytest.raises(ValueError, match="editing mode"):
+        load_project(path)
+
+
+def test_json_command_replaces_walls_without_choosing_jpg_and_keeps_archive_image_alive(
+    app, pair_factory, tmp_path, monkeypatch
+):
+    source = pair_factory()
+    project = tmp_path / "source.dale"
+    save_project(Session(source), project)
+    json_dir = tmp_path / "json-input"
+    json_dir.mkdir()
+    alternative = json_dir / "alternate.json"
+    raw = dict(source.raw, walls=[{"_id": "alternate", "c": [1, 2, 30, 40]}])
+    alternative.write_text(json.dumps(raw), encoding="utf-8")
+    window = MainWindow()
+    assert window.load_project_file(project)
+    image = window.view.session.source.image_path
+    opened = []
+
+    def choose(*args):
+        opened.append(args)
+        return str(alternative), ""
+
+    monkeypatch.setattr("dale.ui.QFileDialog.getOpenFileName", choose)
+    window.open_json()
+    assert len(opened) == 1
+    assert window.view.session.source.image_path == image and image.is_file()
+    assert window.view.session.walls == (((1, 2), (30, 40)),)
+    assert window.view.session.geometry().lineage[0].sources[0].foundry_id == "alternate"
+    assert window.input_directory == json_dir
+    output = tmp_path / "output"
+    output.mkdir()
+    window.project_path = output / "changed.dale"
+    assert window.save_project_file()
+    second = MainWindow()
+    assert second.input_directory == json_dir and second.output_directory == output
+    assert second.load_project_file(window.project_path)
+    assert second.view.session.source.image_path.is_file()
+    second.close()
+    window.close()
+    assert not image.exists()
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_json_import_from_dale_shows_all_documents_and_uses_chosen_one(
+    app, pair_factory, tmp_path, monkeypatch, accept
+):
+    source = pair_factory()
+    updated = json.dumps(dict(source.raw, walls=[{"_id": "updated", "c": [5, 6, 70, 80]}])).encode()
+    archive = tmp_path / "versions.dale"
+    save_project(
+        Session(
+            source,
+            json_documents=(JsonDocument("edit-1", "Updated walls.json", "updated", updated),),
+        ),
+        archive,
+    )
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    original = window.view.session
+    monkeypatch.setattr("dale.ui.QFileDialog.getOpenFileName", lambda *args: (str(archive), ""))
+
+    def choose():
+        dialog = app.activeModalWidget()
+        assert dialog.objectName() == "jsonDocumentSelection"
+        listing = dialog.findChild(QListWidget)
+        assert listing.count() == 2
+        assert "Исходный" in listing.item(0).text()
+        assert "Обновлённый" in listing.item(1).text()
+        listing.setCurrentRow(1)
+        buttons = dialog.findChild(QDialogButtonBox)
+        button = buttons.button(
+            QDialogButtonBox.StandardButton.Ok if accept else QDialogButtonBox.StandardButton.Cancel
+        )
+        assert button.toolTip()
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+
+    QTimer.singleShot(0, choose)
+    window.open_json()
+    assert window.view.session.source.image_path == source.image_path
+    assert window.input_directory == archive.parent
+    if accept:
+        assert window.view.session.walls == (((5, 6), (70, 80)),)
+        assert window.view.session.source.json_path.is_file()
+        window.project_path = tmp_path / "imported.dale"
+        assert window.save_project_file()
+        with load_project(window.project_path) as loaded:
+            assert loaded.session.source.json_path.read_bytes() == updated
+    else:
+        assert window.view.session is original
+    window.close()
+
+
+def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
     app, pair_factory, tmp_path
 ):
-    session = Session(pair_factory())
-    session.add(Stroke(((20, 30), (30, 40)), 3))
-    session.add(Stroke(((25, 35),), 1, restore=True))
-    session.undo()
-    path = tmp_path / "legacy.dale"
-    draft = ((10, 20), (30, 40), (60, 20))
-    save_project(session, path, {"mode": "Closure", "pending_closure": draft})
+    source = pair_factory(
+        size=(500, 400),
+        walls=[
+            {"c": [80, 80, 180, 80]},
+            {"c": [180, 80, 180, 180]},
+            {"c": [180, 180, 80, 180]},
+            {"c": [80, 180, 80, 80]},
+            {"c": [180, 130, 200, 130]},
+        ],
+    )
     window = MainWindow()
-    assert "Closure" not in window.mode_actions
-    assert window.load_project_file(path)
-    assert window.view.mode == "New line"
-    assert window.view.session.operations == [*session.operations, Closure(draft)]
-    assert window.view.session.future == session.future
-    assert window.saved_state is None
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select regions")
+    window.toggle_region_at((130, 130))
+    original = window.view.session.geometry()
+    original_pixels = window.view.item.pixmap().toImage()
+
+    def choose(yes, remember):
+        dialog = app.activeModalWidget()
+        assert dialog.objectName() == "regionMoveConfiguration"
+        assert "Правый клик" in dialog.informativeText()
+        dialog.checkBox().setChecked(remember)
+        assert dialog.checkBox().toolTip()
+        QTest.mouseClick(
+            dialog.button(QMessageBox.StandardButton.Yes if yes else QMessageBox.StandardButton.No),
+            Qt.MouseButton.LeftButton,
+        )
+
+    QTimer.singleShot(0, lambda: choose(False, True))
+    window.activate_mode("Move regions")
+    assert window.view.mode == "Move regions" and not window.view.move_related
+    view = window.view
+    app.processEvents()
+    start = view.mapFromScene(QPointF(130, 130))
+    end = start + QPoint(20, 10)
+    before = view.mapToScene(start)
+    after = view.mapToScene(end)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    assert view.active_gesture
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert len(view.session.operations) == 1
+    assert len(window.selected_regions) == 1
+    assert view.region_pivot == pytest.approx(
+        (130 + after.x() - before.x(), 130 + after.y() - before.y())
+    )
+    assert ((180, 130), (200, 130)) in view.session.walls
+    pivot = view.region_pivot
+    shape = view.region_polygons[0]
+    for modifiers, expected_area in (
+        (Qt.KeyboardModifier.ControlModifier, shape.area * 1.05**2),
+        (Qt.KeyboardModifier.AltModifier, shape.area * 1.05**2),
+    ):
+        wheel = QWheelEvent(
+            QPointF(200, 150),
+            QPointF(200, 150),
+            QPoint(),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            modifiers,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        app.sendEvent(view.viewport(), wheel)
+        assert view.region_polygons[0].area == pytest.approx(expected_area)
+        assert view.region_pivot == pivot
+    assert len(view.session.operations) == 3
+    assert view.item.pixmap().toImage() == original_pixels
+    QTimer.singleShot(0, lambda: choose(True, True))
+    window.move_button.customContextMenuRequested.emit(QPoint(20, 20))
+    assert view.move_related and window.remembered_move_related
+    window.project_path = tmp_path / "moving.dale"
     assert window.save_project_file()
-    with load_project(path) as loaded:
-        assert loaded.session.operations == window.view.session.operations
-        assert loaded.session.future == session.future
-        assert not loaded.ui_state["pending_closure"]
+    second = MainWindow()
+    assert second.remembered_move_related is True
+    assert second.load_project_file(window.project_path)  # No question during restoration.
+    assert second.view.mode == "Move regions" and second.view.move_related
+    assert len(second.selected_regions) == 1
+    assert second.view.session.geometry().lineage == view.session.geometry().lineage
+    second.close()
+    for _ in range(3):
+        window.history(False)
+    assert view.session.geometry() == original
+    window.saved_state = window.document_state()
     window.close()
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_auto_close_requires_cancel_or_yes_before_changing_geometry(app, pair_factory, accept):
+    source = pair_factory(
+        size=(200, 200),
+        walls=[
+            {"c": [20, 100, 180, 100]},
+            {"c": [100, 100, 100, 180]},
+        ],
+    )
+    window = MainWindow()
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Auto-close")
+    app.processEvents()
+    original = window.view.session.geometry()
+    seen = []
+
+    def answer():
+        dialog = app.activeModalWidget()
+        assert dialog.objectName() == "autoCloseConfirmation"
+        assert sorted(button.text() for button in dialog.buttons()) == ["Да", "Отмена"]
+        assert window.view.session.geometry() == original
+        assert dialog.button(QMessageBox.StandardButton.Yes).isEnabled()
+        seen.append(dialog.text())
+        QTest.mouseClick(
+            dialog.button(
+                QMessageBox.StandardButton.Yes if accept else QMessageBox.StandardButton.Cancel
+            ),
+            Qt.MouseButton.LeftButton,
+        )
+
+    QTimer.singleShot(0, answer)
+    QTest.mouseClick(
+        window.view.viewport(), Qt.MouseButton.LeftButton, pos=window.view.mapFromScene(60, 100)
+    )
+    assert len(seen) == 1
+    assert len(window.view.session.operations) == int(accept)
+    if accept:
+        assert len(window.view.session.walls) == 3
+        window.history(False)
+    assert window.view.session.geometry() == original
+    assert not window.view.toolTip()
+    assert not window.view.viewport().toolTip()
+    window.saved_state = window.document_state()
+    window.close()
+
+
+def test_whole_map_close_uses_its_own_distance_and_one_confirmed_undo_step(app, pair_factory):
+    source = pair_factory(
+        size=(300, 200),
+        walls=[
+            {"c": [20, 30, 100, 30]},
+            {"c": [104, 30, 180, 30]},
+            {"c": [20, 140, 100, 140]},
+            {"c": [104, 140, 180, 140]},
+        ],
+    )
+    window = MainWindow()
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    window.global_close_control.setValue(20)
+    window.auto_close_control.setValue(1)
+    original = window.view.session.geometry()
+    seen = []
+
+    def answer():
+        dialog = app.activeModalWidget()
+        seen.append(dialog.text())
+        assert not window.view.session.operations
+        QTest.mouseClick(dialog.button(QMessageBox.StandardButton.Yes), Qt.MouseButton.LeftButton)
+
+    QTimer.singleShot(0, answer)
+    QTest.mouseClick(
+        window.sized_tools["Close all contours"], Qt.MouseButton.LeftButton, pos=QPoint(24, 24)
+    )
+    assert len(seen) == 1
+    assert len(window.view.session.operations) == 1
+    walls = window.view.session.walls
+    assert walls[0][1] == walls[1][0]
+    assert walls[2][1] == walls[3][0]
+    window.history(False)
+    assert window.view.session.geometry() == original
+    assert not window.statusBar().isVisible()
+    assert window.information_group.title() == "Информация"
+    assert window.settings_group.title() == "Настройки"
+    assert window.map_info.parentWidget() == window.information_group
+    window.saved_state = window.document_state()
+    window.close()
+
+
+@pytest.mark.parametrize("mode", ["Erase lines", "Erase vertices"])
+def test_geometry_erasers_preview_exact_targets_in_white(app, pair_factory, mode):
+    source = pair_factory(
+        size=(220, 200),
+        walls=[
+            {"c": [100, 50, 100, 150]},
+            {"c": [160, 50, 160, 150]},
+        ],
+    )
+    view = MapView()
+    view.resize(600, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(110, 100)
+    view.set_mode(mode)
+    view.cursor_point = (100, 100) if mode == "Erase lines" else (100, 50)
+    view.update_hover()
+    assert not view.session.operations
+    image = view.viewport().grab().toImage()
+    if mode == "Erase lines":
+        assert view.hover_path.boundingRect().left() == 100
+        assert view.hover_path.boundingRect().right() == 100
+        sample = view.mapFromScene(100, 130)
+        colors = [image.pixelColor(sample.x() + dx, sample.y()).name() for dx in range(-3, 4)]
+        assert any(colors[i : i + 3] == ["#ffffff", "#ff0000", "#ffffff"] for i in range(5))
+    else:
+        assert view.eraser_vertices == ((100, 50),)
+        sample = view.mapFromScene(100, 50)
+        assert image.pixelColor(sample).name() == "#ffffff"
+    view.close()
+
+
+def test_auto_close_without_possible_changes_explains_and_disables_yes(app, pair_factory):
+    source = pair_factory()
+    window = MainWindow()
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Auto-close")
+    seen = []
+
+    def answer():
+        dialog = app.activeModalWidget()
+        seen.append(dialog.text())
+        assert not dialog.button(QMessageBox.StandardButton.Yes).isEnabled()
+        QTest.mouseClick(
+            dialog.button(QMessageBox.StandardButton.Cancel), Qt.MouseButton.LeftButton
+        )
+
+    QTimer.singleShot(0, answer)
+    QTest.mouseClick(
+        window.view.viewport(), Qt.MouseButton.LeftButton, pos=window.view.mapFromScene(30, 20)
+    )
+    assert len(seen) == 1
+    assert not window.view.session.operations
+    window.close()
+
+
+@pytest.mark.parametrize(
+    "start,end,cursor,constrained",
+    [
+        ((50, 100), (150, 100), (170, 130), (170, 100)),
+        ((50, 50), (150, 100), (170, 140), (182, 116)),
+    ],
+)
+def test_alt_point_drag_projects_to_line_and_can_toggle_mid_gesture(
+    app, pair_factory, start, end, cursor, constrained
+):
+    source = pair_factory(size=(250, 200), walls=[{"c": [*start, *end]}])
+    view = MapView()
+    view.resize(650, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(125, 100)
+    view.snap_enabled = False
+    view.set_mode("Edit points")
+    app.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*end))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(*cursor))
+    assert view.edit_preview.walls[0][1] == cursor
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert view.edit_preview.walls[0][1] == pytest.approx(constrained)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.edit_preview.walls[0][1] == cursor
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    QTest.mouseRelease(
+        view.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.AltModifier,
+        view.mapFromScene(*cursor),
+    )
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.session.walls[0][1] == pytest.approx(constrained)
+    assert view.session.walls[0][0] == start
+    assert len(view.session.operations) == 1
+    view.close()
+
+
+def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists(
+    app, pair_factory, tmp_path
+):
+    walls = [
+        {"c": [10, 10, 190, 10]},
+        {"c": [190, 10, 190, 190]},
+        {"c": [190, 190, 10, 190]},
+        {"c": [10, 190, 10, 10]},
+        {"c": [100, 10, 100, 190]},
+        {"c": [30, 30, 60, 30]},
+        {"c": [60, 30, 60, 60]},
+        {"c": [60, 60, 30, 60]},
+        {"c": [30, 60, 30, 30]},
+    ]
+    source = pair_factory(size=(200, 200), walls=walls)
+    window = MainWindow()
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select regions")
+    app.processEvents()
+    assert len(window.regions) == 3
+    QTest.mouseClick(
+        window.view.viewport(), Qt.MouseButton.LeftButton, pos=window.view.mapFromScene(45, 45)
+    )
+    assert len(window.selected_regions) == 1
+    assert window.regions[window.selected_region].bounds == (30, 30, 60, 60)
+    assert window.view.selected_path.contains(QPointF(45, 45))
+    assert not window.view.selected_path.contains(QPointF(140, 70))
+    QTest.mouseClick(
+        window.view.viewport(), Qt.MouseButton.LeftButton, pos=window.view.mapFromScene(140, 70)
+    )
+    assert len(window.selected_regions) == 2
+    assert window.view.selected_path.contains(QPointF(140, 70))
+    assert not window.view.selected_path.contains(QPointF(70, 100))
+    window.export_padding_control.setValue(500)
+    assert "200 × 200" in window.map_info.text()
+    window.brush_control.setValue(31)
+    window.restore_brush_control.setValue(79)
+    window.project_path = tmp_path / "selected-cells.dale"
+    assert window.save_project_file()
+    restored = MainWindow()
+    assert restored.load_project_file(window.project_path)
+    assert restored.selected_regions == window.selected_regions
+    assert restored.current_tool_set == "regions"
+    assert restored.export_padding_control.value() == 500
+    assert restored.view.raster_diameters == {"Erase": 31, "Restore": 79}
+    assert restored.tool_set_actions["geometry"].text() == "Контуры"
+    assert restored.tool_set_actions["regions"].text() == "Области"
+    assert restored.tool_set_actions["pixels"].text() == "Растр"
+    restored.select_tool_set("pixels")
+    assert not restored.snap_tile.isVisible()
+    restored.saved_state = restored.document_state()
+    window.close()
+    restored.close()
 
 
 def test_brush_drag_is_one_undo_step(app, pair_factory):
@@ -312,9 +729,7 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert not second.view.snap_enabled
     assert second.can_discard()
     with load_project(first.project_path) as project:
-        assert not project.ui_state["pending_closure"]
         assert project.ui_state["auto_close_distance_px"] == 31
-        assert "junction_policy" not in project.ui_state
     first.close()
     second.close()
 
@@ -490,26 +905,26 @@ def test_ctrl_wheel_resizes_tools_globally_without_zooming_or_changing_language(
     window.close()
 
 
-def test_footer_selection_shows_exact_guarded_export_dimensions_and_language(app, pair_factory):
+def test_sidebar_selection_shows_guarded_dimensions_and_language(app, pair_factory):
     source = pair_factory()
     window = MainWindow()
     window.load_sources(source.image_path, source.json_path)
     window.region_control.setCurrentIndex(1)
     assert window.selected_region == 0
-    assert "80 × 300" in window.footer_label.text()
-    assert "57 × 257" in window.footer_label.text()
-    assert "Замкнутых: 1" in window.footer_label.text()
-    assert "Незамкнутых: 0" in window.footer_label.text()
+    assert "80 × 300" in window.map_info.text()
+    assert "57 × 257" in window.map_info.text()
+    assert "Замкнутых: 1" in window.map_info.text()
+    assert "Незамкнутых: 0" in window.map_info.text()
     assert not window.view.selected_path.isEmpty()
-    assert window.language_control.parentWidget() == window.statusBar()
+    assert window.language_control.parentWidget() == window.settings_group
     window.set_language("en", persist=False)
-    assert "Closed: 1" in window.footer_label.text()
+    assert "Closed: 1" in window.map_info.text()
     assert window.selected_region == 0
     window.project_path = source.json_path.with_suffix(".dale")
     assert window.save_project_file()
     restored = MainWindow()
     assert restored.load_project_file(window.project_path)
     assert restored.selected_region == 0
-    assert "57 × 257" in restored.footer_label.text()
+    assert "57 × 257" in restored.map_info.text()
     window.close()
     restored.close()

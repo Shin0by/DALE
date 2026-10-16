@@ -1,43 +1,25 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "directional_cursor_auto_close",
+  "phase": "region_editing_provenance_and_json_catalog",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
-    "Local desktop application: Python 3.11+, PySide6, Pillow, Shapely, psutil; deliver a PyInstaller directory bundle without external Python.",
-    "JPG + Foundry scene JSON input; separate cropped native-resolution RGBA PNG per disconnected closed region, with a mandatory 3-pixel guard beyond signed user offset.",
-    "Export placement.json records source and transformed scene coordinates; it is a DALE manifest, not a native Foundry scene import.",
-    "Use wall contours, local repairs, and manual brushes; no semantic terrain recognition.",
-    "Original JPG/JSON stay unchanged. Temporary closures, point edits, automatic joins, and brushes remain editor operations.",
-    "Target 16384 pixels per input side; warn above 8192; use reduced previews, memory preflight, and striped cancellable exports.",
-    "Foundry 13/14 explicit targets; 5-ft elevation presets with custom whole feet. Actual Foundry placement remains separately configured.",
-    "Right-drag pans in every tool, including fit zoom.",
-    "Gap tolerance in source pixels supports endpoint pairs and T junctions; default 0 disables joining. Signed offset expands/contracts contours.",
-    "Applied masks remain immutable snapshots. Geometry/settings changes affect preview and the next mask.",
-    "Edit points uses fixed 10-screen-pixel circular handles, pointing-hand hover, insertion spacing of one diameter, shared-node movement, and ordinary undoable vertex deletion. No dedicated T-junction deletion setting or main-wall policy.",
-    "Self-contained ZIP .dale projects preserve exact sources, operations and redo, placement, geometry, viewport, language/tool state, and independent sizes. Legacy Closure operations stay editable; old mode maps to New line and unfinished paths of at least two points are restored as editable history without clearing redo. New UI state omits pending_closure.",
-    "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
-    "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
-    "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow.",
-    "Latest color instruction: closed geometry cyan, open lines pure RGB (255, 0, 0) red; 3-screen-pixel cosmetic strokes with a black backing and 1-pixel color center. Supersedes prior thickness and diagnostic colors.",
-    "Two text-only top rows: general commands, then tool sets plus Hand/Fit/Walls. Left ordinary tools are 48x48; separate line/vertex eraser buttons are 48x72 with small editable diameter captions and gray side arrows below their icons. Pixel size and Snapping (px) retain separate tiles; geometry has no standalone size tile.",
-    "New line uses press/drag/release; snapping radius 0-256 screen pixels, default 14, prioritizes vertices and excludes self-edges on movement.",
-    "Circular line and vertex erasers keep independent diameters (1-512 screen pixels, default 24), sweep drags, commit one undo step, and support Escape cancellation. Raster size uses source pixels.",
-    "Ctrl+wheel changes active tool diameter/distance globally; over size/distance controls it adjusts that control. The retired Closure UI and Alt-click gesture are removed; free outlines use New line.",
-    "Single-row footer shows map dimensions, current closed/open component counts, crop dimensions including 3-pixel guards, region selection, and language. Minimum window is 1024 x 768; open counts remain connected unresolved groups.",
-    "Optional project UI fields retain snapping, geometry size, mode, and export selection; older schema-1 archives load with defaults.",
-    "Localized hover help covers every application control, including embedded numeric editors, selectors, scrollbars, overflow controls, and menus; keep action names in icon-only tooltips.",
-    "Persist selected Foundry major (13/14) and language together in portable UserData/settings.json using merged atomic writes. Project loading restores and remembers its target version.",
-    "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction.",
-    "Use the owner-supplied favicon.ico unchanged for Qt windows and the Windows EXE icon. Preserve shin0by.png as the original artwork reference and package both formats with source hashes.",
-    "Retire the dedicated junction deletion selector and policy. Ordinary wall points reconnect two neighbors; branching wall points remove incident edges without choosing a main continuation. Older archive junction_policy fields are ignored and omitted from new UI state.",
-    "Store line_eraser_diameter and vertex_eraser_diameter separately in schema-1 UI settings. Missing fields inherit legacy geometry_diameter or 24. Arrow, typed, and Ctrl+wheel edits affect only their own tool; inactive size controls do not select a tool.",
-    "Localized tooltips show actual QAction shortcuts and applicable Ctrl+wheel/Escape gestures. Auto-close describes its independent extension distance. Embedded captions/arrows include modifier help; language switching never duplicates shortcut lines.",
-    "Auto-close replaces the retired Closure tool. A separate 48x72 button embeds auto_close_distance_px (integer 1-256 screen pixels, default 14); direct input, gray arrows, and Ctrl+wheel adjust it independently of ordinary snapping, gap tolerance, and eraser sizes.",
-    "The circular Auto-close cursor traces every working line beneath it through existing connections and eligible forward extensions. White side edges highlight the complete affected group while red/cyan center colors remain unchanged; dashed continuations preview the repair.",
-    "Final owner clarification: lengthen existing segments along their vectors to a common future intersection, without standalone connectors or line rotation/translation. Both required travels must fit the distance. Collinear facing ends meet at their midpoint when the whole gap fits; free ends can extend to target interiors. Node targets, commit one GeometryEdit, support undo, and preserve source JPG/JSON and prior mask snapshots."
+    "Local Python/PySide6/Pillow/Shapely editor; complete root DALE portable package after every update, supplied ICO unchanged.",
+    "JPG plus Foundry 13/14 JSON; same-stem pairing. Separate JSON command imports ordinary JSON or chooses from all declared package JSON documents.",
+    "No legacy support: schema 2 only; reject older/unknown archives, no migrations or old UI aliases.",
+    "Every edge has stable ID, parent lineage and exact source JSON SHA256/array pointer/optional Foundry ID. Splits, merges, contacts and transforms preserve ancestry; deleted ancestors and contact markers persist in history/redo.",
+    "Two text-only top rows; Contours/Regions/Raster; one left tool column. Every numeric tool embeds its independent value. Right Information and Settings replace footer; minimum 1024x768. No visible height/origin controls or default map tooltip.",
+    "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
+    "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
+    "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
+    "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales, Alt-wheel rotates 0.1 degree around stable shared pivot; raster and mask snapshots stay fixed.",
+    "Separate PNGs retain mandatory 3px artwork guard plus optional transparent padding; clamp every crop to JPG. Signed contour offset remains source-pixel geometry.",
+    "Portable merged preferences retain language, Foundry version, related-line choice, independent input/output folders shared across file types. Never persist extraction directories.",
+    "Current .dale JSON catalog preserves original and additional updated documents. Generation of updated Foundry JSON remains future work.",
+    "Chat Russian, technical text English, bilingual UI/tooltips with actual shortcuts; no private example uploads.",
+    "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels."
   ],
   "validated": [
     {
@@ -198,6 +180,16 @@
       "check": "auto_close_real_sample_index_performance",
       "result": "Read-only analysis of three owner daytime wall sets (207/50/27 walls) at 0.04 zoom and 14 screen-pixel distance: index construction 10.49/1.80/1.43 ms; mean cached cursor queries 0.017/0.015/0.014 ms over 100 positions per sample. Source image pixels were not exported or uploaded.",
       "command": "python artifacts/verify_autoclose.py"
+    },
+    {
+      "check": "regions_lineage_current_format_and_json_import",
+      "result": "162 passed; ruff clean. Qt gestures cover confirmations, selection, geometry-only translation/scale/rotation, remembered related lines, current-format restore, JSON replacement and original/updated catalog import. Pure tests cover ancestry across splits/merges/contacts/auto-close/transforms/undo/redo, malformed provenance, old-format rejection, bounded PNG crops and JSON catalog integrity.",
+      "command": "python -m pytest -q; python -m ruff check ."
+    },
+    {
+      "check": "current_sidebar_visual_and_help",
+      "result": "83 controls audited through RU/EN/RU with nonempty localized help. Minimum 1024x768 screenshots show three sets, embedded numbers, no footer, right information/settings and translucent selected cells. Synthetic fixtures only.",
+      "command": "python tools/preview_demo.py; python artifacts/verify_current_ui.py"
     }
   ],
   "completed": [
@@ -224,28 +216,29 @@
       "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."
     },
     {
-      "id": "NEXT-004",
-      "task": "Evaluate selected-region masking and edge refinement after real sample review."
-    },
-    {
       "id": "NEXT-007",
       "task": "Design reusable boundaries across aligned floors. Manual free outlines are now possible with New line; do not infer heights from filenames."
+    },
+    {
+      "id": "NEXT-008",
+      "task": "Generate updated Foundry JSON documents from working geometry with version-specific validation; preserve the original and expose every snapshot in the existing catalog chooser."
     }
   ],
   "limitations": [
     "No semantic terrain/object segmentation.",
-    "No direct Foundry connection, scene mutation, native scene import export, or multi-floor scene assembly; actual Foundry 13/14 placement unverified.",
-    "Only the observed legacy zero-shift/zero-padding profile is validated with real samples; nonzero legacy shifts and other variants need explicit evidence/adapters.",
-    "Gap joining cannot recover missing roof geometry. Trace missing outlines manually with New line; automatic boundary reuse and per-face selection inside a connected object remain future work.",
-    "The preview omits the mandatory extra 3-pixel export guard; exported PNGs add it around the effective contour.",
-    "Unknown low-level import/ZIP/library error details can remain English; application actions, tooltips, guidance, and dialogs are bilingual."
+    "No live Foundry connection, scene generation or verified floor placement; coordinate manifests require manual placement.",
+    "Historical real sample profile is recorded separately; current examples contain no owner maps. Current changes validated with synthetic data.",
+    "Missing roof boundaries require manual tracing; automatic boundary reuse across floors remains future work.",
+    "Geometry transforms leave raster and prior mask snapshots fixed; moved regions can lie outside JPG, where export bounds may be unavailable.",
+    "Old .dale formats are intentionally unsupported. Updated JSON generation is not implemented; declared additional documents already round-trip and import.",
+    "Low-level third-party errors may remain English technical detail."
   ],
   "ui_languages": [
     "en",
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.10",
+  "current_version": "0.3.11",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -265,5 +258,8 @@
     "artwork_reference": "src/dale/assets/shin0by.png",
     "artwork_sha256": "16483efa485a007c86a1fc6cffc872a48e190223cce05d59ae6e31f2df416446",
     "owner_supplied": true
-  }
+  },
+  "project_schema_version": 2,
+  "legacy_support": false,
+  "validation_history_note": "Older records describe historical released versions; current behavior is defined by decisions and requirements, with no legacy support."
 }

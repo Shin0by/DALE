@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractSpinBox,
     QComboBox,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QMenu,
@@ -16,6 +17,168 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Import wall JSON": "Импорт JSON стен",
+    "JSON or DALE projects (*.json *.dale)": "JSON или проекты DALE (*.json *.dale)",
+    "JSON files in DALE project": "Файлы JSON в проекте DALE",
+    "Choose wall JSON to use with the current JPG.": "Выберите JSON стен для текущего JPG.",
+    "Select the original or an updated JSON stored in this project.": (
+        "Выберите исходный или обновлённый JSON, сохранённый в этом проекте."
+    ),
+    "Original JSON": "Исходный JSON",
+    "Updated JSON": "Обновлённый JSON",
+    "Import": "Импортировать",
+    "Import the selected JSON for the current JPG.": "Применить выбранный JSON к текущему JPG.",
+    "Cannot import JSON": "Не удалось импортировать JSON",
+    (
+        "Load another wall JSON for the current JPG. "
+        "Save existing edits before replacing the source pair."
+    ): (
+        "Загрузить другой JSON стен для текущего JPG. "
+        "Перед заменой исходной пары сохраните изменения."
+    ),
+    "Open a source JPG before loading another JSON.": (
+        "Сначала откройте исходный JPG, затем можно загрузить другой JSON."
+    ),
+    "Unsupported DALE project format or version. Older projects are not supported.": (
+        "Неподдерживаемый формат или версия проекта DALE. Старые проекты не поддерживаются."
+    ),
+    "Move regions": "Перемещение областей",
+    "Move all connected lines?": "Перемещать все связанные линии?",
+    "Remember choice": "Запомнить выбор",
+    (
+        "Remember this choice between launches. Right-click the tool to change it."
+    ): "Запомнить выбор между запусками. Правый клик по инструменту открывает этот вопрос снова.",
+    (
+        "Yes includes lines connected within the snapping distance. "
+        "No moves only selected boundaries. Right-click this tool to reopen this dialog."
+    ): (
+        "«Да» включает связанные линии в пределах допуска прилипания. "
+        "«Нет» перемещает только выбранные контуры. "
+        "Правый клик по кнопке инструмента снова открывает это окно."
+    ),
+    "Move selected boundaries and related lines.": (
+        "Перемещать выбранные контуры и связанные линии."
+    ),
+    "Move only selected region boundaries.": "Перемещать только контуры выбранных областей.",
+    "Preferences could not be written.": "Не удалось сохранить настройки.",
+    "PNG: none (selection outside the source map)": (
+        "PNG: нет (выделение за пределами исходной карты)"
+    ),
+    (
+        "Drag selected region contours. Ctrl+wheel: scale. Alt+wheel: rotate by 0.1 degrees "
+        "around their common center. Raster pixels stay unchanged. "
+        "Right-click: configure connected lines. Escape: cancel the current gesture."
+    ): (
+        "Тяните выбранные контуры для перемещения. Ctrl+колесо: масштабирование. "
+        "Alt+колесо: вращение с шагом 0,1° вокруг общего центра. Растр остаётся на месте. "
+        "Правый клик: настройка связанных линий. Escape: отменить текущий жест."
+    ),
+    ("Information"): ("Информация"),
+    ("Settings"): ("Настройки"),
+    ("Close all contours"): ("Замкнуть всю карту"),
+    ("Whole-map close distance (px)"): ("Допуск замыкания всей карты (px)"),
+    (
+        "Extend eligible lines across the whole map after confirmation. Distanc"
+        "e uses screen pixels."
+    ): (
+        "Продлить подходящие линии по всей карте до пересечений после подтвержд"
+        "ения «Отмена / Да». Допуск измеряется в экранных пикселях."
+    ),
+    ("Map: {width} × {height} px\n{detail}\nClosed: {closed} | Open: {open}"): (
+        "Карта: {width} × {height} px\n{detail}\nЗамкнутых: {closed} | Незамкнутых: {open}"
+    ),
+    ("Map: not loaded\nClosed: 0 | Open: 0"): ("Карта не загружена\nЗамкнутых: 0 | Незамкнутых: 0"),
+    ("Selectable cells: {cells}\nEditing operations: {operations}"): (
+        "Областей для выбора: {cells}\nИзменений: {operations}"
+    ),
+    ("Contours"): ("Контуры"),
+    ("Regions"): ("Области"),
+    ("Raster"): ("Растр"),
+    ("Edit lines, vertices, auto-close, and snapping."): (
+        "Редактирование линий, точек, автозамыкания и прилипания."
+    ),
+    ("Select closed regions and export their PNGs."): (
+        "Выбор замкнутых областей и экспорт их PNG."
+    ),
+    ("Erase or restore image pixels."): ("Стирание и восстановление пикселей изображения."),
+    ("Select regions"): ("Выбор областей"),
+    ("Click closed regions to toggle selection. Click empty space to clear selection."): (
+        "Клик выбирает минимальную замкнутую область под курсором или снимает е"
+        "ё выделение. Клик по пустому месту очищает выбор."
+    ),
+    ("Export selected regions"): ("Экспорт выбранных"),
+    ("Export only the highlighted regions as separate PNGs."): (
+        "Экспортировать только выделенные области отдельными PNG."
+    ),
+    ("Export padding (px)"): ("Дополнительный отступ PNG (px)"),
+    ("Additional transparent pixels around each region box, beyond the mandatory 3 px guard."): (
+        "Дополнительные прозрачные пиксели вокруг прямоугольника каждой области"
+        " сверх обязательного запаса 3 px. Отступ обрезается границами исходног"
+        "о JPG."
+    ),
+    (
+        "Distance to existing vertices or lines. Vertices take priority. Click "
+        "the icon to toggle snapping."
+    ): (
+        "Расстояние прилипания к вершинам и линиям. Вершины в приоритете. Нажат"
+        "ие на значок включает или выключает прилипание."
+    ),
+    (
+        "Click a line to insert; drag a fixed-size circle to move; double-click"
+        " it to delete. Hold Alt to move along the selected line vector."
+    ): (
+        "Клик по линии добавляет точку; тяните кружок для перемещения, дважды щ"
+        "ёлкните для удаления. Зажмите Alt, чтобы двигать точку только по векто"
+        "ру выбранного отрезка. Отпустите Alt для свободного движения. Escape о"
+        "тменяет жест."
+    ),
+    (
+        "Hover to trace connected lines and valid continuations. White edges sh"
+        "ow affected lines; dashed lines preview extensions. Click to extend ex"
+        "isting lines along their directions after confirmation in one undo ste"
+        "p."
+    ): (
+        "Наведите курсор, чтобы проследить связанные линии и допустимые продолж"
+        "ения. Белый кант показывает затрагиваемые линии, пунктир — продолжения"
+        ". Клик открывает подтверждение «Отмена / Да». Продление выполняется од"
+        "ним шагом отмены."
+    ),
+    ("Confirm auto-close"): ("Подтвердить автозамыкание"),
+    (
+        "Affected segments: {segments}\nEndpoint extensions: {extensions}\nShared"
+        " intersections: {connections}\n\nConnect the highlighted lines?"
+    ): (
+        "Выбрано отрезков: {segments}\nПродлений концов: {extensions}\nОбщих пере"
+        "сечений: {connections}\n\nСоединить выделенные линии?"
+    ),
+    (
+        "No changes are needed or possible at this distance. Touching lines are"
+        " already connected; remaining gaps need a larger distance or New line."
+    ): (
+        "При этом допуске нет необходимых или доступных изменений. Касающиеся л"
+        "инии уже соединены; для оставшихся зазоров увеличьте дальность или исп"
+        "ользуйте «Новую линию»."
+    ),
+    ("No lines under the cursor. Point at a line and click again."): (
+        "Под курсором нет линий. Наведите его на линию и нажмите снова."
+    ),
+    ("Cancel without changing geometry. Escape: cancel."): (
+        "Отменить без изменения линий. Escape: отмена."
+    ),
+    ("Apply the shown connections as one undo step."): (
+        "Применить показанные соединения одним шагом отмены."
+    ),
+    ("Select at least one closed region on the map."): (
+        "Выберите хотя бы одну замкнутую область на карте."
+    ),
+    ("Selected: {count}"): ("Выбрано: {count}"),
+    ("PNG: {width} × {height} (+{margin} px)"): ("PNG: {width} × {height} (+{margin} px)"),
+    ("PNG: {count} · max {width} × {height} (+{margin} px)"): (
+        "PNG: {count} · макс. {width} × {height} (+{margin} px)"
+    ),
+    ("The selected region lies outside the source image."): (
+        "Выбранная область находится вне исходного изображения."
+    ),
     "Auto-close": "Автозамыкание",
     "Auto-close distance (px)": "Дальность автоприлипания (px)",
     "Ctrl+wheel: change the auto-close distance.": (
@@ -454,12 +617,16 @@ def translate_static(root: QWidget, language: str, excluded=()):
             continue
         if isinstance(widget, QAction) and widget.menu() is not None:
             continue
-        if isinstance(widget, (QMenu, QToolBar)):
+        if isinstance(widget, (QMenu, QToolBar, QGroupBox)):
             original = widget.property("dale_original_title")
             if original is None:
-                original = widget.title() if isinstance(widget, QMenu) else widget.windowTitle()
+                original = (
+                    widget.title()
+                    if isinstance(widget, (QMenu, QGroupBox))
+                    else widget.windowTitle()
+                )
                 widget.setProperty("dale_original_title", original)
-            if isinstance(widget, QMenu):
+            if isinstance(widget, (QMenu, QGroupBox)):
                 widget.setTitle(translate(original, language))
             else:
                 widget.setWindowTitle(translate(original, language))

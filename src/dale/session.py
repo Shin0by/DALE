@@ -6,12 +6,23 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from dale.geometry import analyze_regions, offset_region
+from dale.provenance import LineRecord, geometry_edges, vertex_records
 from dale.scene import Point, SceneInput
 
 
 @dataclass(frozen=True)
 class Closure:
     points: tuple[Point, ...]
+    lineage: tuple[LineRecord, ...] = field(default=(), compare=False)
+
+    def __post_init__(self):
+        edges = geometry_edges((), (self.points,))
+        if not self.lineage:
+            object.__setattr__(
+                self, "lineage", tuple(LineRecord.standalone(edge) for edge in edges)
+            )
+        elif len(self.lineage) != len(edges):
+            raise ValueError("Path provenance must match its edge count.")
 
 
 @dataclass(frozen=True)
@@ -31,6 +42,21 @@ class ContourMask:
 class GeometryEdit:
     walls: tuple
     closures: tuple[tuple[Point, ...], ...] = ()
+    lineage: tuple[LineRecord, ...] = field(default=(), compare=False)
+    ancestry: tuple[LineRecord, ...] = field(default=(), compare=False)
+
+    def __post_init__(self):
+        edges = geometry_edges(self.walls, self.closures)
+        if not self.lineage:
+            object.__setattr__(
+                self, "lineage", tuple(LineRecord.standalone(edge) for edge in edges)
+            )
+        elif len(self.lineage) != len(edges):
+            raise ValueError("Line provenance must match the working edge count.")
+
+    @property
+    def vertex_lineage(self):
+        return vertex_records(self)
 
 
 Operation = Closure | Stroke | ContourMask | GeometryEdit
@@ -44,6 +70,7 @@ class Session:
     future: list[Operation] = field(default_factory=list)
     gap_tolerance: float = 0.0
     contour_offset: float = 0.0
+    json_documents: tuple = ()
 
     @property
     def walls(self):
@@ -55,13 +82,21 @@ class Session:
 
     def geometry(self) -> GeometryEdit:
         walls = self.source.image_walls(self.origin)
+        records = tuple(LineRecord.source(ref) for ref in self.source.wall_sources)
+        geometry = GeometryEdit(walls, lineage=records)
         closures = []
         for operation in self.operations:
             if isinstance(operation, Closure):
                 closures.append(operation.points)
+                records = (
+                    *geometry.lineage,
+                    *operation.lineage,
+                )
+                geometry = GeometryEdit(walls, tuple(closures), tuple(records), geometry.ancestry)
             elif isinstance(operation, GeometryEdit):
                 walls, closures = operation.walls, list(operation.closures)
-        return GeometryEdit(walls, tuple(closures))
+                geometry = operation
+        return geometry
 
     def analysis(self):
         return analyze_regions(self.walls, self.closures, self.gap_tolerance)

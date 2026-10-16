@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 import sys
-from itertools import pairwise
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
@@ -23,12 +23,18 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -39,10 +45,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shapely.geometry import Point as ShapePoint
 
 from dale import __version__, application_title
+from dale.autoclose import AutoCloseIndex
 from dale.canvas import GEOMETRY_ERASERS, MapView, line_path
-from dale.geometry import open_contour_count
+from dale.geometry import offset_region, open_contour_count
 from dale.localization import (
     DesktopTranslator,
     prepare_control_tooltips,
@@ -52,18 +60,21 @@ from dale.localization import (
 from dale.overlay_export import crop_bounds, export_overlays, export_regions
 from dale.placement import Placement
 from dale.preferences import (
+    load_directory,
     load_foundry_major,
     load_language,
+    load_move_related,
+    save_directory,
     save_foundry_major,
     save_language,
+    save_move_related,
     settings_path,
 )
-from dale.project_io import load_project, save_project
+from dale.project_io import SCHEMA_VERSION, load_project, read_json_documents, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
-from dale.session import Closure, Session
+from dale.session import Session
 from dale.toolbar import (
-    NumericToolTile,
     SizedToolButton,
     ToolSpinBox,
     apply_theme,
@@ -76,13 +87,14 @@ class ExportWorker(QThread):
     progress = Signal(int)
     outcome = Signal(str, str)
 
-    def __init__(self, session, path, placement, parent, region_index=None):
+    def __init__(self, session, path, placement, parent, region_indices=None, extra_padding=0):
         super().__init__(parent)
         self.source = session.source
         self.operations = tuple(session.operations)
         self.path = path
         self.placement = placement
-        self.region_index = region_index
+        self.region_indices = region_indices
+        self.extra_padding = extra_padding
         self.session = Session(
             session.source,
             session.origin,
@@ -99,7 +111,9 @@ class ExportWorker(QThread):
                 self.placement,
                 self.progress.emit,
                 self.isInterruptionRequested,
-                region_index=self.region_index,
+                region_indices=self.region_indices,
+                extra_padding=self.extra_padding,
+                individual_regions=self.region_indices is not None,
             )
             self.outcome.emit("success", str(destination))
         except ExportCancelled:
@@ -113,6 +127,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.preferences_path = preferences_path or settings_path()
         self.language = load_language(self.preferences_path)
+        self.remembered_move_related = load_move_related(self.preferences_path)
+        self.input_directory = load_directory(self.preferences_path, "input")
+        self.output_directory = load_directory(self.preferences_path, "output")
         self.setWindowTitle(application_title())
         self.resize(1280, 860)
         self.setMinimumSize(1024, 768)
@@ -121,19 +138,38 @@ class MainWindow(QMainWindow):
         self.export_outcome = None
         self.project_path = None
         self.loaded_project = None
+        self.json_workspaces = []
         self.saved_state = None
         self.regions = ()
         self.region_key = None
         self.selected_region = None
         self.current_tool_set = "geometry"
-        self.last_tool_modes = {"geometry": "Edit points", "pixels": "Erase"}
+        self.last_tool_modes = {
+            "geometry": "Edit points",
+            "regions": "Select regions",
+            "pixels": "Erase",
+        }
         self.view = MapView()
+        self.view.move_related = self.remembered_move_related is True
         self.view.changed.connect(self.refresh)
+        self.view.auto_close_requested.connect(self.confirm_auto_close)
+        self.view.region_clicked.connect(self.toggle_region_at)
+        self.view.regions_transformed.connect(self.select_transformed_regions)
         self.view.message.connect(
             lambda message: self.statusBar().showMessage(self.t(message), 7000)
         )
         self.info = QLabel("Open an upper-floor JPG and its Foundry JSON to begin.")
         self.info.setWordWrap(True)
+        self.map_info = QLabel()
+        self.map_info.setWordWrap(True)
+        self.feedback_label = QLabel()
+        self.feedback_label.setWordWrap(True)
+        self.region_control = QComboBox()
+        self.region_control.setMinimumWidth(120)
+        self.region_control.setToolTip(
+            "Choose all closed regions or one region to highlight and export."
+        )
+        self.region_control.currentIndexChanged.connect(self.select_region)
         self.diagnostics = QLabel()
         self.diagnostics.setWordWrap(True)
         self.version = QComboBox()
@@ -189,35 +225,18 @@ class MainWindow(QMainWindow):
             lambda index: self.set_language("en" if index == 0 else "ru")
         )
         form.addRow("Target", self.version)
-        form.addRow("Elevation (ft)", self.elevation)
-        form.addRow("Scene origin X", self.origin_x)
-        form.addRow("Scene origin Y", self.origin_y)
-        form.addRow("Join gaps up to (px)", self.gap_tolerance)
         form.addRow("Contour offset (px)", self.contour_offset)
+        form.addRow("Regions", self.region_control)
+        form.addRow("Language", self.language_control)
+        self.settings_group = QGroupBox("Settings")
+        self.settings_group.setLayout(form)
+        self.information_group = QGroupBox("Information")
+        information_layout = QVBoxLayout(self.information_group)
+        for label in (self.info, self.map_info, self.diagnostics, self.feedback_label):
+            information_layout.addWidget(label)
         sidebar = QVBoxLayout()
-        sidebar.addWidget(self.info)
-        sidebar.addLayout(form)
-        sidebar.addWidget(alignment)
-        sidebar.addWidget(self.placement_hint)
-        sidebar.addWidget(
-            QLabel(
-                "Cyan: closed regions\nRed: open contours (RGB 255, 0, 0)\n"
-                "Lines: 3 px with black edges"
-            )
-        )
-        sidebar.addWidget(self.diagnostics)
-        help_text = QLabel(
-            "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
-            "Ctrl+wheel: active tool size\n\n"
-            "Auto-close: hover to trace, click to extend\nWhite edges: affected lines\n"
-            "New line: press, drag, release\nEdit points: click line, drag circle\n"
-            "Double-click circle: delete\nGeometry erasers: drag the circle\n"
-            "Escape: cancel current gesture\n\n"
-            "Snapping (px): distance to existing geometry.\nVertices take priority over lines.\n\n"
-            "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
-        )
-        help_text.setWordWrap(True)
-        sidebar.addWidget(help_text)
+        sidebar.addWidget(self.information_group)
+        sidebar.addWidget(self.settings_group)
         sidebar.addStretch()
         panel = QWidget()
         panel.setLayout(sidebar)
@@ -243,27 +262,17 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
-        self.footer_label = QLabel()
-        self.footer_label.setMinimumWidth(100)
-        self.footer_label.setMinimumHeight(24)
-        self.footer_label.setMargin(2)
-        self.statusBar().setMinimumHeight(28)
-        self.statusBar().addPermanentWidget(self.footer_label, 1)
-        self.region_control = QComboBox()
-        self.region_control.setMinimumWidth(120)
-        self.region_control.setToolTip(
-            "Choose all closed regions or one region to highlight and export."
-        )
-        self.region_control.currentIndexChanged.connect(self.select_region)
-        self.statusBar().addPermanentWidget(self.region_control)
-        self.statusBar().addPermanentWidget(self.language_control)
+        self.statusBar().hide()
+        self.statusBar().messageChanged.connect(self.feedback_label.setText)
         general = make_toolbar(self, "General")
         categories = make_toolbar(self, "Tool sets", new_row=True)
-        geometry = make_toolbar(self, "Lines and vertices", vertical=True)
-        pixels = make_toolbar(self, "Pixels", vertical=True)
-        self.toolbars = (general, categories, geometry, pixels)
+        geometry = make_toolbar(self, "Contours", vertical=True)
+        region_tools = make_toolbar(self, "Regions", vertical=True)
+        pixels = make_toolbar(self, "Raster", vertical=True)
+        self.toolbars = (general, categories, geometry, region_tools, pixels)
         self.geometry_eraser_tiles = {}
-        for bar in (geometry, pixels):
+        self.sized_tools = {}
+        for bar in (geometry, region_tools, pixels):
             container = QWidget()
             column = QVBoxLayout(container)
             column.setContentsMargins(0, 0, 0, 0)
@@ -292,38 +301,62 @@ class MainWindow(QMainWindow):
             item.triggered.connect(handler)
             if shortcut:
                 item.setShortcut(shortcut)
-            if title in (*GEOMETRY_ERASERS, "Auto-close"):
+            sizes = {
+                "Erase lines": (
+                    1,
+                    512,
+                    24,
+                    "geometry_brush_control",
+                    lambda v: self.set_geometry_brush("Erase lines", v),
+                ),
+                "Erase vertices": (
+                    1,
+                    512,
+                    24,
+                    "vertex_brush_control",
+                    lambda v: self.set_geometry_brush("Erase vertices", v),
+                ),
+                "Auto-close": (1, 256, 14, "auto_close_control", self.set_auto_close_distance),
+                "Erase": (1, 4096, 40, "brush_control", lambda v: self.set_brush("Erase", v)),
+                "Restore": (
+                    1,
+                    4096,
+                    40,
+                    "restore_brush_control",
+                    lambda v: self.set_brush("Restore", v),
+                ),
+                "Snapping (px)": (0, 256, 14, "snap_distance", self.set_snap_distance),
+                "Close all contours": (1, 256, 14, "global_close_control", lambda value: None),
+                "Export padding (px)": (
+                    0,
+                    4096,
+                    0,
+                    "export_padding_control",
+                    lambda v: self.update_map_info(),
+                ),
+            }
+            if title in sizes:
+                low, high, initial, attribute, handler = sizes[title]
                 editor = ToolSpinBox()
-                if title == "Auto-close":
-                    editor.setRange(1, 256)
-                    editor.setValue(self.view.auto_close_distance)
-                    editor.valueChanged.connect(self.set_auto_close_distance)
-                    self.auto_close_control = editor
-                else:
-                    editor.setRange(1, 512)
-                    editor.setValue(self.view.geometry_diameters[title])
-                    editor.valueChanged.connect(
-                        lambda value, mode=title: self.set_geometry_brush(mode, value)
-                    )
+                editor.setRange(low, high)
+                editor.setValue(initial)
+                editor.valueChanged.connect(handler)
+                setattr(self, attribute, editor)
                 tile = SizedToolButton(editor, item)
-                if title == "Auto-close":
-                    self.auto_close_tile = tile
-                else:
+                self.sized_tools[title] = tile
+                if title in GEOMETRY_ERASERS:
                     self.geometry_eraser_tiles[title] = tile
                 bar.addWidget(tile)
             else:
                 bar.addAction(item)
-            if bar.orientation() == Qt.Orientation.Vertical and title not in (
-                *GEOMETRY_ERASERS,
-                "Auto-close",
-            ):
-                bar.widgetForAction(item).setFixedSize(48, 48)
+                if bar.orientation() == Qt.Orientation.Vertical:
+                    bar.widgetForAction(item).setFixedSize(48, 48)
             return item
 
         tool_sets = QActionGroup(self)
         tool_sets.setExclusive(True)
         self.tool_set_actions = {}
-        for key, title in (("geometry", "Lines and vertices"), ("pixels", "Pixels")):
+        for key, title in (("geometry", "Contours"), ("regions", "Regions"), ("pixels", "Raster")):
             item = action(
                 categories, title, lambda checked=False, key=key: self.select_tool_set(key)
             )
@@ -334,6 +367,7 @@ class MainWindow(QMainWindow):
         categories.addSeparator()
 
         action(general, "Open pair", self.open_pair, "Ctrl+I")
+        action(general, "JSON", self.open_json)
         action(general, "Open project", self.open_project, QKeySequence.StandardKey.Open)
         action(general, "Save project", self.save_project_file, QKeySequence.StandardKey.Save)
         save_as = action(
@@ -357,6 +391,7 @@ class MainWindow(QMainWindow):
         for bar, names in (
             (categories, ("Pan",)),
             (geometry, ("Edit points", "New line", "Auto-close", "Erase lines", "Erase vertices")),
+            (region_tools, ("Select regions", "Move regions")),
             (pixels, ("Erase", "Restore")),
         ):
             for mode in names:
@@ -365,6 +400,9 @@ class MainWindow(QMainWindow):
                 item.setChecked(mode == "Pan")
                 modes.addAction(item)
                 self.mode_actions[mode] = item
+        self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
+        self.move_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.move_button.customContextMenuRequested.connect(lambda: self.configure_region_move())
         action(categories, "Fit", self.view.fit_map, "F")
         self.walls_action = action(categories, "Show walls", self.toggle_walls)
         self.walls_action.setCheckable(True)
@@ -374,24 +412,18 @@ class MainWindow(QMainWindow):
         pixels.addSeparator()
         action(pixels, "Remove outside", lambda: self.mask("outside"))
         action(pixels, "Remove inside", lambda: self.mask("inside"))
-        brush = self.brush_control = ToolSpinBox()
-        brush.setRange(1, 4096)
-        brush.setValue(40)
-        brush.valueChanged.connect(self.set_brush)
-        self.size_tile = NumericToolTile(brush, "Brush diameter")
-        self.tool_column.addWidget(self.size_tile, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.snap_action = QAction(tool_icon("Snapping (px)"), "Snapping (px)", self)
-        self.snap_action.triggered.connect(self.set_snapping)
+        self.auto_close_tile = self.sized_tools["Auto-close"]
+        self.snap_action = action(geometry, "Snapping (px)", self.set_snapping)
         self.snap_action.setCheckable(True)
         self.snap_action.setChecked(True)
-        self.snap_distance = ToolSpinBox()
-        self.snap_distance.setRange(0, 256)
-        self.snap_distance.setValue(14)
-        self.snap_distance.valueChanged.connect(self.set_snap_distance)
-        self.snap_tile = NumericToolTile(self.snap_distance, "Snapping (px)", self.snap_action)
-        self.tool_column.addWidget(self.snap_tile, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.snap_tile = self.sized_tools["Snapping (px)"]
+        action(geometry, "Close all contours", self.close_all_contours)
+        self.export_regions_action = action(
+            region_tools, "Export selected regions", lambda: self.export(selected_only=True)
+        )
+        action(region_tools, "Export padding (px)", lambda: self.export_padding_control.setFocus())
         self.tool_column.addStretch()
-        for bar in (geometry, pixels):
+        for bar in (geometry, region_tools, pixels):
             bar.ensurePolished()
             bar.setFixedHeight(bar.sizeHint().height())
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
@@ -399,6 +431,10 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
         tips = {
             "Open pair": "Load a source JPG and matching wall JSON.",
+            "JSON": (
+                "Load another wall JSON for the current JPG. "
+                "Save existing edits before replacing the source pair."
+            ),
             "Open project": "Open a portable .dale archive including sources and undo history.",
             "Save project": (
                 "Save sources, masks, geometry, preferences, and undo/redo in one .dale file."
@@ -414,7 +450,11 @@ class MainWindow(QMainWindow):
                 "Hover to trace connected lines and valid continuations. "
                 "White edges show affected lines; "
                 "dashed lines preview extensions. Click to extend existing lines "
-                "along their directions in one undo step."
+                "along their directions after confirmation in one undo step."
+            ),
+            "Close all contours": (
+                "Extend eligible lines across the whole map after confirmation. "
+                "Distance uses screen pixels."
             ),
             "New line": (
                 "Press for the first point, drag, release for the second. "
@@ -431,11 +471,27 @@ class MainWindow(QMainWindow):
             "Snapping (px)": (
                 "Enable snapping for new lines and moved vertices; vertices take priority."
             ),
-            "Lines and vertices": "Show the single-column line and vertex tools beside the map.",
-            "Pixels": "Show the single-column pixel editing tools beside the map.",
+            "Contours": "Edit lines, vertices, auto-close, and snapping.",
+            "Regions": "Select closed regions and export their PNGs.",
+            "Raster": "Erase or restore image pixels.",
+            "Select regions": (
+                "Click closed regions to toggle selection. Click empty space to clear selection."
+            ),
+            "Move regions": (
+                "Drag selected region contours. Ctrl+wheel: scale. "
+                "Alt+wheel: rotate by 0.1 degrees "
+                "around their common center. Raster pixels stay unchanged. "
+                "Right-click: configure connected lines. Escape: cancel the current gesture."
+            ),
+            "Export selected regions": "Export only the highlighted regions as separate PNGs.",
+            "Export padding (px)": (
+                "Additional transparent pixels around each region box, beyond the manda"
+                "tory 3 px guard."
+            ),
             "Edit points": (
-                "Click a line to insert; drag a fixed-size circle t"
-                "o move; double-click it to delete."
+                "Click a line to insert; drag a fixed-size circle to move; "
+                "double-click it to delete. "
+                "Hold Alt to move along the selected line vector."
             ),
             "Erase": "Paint transparency over unwanted objects.",
             "Restore": "Restore opacity from the original JPG.",
@@ -477,21 +533,17 @@ class MainWindow(QMainWindow):
             control.setToolTip(
                 "Source scene origin in scene pixels. Apply alignment to start a fresh session."
             )
-        brush.setToolTip("Circular brush diameter in original image pixels, independent of zoom.")
-        self.view.setToolTip(
-            "Right-drag pans, wheel zooms, Ctrl+wheel changes tool size. Escape cancels a gesture."
-        )
+        self.view.setToolTip("")
+        self.view.viewport().setToolTip("")
         self.view.horizontalScrollBar().setToolTip("Pan the map horizontally.")
         self.view.verticalScrollBar().setToolTip("Pan the map vertically.")
         sidebar_scroll.verticalScrollBar().setToolTip("Scroll map settings and editing help.")
         sidebar_scroll.horizontalScrollBar().setToolTip("Scroll map settings and editing help.")
         for control in (
             self.version,
-            self.elevation,
-            self.origin_x,
-            self.origin_y,
-            self.gap_tolerance,
             self.contour_offset,
+            self.language_control,
+            self.region_control,
         ):
             form.labelForField(control).setToolTip(control.toolTip())
         self.set_language(self.language, persist=False)
@@ -518,17 +570,11 @@ class MainWindow(QMainWindow):
                 self.info,
                 self.diagnostics,
                 self.placement_hint,
-                self.footer_label,
+                self.map_info,
                 self.region_control,
             ),
         )
         self.update_size_help()
-        self.snap_tile.set_help(
-            "Snapping (px)",
-            "Distance to existing vertices or lines. Vertices take priority. "
-            "Click the magnet to toggle snapping.",
-            self.language,
-        )
         self.region_control.setToolTip(
             self.t("Choose all closed regions or one region to highlight and export.")
         )
@@ -553,6 +599,63 @@ class MainWindow(QMainWindow):
 
     def question(self, title, text, *options):
         return QMessageBox.question(self, self.t(title), self.t(text), *options)
+
+    def close_all_contours(self):
+        if self.view.session:
+            tolerance = self.global_close_control.value() / max(self.view.transform().m11(), 1e-9)
+            index = AutoCloseIndex(self.view.session.geometry(), tolerance)
+            plan = index.all()
+            self.view.auto_close_review = True
+            self.view.hover_path = line_path(plan.segments)
+            self.view.auto_join_path = line_path(plan.extensions)
+            self.view.viewport().update()
+            try:
+                self.confirm_auto_close(plan)
+            finally:
+                self.view.auto_close_review = False
+                self.view.update_hover()
+
+    def confirm_auto_close(self, plan):
+        session = self.view.session
+        if session is None:
+            return
+        original = session.geometry()
+        geometry = plan.apply(original)
+        changed = geometry != original
+        if changed:
+            text = self.t(
+                (
+                    "Affected segments: {segments}\nEndpoint extensions: {extensions}\nShared"
+                    " intersections: {connections}\n\nConnect the highlighted lines?"
+                ),
+                segments=len(plan.segments),
+                extensions=len(plan.extensions),
+                connections=len(plan.connections),
+            )
+        elif plan.segments:
+            text = self.t(
+                "No changes are needed or possible at this distance. Touching lines are"
+                " already connected; remaining gaps need a larger distance or New line."
+            )
+        else:
+            text = self.t("No lines under the cursor. Point at a line and click again.")
+        dialog = QMessageBox(
+            QMessageBox.Icon.Question, self.t("Confirm auto-close"), text, parent=self
+        )
+        dialog.setObjectName("autoCloseConfirmation")
+        cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        yes = dialog.addButton(QMessageBox.StandardButton.Yes)
+        cancel.setText(self.t("Cancel"))
+        yes.setText(self.t("Yes"))
+        cancel.setToolTip(self.t("Cancel without changing geometry. Escape: cancel."))
+        yes.setToolTip(self.t("Apply the shown connections as one undo step."))
+        yes.setEnabled(changed)
+        dialog.setDefaultButton(cancel)
+        dialog.setEscapeButton(cancel)
+        if dialog.exec() == QMessageBox.StandardButton.Yes and changed:
+            if self.view.session is session and session.geometry() == original:
+                session.add(geometry)
+                self.refresh()
 
     def placement(self):
         text = self.elevation.currentText()
@@ -593,13 +696,13 @@ class MainWindow(QMainWindow):
                 self.t("Foundry version changed; preferences could not be written."), 7000
             )
 
-    def set_brush(self, value):
-        self.view.diameter = value
+    def set_brush(self, mode, value):
+        self.view.raster_diameters[mode] = value
         self.view.viewport().update()
 
     def select_tool_set(self, key, activate=True):
         self.current_tool_set = key
-        self.tool_stack.setCurrentIndex(0 if key == "geometry" else 1)
+        self.tool_stack.setCurrentIndex({"geometry": 0, "regions": 1, "pixels": 2}[key])
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.update_size_help()
         self.tool_set_actions[key].setChecked(True)
@@ -607,34 +710,83 @@ class MainWindow(QMainWindow):
             self.activate_mode(self.last_tool_modes[key])
 
     def update_size_help(self):
-        self.size_tile.setVisible(self.current_tool_set == "pixels")
-        for tile in self.geometry_eraser_tiles.values():
+        for tile in self.sized_tools.values():
             tile.set_help(self.language)
-        self.auto_close_tile.set_help(self.language)
-        title = (
-            "Restore brush diameter (px)"
-            if self.last_tool_modes["pixels"] == "Restore"
-            else "Pixel eraser diameter (px)"
-        )
-        description = "Diameter in original image pixels. Ctrl+wheel changes it."
-        self.size_tile.set_help(title, description, self.language)
 
-    def activate_mode(self, mode):
+    def configure_region_move(self):
+        dialog = QMessageBox(
+            QMessageBox.Icon.Question,
+            self.t("Move regions"),
+            self.t("Move all connected lines?"),
+            parent=self,
+        )
+        dialog.setObjectName("regionMoveConfiguration")
+        dialog.setInformativeText(
+            self.t(
+                "Yes includes lines connected within the snapping distance. "
+                "No moves only selected boundaries. Right-click this tool to reopen this dialog."
+            )
+        )
+        remember = QCheckBox(self.t("Remember choice"), dialog)
+        remember.setToolTip(
+            self.t("Remember this choice between launches. Right-click the tool to change it.")
+        )
+        remember.setChecked(self.remembered_move_related is not None)
+        dialog.setCheckBox(remember)
+        for key, tip in (
+            ("Yes", "Move selected boundaries and related lines."),
+            ("No", "Move only selected region boundaries."),
+            ("Cancel", "Cancel without changing geometry. Escape: cancel."),
+        ):
+            button = dialog.addButton(getattr(QMessageBox.StandardButton, key))
+            button.setText(self.t(key))
+            button.setToolTip(self.t(tip))
+        dialog.setDefaultButton(QMessageBox.StandardButton.No)
+        result = dialog.exec()
+        if result not in (QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No):
+            return False
+        self.view.move_related = result == QMessageBox.StandardButton.Yes
+        self.remembered_move_related = self.view.move_related if remember.isChecked() else None
+        try:
+            save_move_related(self.preferences_path, self.remembered_move_related)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+        return True
+
+    def activate_mode(self, mode, prompt=True):
+        if mode == "Move regions" and prompt:
+            if not self.selected_regions:
+                self.activate_mode("Select regions")
+                self.information("Select regions", "Select at least one closed region on the map.")
+                return
+            if self.remembered_move_related is None and not self.configure_region_move():
+                self.mode_actions[self.view.mode].setChecked(True)
+                return
         if mode != "Pan":
-            key = "pixels" if mode in ("Erase", "Restore") else "geometry"
+            key = (
+                "pixels"
+                if mode in ("Erase", "Restore")
+                else "regions"
+                if mode in ("Select regions", "Move regions")
+                else "geometry"
+            )
             self.last_tool_modes[key] = mode
             self.select_tool_set(key, activate=False)
         self.mode_actions[mode].setChecked(True)
         self.view.set_mode(mode)
+        if mode == "Select regions" and self.selected_regions is None:
+            self.selected_regions = ()
+            self.update_map_info()
 
     def set_geometry_brush(self, mode, value):
         self.view.geometry_diameters[mode] = value
         self.sync_tool_sizes()
-        self.view.viewport().update()
+        self.view.update_hover()
 
     def sync_tool_sizes(self):
         for control, value in (
-            (self.brush_control, self.view.diameter),
+            (self.brush_control, self.view.raster_diameters["Erase"]),
+            (self.restore_brush_control, self.view.raster_diameters["Restore"]),
             (self.geometry_brush_control, self.view.geometry_diameters["Erase lines"]),
             (self.vertex_brush_control, self.view.geometry_diameters["Erase vertices"]),
             (self.auto_close_control, self.view.auto_close_distance),
@@ -660,6 +812,18 @@ class MainWindow(QMainWindow):
     def eventFilter(self, watched, event):
         if (
             event.type() == QEvent.Type.Wheel
+            and isinstance(watched, QWidget)
+            and watched.window() == self
+            and self.view.mode == "Move regions"
+            and event.modifiers() & Qt.KeyboardModifier.AltModifier
+        ):
+            steps = event.angleDelta().y() / 120
+            if steps:
+                self.view.transform_regions(angle=(round(steps) or (1 if steps > 0 else -1)) / 10)
+            event.accept()
+            return True
+        if (
+            event.type() == QEvent.Type.Wheel
             and event.modifiers() & Qt.KeyboardModifier.ControlModifier
             and isinstance(watched, QWidget)
             and watched.window() == self
@@ -669,6 +833,9 @@ class MainWindow(QMainWindow):
                 control = watched
                 sizeable = (
                     self.brush_control,
+                    self.restore_brush_control,
+                    self.export_padding_control,
+                    self.global_close_control,
                     self.geometry_brush_control,
                     self.vertex_brush_control,
                     self.auto_close_control,
@@ -677,7 +844,7 @@ class MainWindow(QMainWindow):
                     self.contour_offset,
                 )
                 while control is not None and control not in sizeable:
-                    if isinstance(control, (NumericToolTile, SizedToolButton)):
+                    if isinstance(control, SizedToolButton):
                         control = control.editor()
                         break
                     control = control.parentWidget()
@@ -693,13 +860,14 @@ class MainWindow(QMainWindow):
         if self.worker or not self.can_discard():
             return
         self.view.clear_map()
+        self.release_json_workspaces()
         if self.loaded_project:
             self.loaded_project.close()
             self.loaded_project = None
         self.project_path = self.saved_state = None
         self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.diagnostics.clear()
-        self.update_footer()
+        self.update_map_info()
 
     def toggle_walls(self, value):
         self.view.show_walls = value
@@ -757,19 +925,22 @@ class MainWindow(QMainWindow):
         return {
             "foundry_major": placement.foundry_major,
             "elevation_ft": placement.elevation_ft,
-            "brush_diameter": self.view.diameter,
+            "raster_erase_diameter": self.view.raster_diameters["Erase"],
+            "raster_restore_diameter": self.view.raster_diameters["Restore"],
+            "export_padding_px": self.export_padding_control.value(),
+            "export_regions": self.selected_regions,
+            "move_related_lines": self.view.move_related,
             "mode": self.view.mode,
             "show_walls": self.view.show_walls,
             "zoom": self.view.transform().m11(),
             "center": [center.x(), center.y()],
             "auto_close_distance_px": self.view.auto_close_distance,
+            "global_close_distance_px": self.global_close_control.value(),
             "language": self.language,
             "snap_enabled": self.view.snap_enabled,
             "snap_distance_px": self.view.snap_distance,
-            "geometry_diameter": self.view.geometry_diameter,
             "line_eraser_diameter": self.view.geometry_diameters["Erase lines"],
             "vertex_eraser_diameter": self.view.geometry_diameters["Erase vertices"],
-            "export_region": self.selected_region if self.selected_region is not None else -1,
             "tool_set": self.current_tool_set,
         }
 
@@ -781,7 +952,10 @@ class MainWindow(QMainWindow):
             return False
         path = self.project_path
         if path is None or save_as:
-            default = path or self.view.session.source.image_path.with_suffix(".dale")
+            filename = (
+                path.name if path else self.view.session.source.image_path.with_suffix(".dale").name
+            )
+            default = (self.output_directory or (path.parent if path else Path.cwd())) / filename
             selected, _ = QFileDialog.getSaveFileName(
                 self, self.t("Save DALE project"), str(default), self.t("DALE projects (*.dale)")
             )
@@ -793,6 +967,7 @@ class MainWindow(QMainWindow):
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             save_project(self.view.session, path, self.ui_state())
+            self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
             self.statusBar().showMessage(self.t("Saved complete project: {path}", path=path), 10000)
@@ -807,7 +982,10 @@ class MainWindow(QMainWindow):
         if not self.can_discard():
             return
         selected, _ = QFileDialog.getOpenFileName(
-            self, self.t("Open DALE project"), "", self.t("DALE projects (*.dale)")
+            self,
+            self.t("Open DALE project"),
+            str(self.input_directory or Path.cwd()),
+            self.t("DALE projects (*.dale)"),
         )
         if selected:
             self.load_project_file(Path(selected))
@@ -835,30 +1013,33 @@ class MainWindow(QMainWindow):
                 control.blockSignals(False)
             self.version.setCurrentIndex(0 if settings["foundry_major"] == 14 else 1)
             self.elevation.setCurrentText(str(settings["elevation_ft"]))
-            self.brush_control.setValue(settings["brush_diameter"])
+            self.brush_control.setValue(settings["raster_erase_diameter"])
+            self.restore_brush_control.setValue(settings["raster_restore_diameter"])
+            self.export_padding_control.setValue(settings["export_padding_px"])
             self.geometry_brush_control.setValue(settings["line_eraser_diameter"])
             self.vertex_brush_control.setValue(settings["vertex_eraser_diameter"])
             self.auto_close_control.setValue(settings["auto_close_distance_px"])
+            self.global_close_control.setValue(settings["global_close_distance_px"])
             self.snap_distance.setValue(settings["snap_distance_px"])
             self.snap_action.setChecked(settings["snap_enabled"])
             self.view.snap_enabled = settings["snap_enabled"]
-            selected = settings["export_region"]
-            self.region_control.setCurrentIndex(selected + 1 if selected < len(self.regions) else 0)
+            selected = settings["export_regions"]
+            self.selected_regions = (
+                selected
+                if selected is None or all(i < len(self.regions) for i in selected)
+                else None
+            )
             self.walls_action.setChecked(settings["show_walls"])
             self.view.show_walls = settings["show_walls"]
             self.select_tool_set(settings["tool_set"], activate=False)
-            self.activate_mode(settings["mode"])
-            # Retired tool drafts become ordinary editable paths without losing redo.
-            legacy_draft = settings["pending_closure"]
-            if len(legacy_draft) >= 2:
-                session.operations.append(Closure(legacy_draft))
+            self.view.move_related = settings["move_related_lines"]
+            self.activate_mode(settings["mode"], prompt=False)
             self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
             self.view.centerOn(*settings["center"])
             self.project_path = path
-            self.saved_state = None if len(legacy_draft) >= 2 else self.document_state()
-            self.info.setText(
-                f"{path.name}\n{session.source.size[0]:,} × {session.source.size[1]:,} px"
-            )
+            self.remember_directory("input", path.resolve().parent)
+            self.saved_state = self.document_state()
+            self.info.setText(path.name)
             self.refresh()
             return True
         except Exception as exc:
@@ -873,7 +1054,10 @@ class MainWindow(QMainWindow):
         if not self.can_discard():
             return
         image_path, _ = QFileDialog.getOpenFileName(
-            self, self.t("Open source JPG"), "examples", self.t("JPEG images (*.jpg *.jpeg)")
+            self,
+            self.t("Open source JPG"),
+            str(self.input_directory or Path("examples")),
+            self.t("JPEG images (*.jpg *.jpeg)"),
         )
         if not image_path:
             return
@@ -890,10 +1074,95 @@ class MainWindow(QMainWindow):
             json_path = Path(selected)
         self.load_sources(Path(image_path), json_path)
 
-    def load_sources(self, image_path: Path, json_path: Path):
+    def open_json(self):
+        if not self.view.session:
+            self.information("JSON", "Open a source JPG before loading another JSON.")
+            return
+        if not self.can_discard():
+            return
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            self.t("Import wall JSON"),
+            str(self.input_directory or self.view.session.source.json_path.parent),
+            self.t("JSON or DALE projects (*.json *.dale)"),
+        )
+        if selected:
+            path = Path(selected)
+            if path.suffix.lower() == ".dale":
+                self.import_project_json(path)
+            else:
+                self.load_sources(self.view.session.source.image_path, path)
+
+    def import_project_json(self, path):
+        try:
+            documents = read_json_documents(path)
+            self.remember_directory("input", path.resolve().parent)
+            dialog = QDialog(self)
+            dialog.setObjectName("jsonDocumentSelection")
+            dialog.setWindowTitle(self.t("JSON files in DALE project"))
+            dialog.resize(520, 300)
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(QLabel(self.t("Choose wall JSON to use with the current JPG.")))
+            choices = QListWidget(dialog)
+            choices.setToolTip(
+                self.t("Select the original or an updated JSON stored in this project.")
+            )
+            for document in documents:
+                kind = self.t("Original JSON" if document.kind == "original" else "Updated JSON")
+                item = QListWidgetItem(f"{document.name} — {kind}", choices)
+                item.setToolTip(f"{document.name}\n{kind}")
+            choices.setCurrentRow(0)
+            layout.addWidget(choices)
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+            )
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setText(self.t("Import"))
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setToolTip(
+                self.t("Import the selected JSON for the current JPG.")
+            )
+            buttons.button(QDialogButtonBox.StandardButton.Cancel).setToolTip(
+                self.t("Cancel without changing geometry. Escape: cancel.")
+            )
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            choices.itemDoubleClicked.connect(lambda item: dialog.accept())
+            layout.addWidget(buttons)
+            prepare_control_tooltips(dialog)
+            translate_static(dialog, self.language)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            document = documents[choices.currentRow()]
+            workspace = tempfile.TemporaryDirectory(prefix="dale-json-")
+            self.json_workspaces.append(workspace)
+            selected = Path(workspace.name) / f"{document.id}.json"
+            selected.write_bytes(document.data)
+            if self.load_sources(
+                self.view.session.source.image_path, selected, remember_input=False
+            ):
+                self.remember_directory("input", path.resolve().parent)
+            self.release_json_workspaces(keep_current=True)
+        except Exception as exc:
+            self.warning("Cannot import JSON", str(exc))
+
+    def release_json_workspaces(self, keep_current=False):
+        current = self.view.session.source if keep_current and self.view.session else None
+        retained = []
+        for workspace in self.json_workspaces:
+            root = Path(workspace.name)
+            if current and any(
+                path.is_relative_to(root) for path in (current.image_path, current.json_path)
+            ):
+                retained.append(workspace)
+            else:
+                workspace.cleanup()
+        self.json_workspaces = retained
+
+    def load_sources(self, image_path: Path, json_path: Path, remember_input=True):
         try:
             source = load_pair(image_path, json_path)
             preview = load_preview(source)
+            if remember_input:
+                self.remember_directory("input", json_path.resolve().parent)
             self.view.assign(
                 Session(
                     source,
@@ -904,97 +1173,178 @@ class MainWindow(QMainWindow):
             )
             self.origin_x.setValue(0)
             self.origin_y.setValue(0)
-            self.info.setText(
-                f"{source.image_path.name}\n{source.size[0]:,} × {source.size[1]:,} px\n"
-                + "\n".join(source.warnings)
-            )
+            self.info.setText(f"{source.image_path.name}\n" + "\n".join(source.warnings))
             self.refresh()
-            if self.loaded_project:
+            if self.loaded_project and not source.image_path.is_relative_to(
+                Path(self.loaded_project.workspace.name)
+            ):
                 self.loaded_project.close()
                 self.loaded_project = None
             self.project_path = None
             self.saved_state = self.document_state()
+            self.release_json_workspaces(keep_current=True)
+            return True
         except Exception as exc:
             self.warning("Cannot open source pair", str(exc))
+            return False
+
+    def remember_directory(self, purpose, directory):
+        directory = directory.resolve()
+        setattr(self, f"{purpose}_directory", directory)
+        try:
+            save_directory(self.preferences_path, purpose, directory)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
 
     def refresh(self):
         self.view.refresh()
-        self.update_footer()
+        self.update_map_info()
         if self.view.session:
             analysis = self.view.analysis
             self.diagnostics.setText(
                 self.t(
-                    "Closed faces: {faces}\nUnresolved segments: {unresolved}\n"
-                    "Gap joins: {joins}\nEditing operations: {operations}",
-                    faces=analysis.faces,
-                    unresolved=len(analysis.unresolved),
-                    joins=len(analysis.joins),
+                    "Selectable cells: {cells}\nEditing operations: {operations}",
+                    cells=analysis.faces,
                     operations=len(self.view.session.operations),
                 )
             )
 
-    def select_region(self, index):
-        self.selected_region = index - 1 if index > 0 else None
-        self.update_footer()
+    @property
+    def selected_region(self):
+        return (
+            self.selected_regions[0]
+            if self.selected_regions is not None and len(self.selected_regions) == 1
+            else None
+        )
 
-    def update_footer(self):
+    @selected_region.setter
+    def selected_region(self, value):
+        self.selected_regions = None if value is None else (value,)
+
+    def select_region(self, index):
+        data = self.region_control.itemData(index)
+        self.selected_regions = None if data is None else tuple(data)
+        self.view.region_pivot = None
+        self.update_map_info()
+
+    def toggle_region_at(self, point):
+        self.view.region_pivot = None
+        hit = min(
+            (i for i, polygon in enumerate(self.regions) if polygon.covers(ShapePoint(point))),
+            key=lambda i: self.regions[i].area,
+            default=None,
+        )
+        selected = set(self.selected_regions or ())
+        if hit is None:
+            selected.clear()
+        elif hit in selected:
+            selected.remove(hit)
+        else:
+            selected.add(hit)
+        self.selected_regions = tuple(sorted(selected))
+        self.update_map_info()
+
+    def select_transformed_regions(self, result):
+        polygons = result["polygons"]
+        self.selected_regions = tuple(
+            i
+            for i, cell in enumerate(self.regions)
+            if any(p.buffer(1e-7).covers(cell.representative_point()) for p in polygons)
+        )
+        self.update_map_info()
+        self.view.region_pivot = result["pivot"]
+
+    def update_map_info(self):
         session = self.view.session
         if session:
             try:
-                regions = export_regions(session)
+                regions = export_regions(session, individual=True)
             except ValueError:
                 regions = ()
         else:
             regions = ()
         key = tuple(polygon.wkb for polygon in regions)
         if key != self.region_key:
-            self.selected_region = None
+            self.selected_regions = (
+                () if self.view.mode in ("Select regions", "Move regions") else None
+            )
+            self.view.region_pivot = None
             self.region_key = key
         self.regions = regions
+        self.view.region_polygons = tuple(regions[i] for i in self.selected_regions or ())
         self.region_control.blockSignals(True)
         self.region_control.clear()
-        self.region_control.addItem(self.t("All regions"))
+        self.region_control.addItem(self.t("All regions"), None)
         for index in range(len(regions)):
-            self.region_control.addItem(self.t("Region {number}", number=index + 1))
-        self.region_control.setCurrentIndex(
-            self.selected_region + 1 if self.selected_region is not None else 0
-        )
+            self.region_control.addItem(self.t("Region {number}", number=index + 1), (index,))
+        if self.selected_regions is None:
+            selected_index = 0
+        elif len(self.selected_regions) == 1:
+            selected_index = self.selected_regions[0] + 1
+        else:
+            self.region_control.addItem(
+                self.t("Selected: {count}", count=len(self.selected_regions)), self.selected_regions
+            )
+            selected_index = self.region_control.count() - 1
+        self.region_control.setCurrentIndex(selected_index)
         self.region_control.setEnabled(bool(regions))
         self.region_control.blockSignals(False)
         self.view.selected_path = QPainterPath()
-        if self.selected_region is not None:
-            polygon = regions[self.selected_region]
+        for index in self.selected_regions or ():
+            polygon = regions[index]
             for ring in (polygon.exterior, *polygon.interiors):
-                self.view.selected_path.addPath(line_path(pairwise(ring.coords)))
-            self.view.selected_path.setFillRule(Qt.FillRule.OddEvenFill)
+                coordinates = list(ring.coords)
+                self.view.selected_path.moveTo(*coordinates[0])
+                for point in coordinates[1:]:
+                    self.view.selected_path.lineTo(*point)
+                self.view.selected_path.closeSubpath()
+        self.view.selected_path.setFillRule(Qt.FillRule.OddEvenFill)
         if not session:
-            self.footer_label.setText(self.t("Map: not loaded | Closed: 0 | Open: 0"))
+            self.map_info.setText(self.t("Map: not loaded\nClosed: 0 | Open: 0"))
             return
-        if not regions:
+        try:
+            selected = (
+                export_regions(session)
+                if self.selected_regions is None and regions
+                else tuple(
+                    offset_region(regions[i], session.contour_offset)
+                    for i in self.selected_regions or ()
+                )
+            )
+        except ValueError:
+            selected = ()
+        if not selected:
             detail = self.t("PNG: none")
         else:
-            selected = (
-                (regions[self.selected_region],) if self.selected_region is not None else regions
-            )
-            bounds = [crop_bounds(polygon) for polygon in selected]
-            if len(bounds) == 1:
+            padding = self.export_padding_control.value()
+            bounds = []
+            for polygon in selected:
+                try:
+                    bounds.append(crop_bounds(polygon, padding, session.source.size))
+                except ValueError:
+                    pass
+            if not bounds:
+                detail = self.t("PNG: none (selection outside the source map)")
+            elif len(bounds) == 1:
                 x, y, right, bottom = bounds[0]
                 detail = self.t(
-                    "PNG: {width} × {height} (+3 px)",
+                    "PNG: {width} × {height} (+{margin} px)",
                     width=right - x,
                     height=bottom - y,
+                    margin=3 + padding,
                 )
             else:
                 largest = max(bounds, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
                 detail = self.t(
-                    "PNG: {count} · max {width} × {height} (+3 px)",
+                    "PNG: {count} · max {width} × {height} (+{margin} px)",
                     count=len(bounds),
                     width=largest[2] - largest[0],
                     height=largest[3] - largest[1],
+                    margin=3 + padding,
                 )
-        self.footer_label.setText(
+        self.map_info.setText(
             self.t(
-                "Map: {width} × {height} | {detail} | Closed: {closed} | Open: {open}",
+                "Map: {width} × {height} px\n{detail}\nClosed: {closed} | Open: {open}",
                 width=session.source.size[0],
                 height=session.source.size[1],
                 closed=(
@@ -1008,7 +1358,7 @@ class MainWindow(QMainWindow):
                 detail=detail,
             )
         )
-        self.footer_label.setToolTip(
+        self.map_info.setToolTip(
             self.t(
                 "Closed: connected closed regions in current geometry. "
                 "Open: connected groups of unresolved lines. "
@@ -1070,28 +1420,32 @@ class MainWindow(QMainWindow):
         self.view.session.add(operation)
         self.refresh()
 
-    def export(self):
+    def export(self, selected_only=False):
         if not self.view.session or self.worker:
             return
         if self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
+            return
+        if self.selected_regions == () or (selected_only and self.selected_regions is None):
+            self.activate_mode("Select regions")
+            self.information("Select regions", "Select at least one closed region on the map.")
             return
         try:
             placement = self.placement()
         except ValueError as exc:
             self.warning("Invalid elevation", str(exc))
             return
-        default = (
-            self.project_path.parent
-            if self.project_path
-            else self.view.session.source.image_path.parent
+        default = self.output_directory or (
+            self.project_path.parent if self.project_path else Path.cwd()
         )
         path = QFileDialog.getExistingDirectory(
             self, self.t("Export separate PNGs with 3 px edge guard"), str(default)
         )
         if not path:
             return
+        self.remember_directory("output", Path(path))
         self.export_action.setEnabled(False)
+        self.export_regions_action.setEnabled(False)
         self.progress = QProgressDialog(
             self.t("Exporting separate PNGs with 3 px edge guard…"), self.t("Cancel"), 0, 100, self
         )
@@ -1100,7 +1454,12 @@ class MainWindow(QMainWindow):
         self.progress.setAutoReset(False)
         self.progress.setMinimumDuration(0)
         self.worker = ExportWorker(
-            self.view.session, Path(path), placement, self, self.selected_region
+            self.view.session,
+            Path(path),
+            placement,
+            self,
+            self.selected_regions,
+            self.export_padding_control.value(),
         )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.outcome.connect(self.record_outcome)
@@ -1121,6 +1480,7 @@ class MainWindow(QMainWindow):
         self.worker.deleteLater()
         self.worker = None
         self.export_action.setEnabled(True)
+        self.export_regions_action.setEnabled(True)
         outcome, text = self.export_outcome or ("error", "Export ended without a result.")
         self.export_outcome = None
         if outcome == "error":
@@ -1138,6 +1498,7 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
         elif self.can_discard():
+            self.release_json_workspaces()
             if self.loaded_project:
                 self.loaded_project.close()
                 self.loaded_project = None
@@ -1188,12 +1549,26 @@ def main():
                 "window_icon_loaded": not window.windowIcon().isNull(),
                 "geometry_eraser_diameters": window.view.geometry_diameters,
                 "auto_close_distance_px": window.view.auto_close_distance,
+                "global_close_distance_px": window.global_close_control.value(),
+                "tool_set": window.current_tool_set,
+                "selected_regions": window.selected_regions,
+                "export_padding_px": window.export_padding_control.value(),
+                "raster_diameters": window.view.raster_diameters,
+                "move_related_lines": window.view.move_related,
+                "project_schema_version": SCHEMA_VERSION,
+                "lineage_edges": len(window.view.session.geometry().lineage)
+                if window.view.session
+                else 0,
+                "json_document_count": 1 + len(window.view.session.json_documents)
+                if window.view.session
+                else 0,
                 "editing_mode": window.view.mode,
                 "language": window.language,
                 "foundry_major": window.placement().foundry_major,
                 "window_visible": window.isVisible(),
                 "minimum_window": [window.minimumWidth(), window.minimumHeight()],
-                "footer": window.footer_label.text(),
+                "map_info": window.map_info.text(),
+                "footer_visible": window.statusBar().isVisible(),
                 "project_loaded": bool(window.project_path),
                 "dimensions": window.view.session.source.size if window.view.session else None,
                 "operations": len(window.view.session.operations) if window.view.session else 0,

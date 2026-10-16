@@ -7,9 +7,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from dale.editing import add_line
 from dale.raster import load_preview
 from dale.scene import load_pair
-from dale.session import Closure, ContourMask, GeometryEdit, Session, Stroke
+from dale.session import Closure, ContourMask, Session, Stroke
 from dale.ui import MainWindow, configure_application
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,7 +21,7 @@ session = Session(source)
 session.add(Closure(((200, 350), (180, 400), (180, 450), (200, 500))))
 session.add(ContourMask(session.analysis().area, "outside"))
 session.add(Stroke(((740, 510), (780, 550)), 30))
-session.add(GeometryEdit(session.walls + (((950, 650), (1050, 750)),), session.closures))
+session.add(add_line(session.geometry(), (950, 650), (1050, 750)))
 window = MainWindow()
 window.show()
 app.processEvents()

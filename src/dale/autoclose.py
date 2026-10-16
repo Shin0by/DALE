@@ -11,7 +11,7 @@ from shapely import STRtree
 from shapely.geometry import LineString, MultiPoint, Point, box
 from shapely.ops import snap, unary_union
 
-from dale.editing import EPSILON, extend_lines
+from dale.editing import EPSILON, extend_lines, node_geometry
 from dale.scene import Segment
 from dale.session import GeometryEdit
 
@@ -20,9 +20,11 @@ from dale.session import GeometryEdit
 class AutoClosePlan:
     segments: tuple[Segment, ...] = ()
     extensions: tuple[Segment, ...] = ()
+    connections: tuple = ()
 
     def apply(self, geometry: GeometryEdit) -> GeometryEdit:
-        return extend_lines(geometry, self.extensions) if self.extensions else geometry
+        extended = extend_lines(geometry, self.extensions) if self.extensions else geometry
+        return node_geometry(extended, self.connections)
 
 
 class AutoCloseIndex:
@@ -66,11 +68,30 @@ class AutoCloseIndex:
                 point = parent[point]
             return point
 
+        degree = Counter()
         for part in parts:
             for a, b in pairwise(part.coords):
                 parent[find(tuple(a))] = find(tuple(b))
+                degree.update((tuple(a), tuple(b)))
+        # Numerical reconciliation may replace a projected tip by a nearby
+        # intersection. Keep its original coordinate in the same traced group.
+        graph_points = sorted(parent)
+        point_tree = STRtree([Point(point) for point in graph_points])
+        for point in {p for edge in (*self.segments, *extensions) for p in edge}:
+            if point not in parent:
+                x, y = point
+                nearby = [
+                    graph_points[int(i)]
+                    for i in point_tree.query(
+                        box(x - EPSILON, y - EPSILON, x + EPSILON, y + EPSILON)
+                    )
+                ]
+                nearest = min(nearby, key=lambda p: math.dist(p, point), default=None)
+                if nearest is not None and math.dist(nearest, point) <= EPSILON:
+                    parent[point] = find(nearest)
         self.groups = defaultdict(list)
         self.extensions = defaultdict(list)
+        self.connections = defaultdict(list)
         self.roots = []
         for edge in self.segments:
             root = find(edge[0])
@@ -78,6 +99,9 @@ class AutoCloseIndex:
             self.groups[root].append(edge)
         for edge in extensions:
             self.extensions[find(edge[0])].append(edge)
+        for point, count in sorted(degree.items()):
+            if count >= 3:
+                self.connections[find(point)].append(point)
 
     def _bounds(self, point):
         x, y = point
@@ -111,6 +135,8 @@ class AutoCloseIndex:
                     pairs.append((max(travel), sum(travel), tip, target, edges))
             for line_index in self.tree.query(self._bounds(tip)):
                 a, b = self.segments[int(line_index)]
+                if tip in (a, b):
+                    continue
                 delta = b[0] - a[0], b[1] - a[1]
                 denominator = _cross(direction, delta)
                 if abs(denominator) <= 1e-10 * math.dist(a, b):
@@ -118,7 +144,7 @@ class AutoCloseIndex:
                 offset = a[0] - tip[0], a[1] - tip[1]
                 travel = _cross(offset, delta) / denominator
                 fraction = _cross(offset, direction) / denominator
-                if EPSILON < travel <= self.tolerance and -1e-10 <= fraction <= 1 + 1e-10:
+                if 0 < travel <= self.tolerance and -1e-10 <= fraction <= 1 + 1e-10:
                     # Preserve target endpoints exactly when the intersection is one.
                     target = (
                         a
@@ -152,6 +178,15 @@ class AutoCloseIndex:
         return AutoClosePlan(
             tuple(edge for root in sorted(roots) for edge in self.groups[root]),
             tuple(edge for root in sorted(roots) for edge in self.extensions[root]),
+            tuple(point for root in sorted(roots) for point in self.connections[root]),
+        )
+
+    def all(self) -> AutoClosePlan:
+        """Use the same repair plan across the complete map."""
+        return AutoClosePlan(
+            self.segments,
+            tuple(edge for root in sorted(self.extensions) for edge in self.extensions[root]),
+            tuple(point for root in sorted(self.connections) for point in self.connections[root]),
         )
 
 
@@ -166,7 +201,7 @@ def _ray_meeting(p, u, q, v, tolerance):
     if abs(denominator) <= 1e-10:
         distance = math.dist(p, q)
         if (
-            EPSILON < distance <= tolerance
+            0 < distance <= tolerance
             and abs(_cross(offset, u)) <= EPSILON
             and sum(a * b for a, b in zip(offset, u, strict=True)) > 0
             and sum(a * b for a, b in zip(offset, v, strict=True)) < 0
@@ -179,5 +214,5 @@ def _ray_meeting(p, u, q, v, tolerance):
     if not -EPSILON <= first <= tolerance or not -EPSILON <= second <= tolerance:
         return None
     intersection = (p[0] + first * u[0], p[1] + first * u[1])
-    edges = tuple((tip, intersection) for tip in (p, q) if math.dist(tip, intersection) > EPSILON)
+    edges = tuple((tip, intersection) for tip in (p, q) if tip != intersection)
     return (edges, (max(0, first), max(0, second))) if edges else None

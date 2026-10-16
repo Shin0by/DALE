@@ -1148,7 +1148,7 @@ class MainWindow(QMainWindow):
         current = self.view.session.source if keep_current and self.view.session else None
         retained = []
         for workspace in self.json_workspaces:
-            root = Path(workspace.name)
+            root = Path(workspace.name).resolve()
             if current and any(
                 path.is_relative_to(root) for path in (current.image_path, current.json_path)
             ):
@@ -1176,7 +1176,7 @@ class MainWindow(QMainWindow):
             self.info.setText(f"{source.image_path.name}\n" + "\n".join(source.warnings))
             self.refresh()
             if self.loaded_project and not source.image_path.is_relative_to(
-                Path(self.loaded_project.workspace.name)
+                Path(self.loaded_project.workspace.name).resolve()
             ):
                 self.loaded_project.close()
                 self.loaded_project = None

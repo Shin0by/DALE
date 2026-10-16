@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -127,8 +128,9 @@ def test_retired_closure_mode_is_not_migrated(pair_factory, tmp_path):
         load_project(path)
 
 
+@pytest.mark.parametrize("aliased_workspace", [False, True])
 def test_json_command_replaces_walls_without_choosing_jpg_and_keeps_archive_image_alive(
-    app, pair_factory, tmp_path, monkeypatch
+    app, pair_factory, tmp_path, monkeypatch, aliased_workspace
 ):
     source = pair_factory()
     project = tmp_path / "source.dale"
@@ -140,6 +142,13 @@ def test_json_command_replaces_walls_without_choosing_jpg_and_keeps_archive_imag
     alternative.write_text(json.dumps(raw), encoding="utf-8")
     window = MainWindow()
     assert window.load_project_file(project)
+    workspace = window.loaded_project.workspace
+    canonical_root = Path(workspace.name).resolve()
+    if aliased_workspace:
+        workspace.name = str(
+            canonical_root.parent / ".." / canonical_root.parent.name / canonical_root.name
+        )
+        assert Path(workspace.name).resolve() == canonical_root
     image = window.view.session.source.image_path
     opened = []
 
@@ -163,6 +172,7 @@ def test_json_command_replaces_walls_without_choosing_jpg_and_keeps_archive_imag
     assert second.load_project_file(window.project_path)
     assert second.view.session.source.image_path.is_file()
     second.close()
+    workspace.name = str(canonical_root)
     window.close()
     assert not image.exists()
 
@@ -184,6 +194,16 @@ def test_json_import_from_dale_shows_all_documents_and_uses_chosen_one(
     window = MainWindow()
     window.load_sources(source.image_path, source.json_path)
     original = window.view.session
+    release = window.release_json_workspaces
+
+    def release_with_alias(keep_current=False):
+        for workspace in window.json_workspaces:
+            root = Path(workspace.name).resolve()
+            workspace.name = str(root.parent / ".." / root.parent.name / root.name)
+            assert Path(workspace.name).resolve() == root
+        release(keep_current)
+
+    monkeypatch.setattr(window, "release_json_workspaces", release_with_alias)
     monkeypatch.setattr("dale.ui.QFileDialog.getOpenFileName", lambda *args: (str(archive), ""))
 
     def choose():

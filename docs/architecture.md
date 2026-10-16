@@ -65,3 +65,4 @@ Refresh full root DALE/ and source hashes; preserve UserData/projects/running ed
 JPG max 16384 per side; warn above 8192. Reduced preview, decoded source plus 128-row export stripes, memory preflight/cancellable worker. Source decoding is not interruptible; no bitmap undo history.
 
 Historical real sample evidence: docs/sample-formats.md. Owner maps are currently absent from examples. Current changes use synthetic fixtures. No semantic segmentation, live Foundry connection/native scene generation/verified live floor assembly.
+Archive ownership checks resolve both source and workspace paths before comparing containment; Windows short-name/junction aliases must not cause active assets to be deleted. Retain active extracted JPG/JSON until their session is replaced or closed.

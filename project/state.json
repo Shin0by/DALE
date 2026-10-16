@@ -183,13 +183,18 @@
     },
     {
       "check": "regions_lineage_current_format_and_json_import",
-      "result": "162 passed; ruff clean. Qt gestures cover confirmations, selection, geometry-only translation/scale/rotation, remembered related lines, current-format restore, JSON replacement and original/updated catalog import. Pure tests cover ancestry across splits/merges/contacts/auto-close/transforms/undo/redo, malformed provenance, old-format rejection, bounded PNG crops and JSON catalog integrity.",
+      "result": "163 passed; ruff clean. Qt gestures cover confirmations, selection, geometry-only translation/scale/rotation, remembered related lines, current-format restore, JSON replacement and original/updated catalog import. Pure tests cover ancestry across splits/merges/contacts/auto-close/transforms/undo/redo, malformed provenance, old-format rejection, bounded PNG crops and JSON catalog integrity.",
       "command": "python -m pytest -q; python -m ruff check ."
     },
     {
       "check": "current_sidebar_visual_and_help",
       "result": "83 controls audited through RU/EN/RU with nonempty localized help. Minimum 1024x768 screenshots show three sets, embedded numbers, no footer, right information/settings and translucent selected cells. Synthetic fixtures only.",
       "command": "python tools/preview_demo.py; python artifacts/verify_current_ui.py"
+    },
+    {
+      "check": "canonical_archive_asset_lifetimes",
+      "result": "Canonicalized workspace roots before ownership checks. Regression tests exercise aliased paths for both archived JPG retention and imported JSON retention. The first remote CI exposed unresolved workspace aliases; the fix passes 163 local tests.",
+      "command": "python -m pytest -q"
     }
   ],
   "completed": [
@@ -238,7 +243,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.11",
+  "current_version": "0.3.13",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",

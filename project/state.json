@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "application_icon_delivery",
+  "phase": "ordinary_geometry_editing",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -16,7 +16,7 @@
     "Right-drag pans in every tool, including fit zoom.",
     "Gap tolerance in source pixels supports endpoint pairs and T junctions; default 0 disables joining. Signed offset expands/contracts contours.",
     "Applied masks remain immutable snapshots. Geometry/settings changes affect preview and the next mask.",
-    "Edit points uses fixed 10-screen-pixel circular handles, pointing-hand hover, insertion spacing of one diameter, shared-node movement, and undoable junction deletion.",
+    "Edit points uses fixed 10-screen-pixel circular handles, pointing-hand hover, insertion spacing of one diameter, shared-node movement, and ordinary undoable vertex deletion. No dedicated T-junction deletion setting or main-wall policy.",
     "Self-contained ZIP .dale projects preserve exact sources, operations and redo, placement, geometry, viewport, language/tool state, and unfinished closures.",
     "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
     "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
@@ -31,7 +31,8 @@
     "Localized hover help covers every application control, including embedded numeric editors, selectors, scrollbars, overflow controls, and menus; keep action names in icon-only tooltips.",
     "Persist selected Foundry major (13/14) and language together in portable UserData/settings.json using merged atomic writes. Project loading restores and remembers its target version.",
     "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction.",
-    "Use the owner-supplied favicon.ico unchanged for Qt windows and the Windows EXE icon. Preserve shin0by.png as the original artwork reference and package both formats with source hashes."
+    "Use the owner-supplied favicon.ico unchanged for Qt windows and the Windows EXE icon. Preserve shin0by.png as the original artwork reference and package both formats with source hashes.",
+    "Retire the dedicated junction deletion selector and policy. Ordinary wall points reconnect two neighbors; branching wall points remove incident edges without choosing a main continuation. Older archive junction_policy fields are ignored and omitted from new UI state."
   ],
   "validated": [
     {
@@ -65,9 +66,9 @@
     },
     {
       "check": "unit_and_qt_event_tests",
-      "result": "94 passed",
+      "result": "98 passed",
       "command": "python -m pytest -q",
-      "scope": "Existing geometry/export/archive/Qt coverage, merged Foundry/language preferences, revision-only build increments without major/minor rollover, and version mismatch rejection before writes."
+      "scope": "Geometry/export/archive/Qt coverage plus generic branch point deletion by double-click and eraser with undo; both retired archive policy values load without restoring the setting."
     },
     {
       "check": "visual_review",
@@ -156,6 +157,16 @@
       "version": "0.3.5",
       "result": "Inspected Windows PE RT_GROUP_ICON and RT_ICON resources: all supplied 16/32/48-pixel icon payloads match the owner ICO byte for byte. The bundled runtime ICO also matches its canonical source hash.",
       "command": "python artifacts/verify_embedded_icon.py"
+    },
+    {
+      "check": "packaged_owner_icon_delivery",
+      "version": "0.3.6",
+      "result": "Isolated-PATH archive and blank-window launches plus native real-map launch all exited 0 with window_icon_loaded true. Rendered 48-pixel window icon matched the supplied ICO exactly. All 53 portable source fingerprints matched. CI passed for commit 0a356f2."
+    },
+    {
+      "check": "ordinary_point_editing_without_t_policy",
+      "result": "Dedicated selector, canvas policy, straightest-main-wall heuristic, and active UI serialization field removed. Core and Qt tests verify 3/4-way branch deletion, both standard tools, and undo. Legacy archive fields are ignored. Audited 65 controls in RU/EN/RU; minimum-window screenshots inspected.",
+      "command": "python -m pytest -q; python artifacts/verify_compact_ui.py; python tools/preview_demo.py"
     }
   ],
   "completed": [
@@ -203,7 +214,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.6",
+  "current_version": "0.3.7",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",

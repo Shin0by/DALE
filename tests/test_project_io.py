@@ -9,7 +9,10 @@ from dale.raster import render_alpha
 from dale.session import Closure, Session, Stroke
 
 
-def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_factory, tmp_path):
+@pytest.mark.parametrize("legacy_policy", ["continue", "remove"])
+def test_portable_archive_preserves_sources_operations_redo_and_settings(
+    pair_factory, tmp_path, legacy_policy
+):
     source = pair_factory()
     original = source.image_path.read_bytes(), source.json_path.read_bytes()
     session = Session(source, gap_tolerance=3, contour_offset=2)
@@ -29,7 +32,7 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_fa
             "elevation_ft": 17,
             "mode": "Edit points",
             "pending_closure": [[10, 20]],
-            "junction_policy": "remove",
+            "junction_policy": legacy_policy,
         },
     )
     source.image_path.unlink()
@@ -44,6 +47,7 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_fa
         assert loaded.ui_state["elevation_ft"] == 17
         assert loaded.ui_state["mode"] == "Edit points"
         assert loaded.ui_state["pending_closure"] == ((10, 20),)
+        assert "junction_policy" not in loaded.ui_state
         assert (
             render_alpha(source.size, source.size, loaded.session.operations).tobytes()
             == expected_alpha

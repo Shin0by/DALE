@@ -170,17 +170,6 @@ class MainWindow(QMainWindow):
         )
         self.gap_tolerance.valueChanged.connect(self.update_contour_settings)
         self.contour_offset.valueChanged.connect(self.update_contour_settings)
-        self.junction_delete = QComboBox()
-        self.junction_delete.addItems(["Keep main wall", "Remove incident edges"])
-        self.junction_delete.setToolTip(
-            "Deleting a junction can preserve the straightest wall continuation, "
-            "or remove all incident wall edges. Undo is available."
-        )
-        self.junction_delete.currentIndexChanged.connect(
-            lambda index: setattr(
-                self.view, "junction_policy", "continue" if index == 0 else "remove"
-            )
-        )
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.language_control = QComboBox()
@@ -198,7 +187,6 @@ class MainWindow(QMainWindow):
         form.addRow("Scene origin Y", self.origin_y)
         form.addRow("Join gaps up to (px)", self.gap_tolerance)
         form.addRow("Contour offset (px)", self.contour_offset)
-        form.addRow("Junction deletion", self.junction_delete)
         sidebar = QVBoxLayout()
         sidebar.addWidget(self.info)
         sidebar.addLayout(form)
@@ -406,7 +394,8 @@ class MainWindow(QMainWindow):
                 "Erase entire line segments touched by the circle. Drag is one undo step."
             ),
             "Erase vertices": (
-                "Erase vertices inside the circle using the selected junction deletion policy."
+                "Erase vertices inside the circle; reconnect ordinary line neighbors. "
+                "Branching vertices remove their connected edges."
             ),
             "Close map": "Close the current map after offering to save its project.",
             "Snapping (px)": (
@@ -460,7 +449,6 @@ class MainWindow(QMainWindow):
             self.origin_y,
             self.gap_tolerance,
             self.contour_offset,
-            self.junction_delete,
         ):
             form.labelForField(control).setToolTip(control.toolTip())
         self.set_language(self.language, persist=False)
@@ -728,7 +716,6 @@ class MainWindow(QMainWindow):
             "zoom": self.view.transform().m11(),
             "center": [center.x(), center.y()],
             "pending_closure": self.view.pending,
-            "junction_policy": self.view.junction_policy,
             "language": self.language,
             "snap_enabled": self.view.snap_enabled,
             "snap_distance_px": self.view.snap_distance,
@@ -808,10 +795,6 @@ class MainWindow(QMainWindow):
             self.region_control.setCurrentIndex(selected + 1 if selected < len(self.regions) else 0)
             self.walls_action.setChecked(settings["show_walls"])
             self.view.show_walls = settings["show_walls"]
-            self.junction_delete.setCurrentIndex(
-                0 if settings["junction_policy"] == "continue" else 1
-            )
-            self.view.junction_policy = settings["junction_policy"]
             self.select_tool_set(settings["tool_set"], activate=False)
             self.activate_mode(settings["mode"])
             self.view.pending = list(settings["pending_closure"])

@@ -180,7 +180,6 @@ def _load_ui(value):
     placement = Placement(value.get("foundry_major", 14), value.get("elevation_ft", 5))
     mode = value.get("mode", "Pan")
     tool_set = value.get("tool_set", "geometry")
-    policy = value.get("junction_policy", "continue")
     language = value.get("language", "ru")
     brush = number(value.get("brush_diameter", 40), "Brush diameter")
     geometry_diameter = number(value.get("geometry_diameter", 24), "Geometry eraser diameter")
@@ -198,7 +197,7 @@ def _load_ui(value):
         "Erase vertices",
     ):
         raise ValueError("Invalid project editing mode.")
-    if policy not in ("continue", "remove") or not 1 <= brush <= 4096 or not 0 < zoom <= 10000:
+    if not 1 <= brush <= 4096 or not 0 < zoom <= 10000:
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
@@ -216,7 +215,6 @@ def _load_ui(value):
         "elevation_ft": placement.elevation_ft,
         "mode": mode,
         "tool_set": tool_set,
-        "junction_policy": policy,
         "language": language,
         "brush_diameter": int(brush),
         "geometry_diameter": int(geometry_diameter),

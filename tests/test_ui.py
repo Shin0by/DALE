@@ -207,6 +207,33 @@ def test_edit_points_click_drag_double_click_and_undo(app, pair_factory):
     view.close()
 
 
+@pytest.mark.parametrize("mode", ["Edit points", "Erase vertices"])
+def test_branch_point_deletion_uses_standard_tools_and_undo(app, pair_factory, mode):
+    source = pair_factory(
+        size=(200, 200),
+        walls=[{"c": [50, 100, 150, 100]}, {"c": [100, 100, 100, 150]}],
+    )
+    view = MapView()
+    view.resize(500, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    original = view.session.geometry()
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(100, 100)
+    view.set_mode(mode)
+    app.processEvents()
+    point = view.mapFromScene(100, 100)
+    if mode == "Edit points":
+        QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    else:
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert not view.session.geometry().walls
+    assert len(view.session.operations) == 1
+    view.session.undo()
+    assert view.session.geometry() == original
+    view.close()
+
+
 def test_project_save_and_load_through_window_preserves_editing_state(app, pair_factory, tmp_path):
     source = pair_factory()
     first = MainWindow()
@@ -243,6 +270,7 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert second.can_discard()
     with load_project(first.project_path) as project:
         assert project.ui_state["pending_closure"] == ((10, 20), (30, 40))
+        assert "junction_policy" not in project.ui_state
     first.close()
     second.close()
 

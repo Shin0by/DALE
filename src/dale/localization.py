@@ -167,8 +167,12 @@ RUSSIAN = {
     "Erase entire line segments touched by the circle. Drag is one undo step.": (
         "Удалить отрезки, задетые кругом. Всё движение мышью отменяется одним шагом."
     ),
-    "Erase vertices inside the circle using the selected junction deletion policy.": (
-        "Удалить точки внутри круга с учётом выбранного правила удаления Т-узлов."
+    (
+        "Erase vertices inside the circle; reconnect ordinary line neighbors. "
+        "Branching vertices remove their connected edges."
+    ): (
+        "Удалить точки в круге; соседи обычной точки линии соединяются. "
+        "При удалении точки разветвления удаляются её смежные отрезки."
     ),
     "Close the current map after offering to save its project.": (
         "Закрыть текущую карту с предложением сохранить проект."
@@ -269,9 +273,6 @@ RUSSIAN = {
     "Scene origin Y": "Начало сцены Y",
     "Join gaps up to (px)": "Соединять зазоры до (px)",
     "Contour offset (px)": "Отступ контура (px)",
-    "Junction deletion": "Удаление Т-узла",
-    "Keep main wall": "Сохранить основную стену",
-    "Remove incident edges": "Удалить смежные отрезки",
     "Language": "Язык",
     "  Brush diameter (px): ": "  Диаметр кисти (px): ",
     ("Open an upper-floor JPG and its Foundry JSON to begin."): (
@@ -350,13 +351,6 @@ RUSSIAN = {
     ),
     ("Original image pixels: positive expands the contour, negative shrinks it."): (
         "В исходных пикселях: положительное значение расширяет контур, отрицательное сужает."
-    ),
-    (
-        "Deleting a junction can preserve the straightest wall continuatio"
-        "n, or remove all incident wall edges. Undo is available."
-    ): (
-        "При удалении Т-узла можно сохранить наиболее прямое продолжение с"
-        "тены или убрать все смежные отрезки. Доступна отмена."
     ),
     "Enter a whole-number elevation in feet.": "Введите высоту в футах целым числом.",
     "Elevation must be a whole number of feet.": "Высота должна быть целым числом футов.",

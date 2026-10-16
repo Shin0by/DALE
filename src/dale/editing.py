@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from itertools import combinations, pairwise
+from itertools import pairwise
 from typing import Literal
 
 from shapely.geometry import LineString
@@ -103,14 +103,14 @@ def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
     return GeometryEdit(tuple(walls), closures)
 
 
-def erase_geometry(geometry, start, end, radius, target, junction_policy="continue"):
+def erase_geometry(geometry, start, end, radius, target):
     """Erase touched edges or vertices across a swept circular brush, including fast drags."""
     sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
     if target == "vertices":
         selected = [p for p in vertices(geometry) if sweep.distance(ShapePoint(p)) <= radius]
         for point in selected:
             if hit_vertex(geometry, point, EPSILON) is not None:
-                geometry = delete_vertex(geometry, point, junction_policy)
+                geometry = delete_vertex(geometry, point)
         return geometry
     if target != "lines":
         raise ValueError("Unknown geometry eraser target.")
@@ -187,11 +187,7 @@ def move_vertex(geometry: GeometryEdit, point: Point, destination: Point) -> Geo
     return GeometryEdit(tuple((a, b) for a, b in walls if not _same(a, b)), tuple(closures))
 
 
-def delete_vertex(
-    geometry: GeometryEdit,
-    point: Point,
-    junction_policy: Literal["continue", "remove"] = "continue",
-) -> GeometryEdit:
+def delete_vertex(geometry: GeometryEdit, point: Point) -> GeometryEdit:
     walls, neighbors = [], set()
     for a, b in _split_at(geometry.walls, point):
         if _same(a, point):
@@ -202,14 +198,6 @@ def delete_vertex(
             walls.append((a, b))
     if len(neighbors) == 2:
         walls.append(tuple(sorted(neighbors)))
-    elif len(neighbors) > 2 and junction_policy == "continue":
-        # Preserve the straightest continuation through a junction.
-        def straightness(pair):
-            a, b = pair
-            u, v = (a[0] - point[0], a[1] - point[1]), (b[0] - point[0], b[1] - point[1])
-            return (u[0] * v[0] + u[1] * v[1]) / (math.hypot(*u) * math.hypot(*v)), pair
-
-        walls.append(min(combinations(sorted(neighbors), 2), key=straightness))
     closures = []
     for path in geometry.closures:
         points = tuple(value for value in _expanded_path(path, point) if not _same(value, point))

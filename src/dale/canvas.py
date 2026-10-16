@@ -97,7 +97,6 @@ class MapView(QGraphicsView):
         self.drag_original = None
         self.drag_vertex = None
         self.drag_offset = None
-        self.junction_policy = "continue"
         self.line_start = None
         self.line_end = None
         self.geometry_stroke = None
@@ -265,7 +264,6 @@ class MapView(QGraphicsView):
             point,
             self.geometry_diameter / 2 / self.transform().m11(),
             "lines" if self.mode == "Erase lines" else "vertices",
-            self.junction_policy,
         )
         self.geometry_stroke = point
         self.refresh(render_image=False)
@@ -461,7 +459,7 @@ class MapView(QGraphicsView):
             geometry = self.session.geometry()
             vertex = hit_vertex(geometry, point, self._handle_tolerance() * 0.65)
             if vertex is not None:
-                edited = delete_vertex(geometry, vertex, self.junction_policy)
+                edited = delete_vertex(geometry, vertex)
                 if edited != geometry:
                     self.session.add(edited)
                     self.changed.emit()

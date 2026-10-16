@@ -1,3 +1,5 @@
+import pytest
+
 from dale.editing import (
     add_line,
     delete_vertex,
@@ -38,10 +40,13 @@ def test_dragging_t_node_splits_and_moves_the_long_wall_too():
     assert moved.walls == (((0, 0), (55, 10)), ((55, 10), (100, 0)), ((55, 10), (50, 80)))
 
 
-def test_both_junction_deletion_policies_are_explicit():
-    geometry = GeometryEdit((((0, 0), (100, 0)), ((50, 0), (50, 80))))
-    assert delete_vertex(geometry, (50, 0), "continue").walls == (((0, 0), (100, 0)),)
-    assert not delete_vertex(geometry, (50, 0), "remove").walls
+@pytest.mark.parametrize("extra_edges", [(), (((50, 0), (50, -80)),)])
+def test_removing_branch_vertex_does_not_choose_a_main_wall(extra_edges):
+    untouched = ((200, 0), (300, 0))
+    geometry = GeometryEdit((((0, 0), (100, 0)), ((50, 0), (50, 80)), untouched) + extra_edges)
+    assert delete_vertex(geometry, (50, 0)).walls == (untouched,)
+    erased = erase_geometry(geometry, (50, 0), (50, 0), 4, "vertices")
+    assert erased.walls == (untouched,)
 
 
 def test_geometry_edit_history_is_undoable_and_never_writes_source_json(pair_factory):

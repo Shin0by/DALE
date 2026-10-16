@@ -90,7 +90,7 @@ No direct Foundry mutation or floor-module dependency in the prototype. Preserve
 
 The latest owner color rule supersedes both the original diagnostic palette and the intermediate outer-red/interior-cyan request: draw resolved closed geometry cyan and unresolved segments red. All line pens are cosmetic, 2 screen pixels at any zoom. Keep fixed 10-screen-pixel circular handles.
 
-Provide distinct top QToolBars for general actions, geometry, pixels, and snapping. Use deterministic QPainter icons from `toolbar.py`, panel backgrounds, filled/bordered inactive buttons, and a clear checked state. Close map offers project saving without closing the application.
+Use exactly two text-only top rows: general actions, then tool-set selection with contextual size and snapping. A QStackedWidget left of the map displays the current geometry or pixel tools as one narrow vertical column of square icon-only buttons. Switching sets restores the last used tool within the running window; save the active set in project UI settings. Use code-drawn QPainter icons from `toolbar.py` only for left tools, filled/bordered inactive buttons, a clear checked state, and a compact Photoshop-inspired neutral dark-gray palette. Close map offers project saving without closing the application.
 
 New line captures a first endpoint on press and commits the second on release, with a live preview. Prefer existing vertices over closer line projections within the configured screen-space radius. Split target edges at connection points. Moving a node excludes its own incident edges from snap candidates; minimum handle spacing prevents crowded new points.
 
@@ -100,4 +100,6 @@ Pixel brush diameter uses source pixels; geometry eraser diameter uses screen pi
 
 The permanent footer contains source map dimensions, current closed components and connected unresolved-group counts, export dimensions with the mandatory 3-pixel guard, an all/one-region selector, and language. An open count is a connected graph-component count, not inferred missing polygons. Closed counts use the current face union, while crop bounds and selection use the effective export mask snapshot. For multiple selected outputs show the largest actual PNG by pixel area; for one show exact dimensions and origin. Share `crop_bounds` between export and footer. Highlight the selected region without burning it into PNGs, and export only that region when selected.
 
-Save optional snap enablement/radius, geometry eraser diameter, current tools, and region selection in schema-1 project UI settings; defaults preserve loading older archives. Geometry and raster history serialization stay independent of Qt.
+Every application control has localized hover help. Copy source help into embedded numeric editors and popup scrollbars, provide overflow/menu help, and translate tool names and descriptions separately for icon-only buttons. Dynamic selectors refresh their own localized help.
+
+Save optional tool-set choice, snap enablement/radius, geometry eraser diameter, current tools, and region selection in schema-1 project UI settings; defaults preserve loading older archives. Geometry and raster history serialization stay independent of Qt.

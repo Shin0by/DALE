@@ -2,10 +2,66 @@
 
 from PySide6.QtCore import QTranslator
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QAbstractButton, QComboBox, QLabel, QMenu, QToolBar, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QAbstractSpinBox,
+    QComboBox,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QScrollBar,
+    QToolBar,
+    QToolButton,
+    QWidget,
+)
 
 RUSSIAN = {
+    "Tool size": "Размер",
+    "Screen px": "Экранные px",
+    "Source px": "Исходные px",
+    "Image + JSON": "JPG + JSON",
+    "Open": "Открыть",
+    "Save as…": "Сохранить как…",
+    "Close": "Закрыть",
+    "Export": "Экспорт",
+    "Hand": "Рука",
+    "Walls": "Стены",
+    "Open, save, close, export, and navigate projects.": (
+        "Открытие, сохранение, закрытие, экспорт и навигация по карте."
+    ),
+    "Choose which tools appear to the left of the map.": (
+        "Выберите набор инструментов, который будет показан слева от карты."
+    ),
+    "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.": (
+        "Размер ластика геометрии или пиксельной кисти. Ctrl + колесо меняет размер."
+    ),
+    "Configure snapping to existing vertices and line interiors.": (
+        "Настройте привязку к существующим вершинам и отрезкам линий."
+    ),
+    "Geometry size uses screen pixels; pixel brush size uses original image pixels.": (
+        "Размер геометрического ластика — в экранных пикселях, кисти — в исходных пикселях карты."
+    ),
+    "Right-drag pans, wheel zooms, Ctrl+wheel changes tool size. Escape cancels a gesture.": (
+        "Правая кнопка перемещает карту, колесо меняет масштаб, "
+        "Ctrl + колесо — размер инструмента. "
+        "Escape отменяет текущий жест."
+    ),
+    "Pan the map horizontally.": "Переместить карту по горизонтали.",
+    "Pan the map vertically.": "Переместить карту по вертикали.",
+    "Scroll map settings and editing help.": "Прокрутить настройки карты и подсказки редактора.",
+    "Scroll the available choices.": "Прокрутить доступные варианты.",
+    "Show tools that do not fit in this panel.": (
+        "Показать инструменты, не поместившиеся на панели."
+    ),
+    "Project file menu.": "Меню файлов проекта.",
     "General": "Общие действия",
+    "Tool sets": "Набор инструментов",
+    "Show the single-column line and vertex tools beside the map.": (
+        "Показать слева от карты инструменты линий и точек одним столбцом."
+    ),
+    "Show the single-column pixel editing tools beside the map.": (
+        "Показать слева от карты пиксельные инструменты одним столбцом."
+    ),
     "Lines and vertices": "Линии и точки",
     "Pixels": "Пиксели",
     "Snapping": "Привязка",
@@ -356,6 +412,31 @@ class DesktopTranslator(QTranslator):
         return RUSSIAN.get(sourceText, "") if self.language == "ru" else ""
 
 
+def prepare_control_tooltips(root):
+    """Give embedded editors, scrollbars, and toolbar overflow buttons localized source help."""
+    for control in root.findChildren(QWidget):
+        if (
+            not isinstance(
+                control, (QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit, QScrollBar)
+            )
+            or control.toolTip()
+        ):
+            continue
+        if isinstance(control, QScrollBar):
+            control.setToolTip("Scroll the available choices.")
+            continue
+        if isinstance(control, QToolButton) and control.defaultAction() is None:
+            control.setToolTip("Show tools that do not fit in this panel.")
+            continue
+        parent = control.parentWidget()
+        while parent is not None:
+            original = parent.property("dale_original_tooltip") or parent.toolTip()
+            if original:
+                control.setToolTip(original)
+                break
+            parent = parent.parentWidget()
+
+
 def translate_static(root: QWidget, language: str, excluded=()):
     for widget in [root, *root.findChildren(QWidget), *root.findChildren(QAction)]:
         if widget in excluded:
@@ -384,6 +465,12 @@ def translate_static(root: QWidget, language: str, excluded=()):
                 widget.setProperty("dale_original_items", original)
             for i, text in enumerate(original):
                 widget.setItemText(i, translate(text, language))
+        parts = widget.property("dale_tooltip_parts")
+        if isinstance(widget, QToolButton) and widget.defaultAction() is not None:
+            parts = parts or widget.defaultAction().property("dale_tooltip_parts")
+        if parts:
+            widget.setToolTip("\n".join(translate(part, language) for part in parts))
+            continue
         original = widget.property("dale_original_tooltip")
         if original is None:
             original = widget.toolTip()

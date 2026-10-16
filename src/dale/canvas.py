@@ -60,10 +60,10 @@ class MapView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         checker = QPixmap(32, 32)
-        checker.fill(QColor("#29313b"))
+        checker.fill(QColor("#303030"))
         painter = QPainter(checker)
-        painter.fillRect(0, 0, 16, 16, QColor("#38424e"))
-        painter.fillRect(16, 16, 16, 16, QColor("#38424e"))
+        painter.fillRect(0, 0, 16, 16, QColor("#3b3b3b"))
+        painter.fillRect(16, 16, 16, 16, QColor("#3b3b3b"))
         painter.end()
         self.setBackgroundBrush(QBrush(checker))
         self.session = None

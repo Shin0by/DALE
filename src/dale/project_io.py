@@ -179,6 +179,7 @@ def _load_ui(value):
         raise ValueError("Invalid project UI settings.")
     placement = Placement(value.get("foundry_major", 14), value.get("elevation_ft", 5))
     mode = value.get("mode", "Pan")
+    tool_set = value.get("tool_set", "geometry")
     policy = value.get("junction_policy", "continue")
     language = value.get("language", "ru")
     brush = number(value.get("brush_diameter", 40), "Brush diameter")
@@ -201,6 +202,8 @@ def _load_ui(value):
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
+    if tool_set not in ("geometry", "pixels"):
+        raise ValueError("Invalid project tool set.")
     if not 1 <= geometry_diameter <= 512 or not 0 <= snap_distance <= 256:
         raise ValueError("Invalid project tool sizes or snap distance.")
     if type(export_region) is not int or not -1 <= export_region < 100_000:
@@ -212,6 +215,7 @@ def _load_ui(value):
         "foundry_major": placement.foundry_major,
         "elevation_ft": placement.elevation_ft,
         "mode": mode,
+        "tool_set": tool_set,
         "junction_policy": policy,
         "language": language,
         "brush_diameter": int(brush),

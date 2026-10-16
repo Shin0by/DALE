@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -41,7 +42,12 @@ from PySide6.QtWidgets import (
 from dale import __version__
 from dale.canvas import MapView, line_path
 from dale.geometry import open_contour_count
-from dale.localization import DesktopTranslator, translate, translate_static
+from dale.localization import (
+    DesktopTranslator,
+    prepare_control_tooltips,
+    translate,
+    translate_static,
+)
 from dale.overlay_export import crop_bounds, export_overlays, export_regions
 from dale.placement import Placement
 from dale.preferences import load_language, save_language, settings_path
@@ -49,7 +55,7 @@ from dale.project_io import load_project, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
 from dale.session import Session
-from dale.toolbar import make_toolbar, tool_icon
+from dale.toolbar import apply_theme, make_toolbar, tool_icon
 
 
 class ExportWorker(QThread):
@@ -104,6 +110,8 @@ class MainWindow(QMainWindow):
         self.regions = ()
         self.region_key = None
         self.selected_region = None
+        self.current_tool_set = "geometry"
+        self.last_tool_modes = {"geometry": "Edit points", "pixels": "Erase"}
         self.view = MapView()
         self.view.changed.connect(self.refresh)
         self.view.message.connect(
@@ -209,6 +217,12 @@ class MainWindow(QMainWindow):
         sidebar_scroll.setWidget(panel)
         sidebar_scroll.setFixedWidth(360)
         layout = QHBoxLayout()
+        self.tool_stack = QStackedWidget()
+        self.tool_stack.setFixedWidth(56)
+        self.tool_stack.setStyleSheet(
+            "QStackedWidget { background: #303030; border: 1px solid #494949; }"
+        )
+        layout.addWidget(self.tool_stack)
         layout.addWidget(self.view, 1)
         layout.addWidget(sidebar_scroll)
         root = QWidget()
@@ -227,23 +241,62 @@ class MainWindow(QMainWindow):
         )
         self.region_control.currentIndexChanged.connect(self.select_region)
         self.statusBar().addPermanentWidget(self.region_control)
-        self.statusBar().addPermanentWidget(QLabel("Language"))
+        language_label = QLabel("Language")
+        language_label.setToolTip(self.language_control.toolTip())
+        self.statusBar().addPermanentWidget(language_label)
         self.statusBar().addPermanentWidget(self.language_control)
         general = make_toolbar(self, "General")
-        geometry = make_toolbar(self, "Lines and vertices", new_row=True)
-        pixels = make_toolbar(self, "Pixels", new_row=True)
+        categories = make_toolbar(self, "Tool sets", new_row=True)
+        options = make_toolbar(self, "Tool size")
         snapping = make_toolbar(self, "Snapping")
-        self.toolbars = (general, geometry, pixels, snapping)
+        geometry = make_toolbar(self, "Lines and vertices", vertical=True)
+        pixels = make_toolbar(self, "Pixels", vertical=True)
+        self.toolbars = (general, categories, options, snapping, geometry, pixels)
+        for bar in (geometry, pixels):
+            container = QWidget()
+            column = QVBoxLayout(container)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.addWidget(bar)
+            column.addStretch()
+            self.tool_stack.addWidget(container)
 
         def action(bar, title, handler, shortcut=None, compact=False):
-            item = QAction(tool_icon(title), title, self)
+            item = QAction(title, self)
+            if bar.orientation() == Qt.Orientation.Vertical:
+                item.setIcon(tool_icon(title))
+            if bar == general:
+                item.setProperty(
+                    "dale_display_key",
+                    {
+                        "Open pair": "Image + JSON",
+                        "Open project": "Open",
+                        "Save project": "Save",
+                        "Save project as…": "Save as…",
+                        "Close map": "Close",
+                        "Export PNGs": "Export",
+                        "Pan": "Hand",
+                        "Show walls": "Walls",
+                    }.get(title, title),
+                )
             item.triggered.connect(handler)
             if shortcut:
                 item.setShortcut(shortcut)
             bar.addAction(item)
-            if compact:
-                bar.widgetForAction(item).setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            if bar.orientation() == Qt.Orientation.Vertical:
+                bar.widgetForAction(item).setFixedSize(40, 40)
             return item
+
+        tool_sets = QActionGroup(self)
+        tool_sets.setExclusive(True)
+        self.tool_set_actions = {}
+        for key, title in (("geometry", "Lines and vertices"), ("pixels", "Pixels")):
+            item = action(
+                categories, title, lambda checked=False, key=key: self.select_tool_set(key)
+            )
+            item.setCheckable(True)
+            tool_sets.addAction(item)
+            self.tool_set_actions[key] = item
+        self.tool_set_actions["geometry"].setChecked(True)
 
         action(general, "Open pair", self.open_pair, "Ctrl+I")
         action(general, "Open project", self.open_project, QKeySequence.StandardKey.Open)
@@ -255,7 +308,10 @@ class MainWindow(QMainWindow):
             QKeySequence.StandardKey.SaveAs,
             compact=True,
         )
-        self.menuBar().addMenu("File").addAction(save_as)
+        self.menuBar().setToolTip("Project file menu.")
+        file_menu = self.menuBar().addMenu("File")
+        file_menu.setToolTipsVisible(True)
+        file_menu.addAction(save_as)
         action(general, "Close map", self.close_document, compact=True)
         self.export_action = action(general, "Export PNGs", self.export, "Ctrl+E")
         general.addSeparator()
@@ -270,7 +326,7 @@ class MainWindow(QMainWindow):
             (pixels, ("Erase", "Restore")),
         ):
             for mode in names:
-                item = action(bar, mode, lambda checked=False, m=mode: self.view.set_mode(m))
+                item = action(bar, mode, lambda checked=False, m=mode: self.activate_mode(m))
                 item.setCheckable(True)
                 item.setChecked(mode == "Pan")
                 modes.addAction(item)
@@ -279,8 +335,6 @@ class MainWindow(QMainWindow):
         self.walls_action = action(general, "Show walls", self.toggle_walls, compact=True)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
-        geometry.addSeparator()
-        geometry.addWidget(QLabel("Eraser (screen px)"))
         self.geometry_brush_control = QSpinBox()
         self.geometry_brush_control.setRange(1, 512)
         self.geometry_brush_control.setValue(self.view.geometry_diameter)
@@ -288,20 +342,25 @@ class MainWindow(QMainWindow):
             "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size."
         )
         self.geometry_brush_control.valueChanged.connect(self.set_geometry_brush)
-        geometry.addWidget(self.geometry_brush_control)
         pixels.addSeparator()
         action(pixels, "Remove outside", lambda: self.mask("outside"))
         action(pixels, "Remove inside", lambda: self.mask("inside"))
-        pixels.addWidget(QLabel("Brush (source px)"))
         brush = self.brush_control = QSpinBox()
         brush.setRange(1, 4096)
         brush.setValue(40)
         brush.valueChanged.connect(self.set_brush)
-        pixels.addWidget(brush)
+        self.size_stack = QStackedWidget()
+        self.size_stack.setFixedWidth(82)
+        self.size_stack.addWidget(self.geometry_brush_control)
+        self.size_stack.addWidget(brush)
+        options.addWidget(self.size_stack)
+        self.size_unit = QLabel()
+        options.addWidget(self.size_unit)
         self.snap_action = action(snapping, "Snap", self.set_snapping)
         self.snap_action.setCheckable(True)
         self.snap_action.setChecked(True)
-        snapping.addWidget(QLabel("Distance (screen px)"))
+        distance_label = QLabel("Distance (screen px)")
+        snapping.addWidget(distance_label)
         self.snap_distance = QSpinBox()
         self.snap_distance.setRange(0, 256)
         self.snap_distance.setValue(14)
@@ -309,6 +368,7 @@ class MainWindow(QMainWindow):
             "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors."
         )
         self.snap_distance.valueChanged.connect(self.set_snap_distance)
+        distance_label.setToolTip(self.snap_distance.toolTip())
         snapping.addWidget(self.snap_distance)
         self.view.size_changed.connect(self.sync_tool_sizes)
         QApplication.instance().installEventFilter(self)
@@ -338,6 +398,8 @@ class MainWindow(QMainWindow):
             ),
             "Close map": "Close the current map after offering to save its project.",
             "Snap": "Enable snapping for new lines and moved vertices; vertices take priority.",
+            "Lines and vertices": "Show the single-column line and vertex tools beside the map.",
+            "Pixels": "Show the single-column pixel editing tools beside the map.",
             "Edit points": (
                 "Click a line to insert; drag a fixed-size circle t"
                 "o move; double-click it to delete."
@@ -353,7 +415,15 @@ class MainWindow(QMainWindow):
         }
         for item in self.findChildren(QAction):
             if item.text() in tips:
-                item.setToolTip(tips[item.text()])
+                description = tips[item.text()]
+                if item in geometry.actions() or item in pixels.actions():
+                    item.setProperty("dale_tooltip_parts", [item.text(), description])
+                    item.setToolTip(item.text() + "\n" + description)
+                else:
+                    item.setToolTip(description)
+            display_key = item.property("dale_display_key")
+            if display_key:
+                item.setText(display_key)
         self.version.setToolTip(
             "Select the target Foundry generation for placement guidance and metadata."
         )
@@ -362,6 +432,23 @@ class MainWindow(QMainWindow):
                 "Source scene origin in scene pixels. Apply alignment to start a fresh session."
             )
         brush.setToolTip("Circular brush diameter in original image pixels, independent of zoom.")
+        self.view.setToolTip(
+            "Right-drag pans, wheel zooms, Ctrl+wheel changes tool size. Escape cancels a gesture."
+        )
+        self.view.horizontalScrollBar().setToolTip("Pan the map horizontally.")
+        self.view.verticalScrollBar().setToolTip("Pan the map vertically.")
+        sidebar_scroll.verticalScrollBar().setToolTip("Scroll map settings and editing help.")
+        sidebar_scroll.horizontalScrollBar().setToolTip("Scroll map settings and editing help.")
+        for control in (
+            self.version,
+            self.elevation,
+            self.origin_x,
+            self.origin_y,
+            self.gap_tolerance,
+            self.contour_offset,
+            self.junction_delete,
+        ):
+            form.labelForField(control).setToolTip(control.toolTip())
         self.set_language(self.language, persist=False)
         self.statusBar().showMessage(self.t("Ready. All editing is local."))
 
@@ -378,6 +465,7 @@ class MainWindow(QMainWindow):
         self.language_control.blockSignals(True)
         self.language_control.setCurrentIndex(1 if language == "ru" else 0)
         self.language_control.blockSignals(False)
+        prepare_control_tooltips(self)
         translate_static(
             self,
             language,
@@ -387,7 +475,12 @@ class MainWindow(QMainWindow):
                 self.placement_hint,
                 self.footer_label,
                 self.region_control,
+                self.size_unit,
             ),
+        )
+        self.update_size_unit()
+        self.region_control.setToolTip(
+            self.t("Choose all closed regions or one region to highlight and export.")
         )
         if not self.view.session:
             self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
@@ -445,6 +538,31 @@ class MainWindow(QMainWindow):
     def set_brush(self, value):
         self.view.diameter = value
         self.view.viewport().update()
+
+    def select_tool_set(self, key, activate=True):
+        self.current_tool_set = key
+        self.tool_stack.setCurrentIndex(0 if key == "geometry" else 1)
+        self.size_stack.setCurrentIndex(0 if key == "geometry" else 1)
+        self.update_size_unit()
+        self.tool_set_actions[key].setChecked(True)
+        if activate:
+            self.activate_mode(self.last_tool_modes[key])
+
+    def update_size_unit(self):
+        self.size_unit.setText(
+            self.t("Screen px" if self.current_tool_set == "geometry" else "Source px")
+        )
+        self.size_unit.setToolTip(
+            self.t("Geometry size uses screen pixels; pixel brush size uses original image pixels.")
+        )
+
+    def activate_mode(self, mode):
+        if mode != "Pan":
+            key = "pixels" if mode in ("Erase", "Restore") else "geometry"
+            self.last_tool_modes[key] = mode
+            self.select_tool_set(key, activate=False)
+        self.mode_actions[mode].setChecked(True)
+        self.view.set_mode(mode)
 
     def set_geometry_brush(self, value):
         self.view.geometry_diameter = value
@@ -578,6 +696,7 @@ class MainWindow(QMainWindow):
             "snap_distance_px": self.view.snap_distance,
             "geometry_diameter": self.view.geometry_diameter,
             "export_region": self.selected_region if self.selected_region is not None else -1,
+            "tool_set": self.current_tool_set,
         }
 
     def save_project_file(self, checked=False, save_as=False):
@@ -656,8 +775,8 @@ class MainWindow(QMainWindow):
                 0 if settings["junction_policy"] == "continue" else 1
             )
             self.view.junction_policy = settings["junction_policy"]
-            self.mode_actions[settings["mode"]].setChecked(True)
-            self.view.set_mode(settings["mode"])
+            self.select_tool_set(settings["tool_set"], activate=False)
+            self.activate_mode(settings["mode"])
             self.view.pending = list(settings["pending_closure"])
             self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
             self.view.centerOn(*settings["center"])
@@ -963,6 +1082,7 @@ class MainWindow(QMainWindow):
 def configure_application(app):
     app.setApplicationName("DALE")
     app.setStyle("Fusion")
+    apply_theme(app)
     if sys.platform == "win32" and not QFontDatabase.families():
         font_path = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "segoeui.ttf"
         if font_path.exists():

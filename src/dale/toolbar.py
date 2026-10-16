@@ -1,11 +1,12 @@
 """Native, code-drawn toolbar icons and consistent visible tool button styling."""
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QLabel, QToolBar
 
 
 def tool_icon(name):
+    name = {"Lines and vertices": "Edit points", "Pixels": "Erase"}.get(name, name)
     canvas = QPixmap(24, 24)
     canvas.fill(Qt.GlobalColor.transparent)
     painter = QPainter(canvas)
@@ -134,32 +135,74 @@ def tool_icon(name):
 
 
 STYLE = """
-QToolBar { background: #223044; border: 1px solid #52647c; spacing: 5px; padding: 5px; }
-QToolBar QLabel { color: #edf4ff; background: transparent; padding: 0 3px; }
-QToolBar QToolButton { background: #35465c; color: #f5f8ff; border: 1px solid #6d7f98;
-    border-radius: 4px; padding: 5px 7px; }
-QToolBar QToolButton:hover { background: #48617e; border-color: #a9d4ff; }
-QToolBar QToolButton:checked { background: #17699e; border: 2px solid #73ccff; padding: 4px 6px; }
-QToolBar QToolButton:pressed { background: #164f7d; }
-QToolBar QToolButton:disabled { color: #9aa8ba; background: #2c384a; border-color: #46566b; }
+QToolBar { background: #303030; border: 1px solid #494949; spacing: 4px; padding: 4px; }
+QToolBar QLabel { color: #dedede; background: transparent; padding: 0 3px; }
+QToolBar QToolButton { background: #3b3b3b; color: #ededed; border: 1px solid #606060;
+    border-radius: 2px; padding: 4px 7px; }
+QToolBar QToolButton:hover { background: #484848; border-color: #8a8a8a; }
+QToolBar QToolButton:checked { background: #485966; border: 2px solid #9aafbd; padding: 3px 6px; }
+QToolBar QToolButton:pressed { background: #252d34; }
+QToolBar QToolButton:disabled { color: #888888; background: #303030; border-color: #454545; }
 QToolBar QSpinBox, QToolBar QDoubleSpinBox, QToolBar QComboBox {
-    background: #f3f7fd; color: #172538; border: 1px solid #9dadc2;
-    border-radius: 3px; padding: 4px; min-height: 20px; }
-QToolBar::separator { background: #60718a; width: 1px; margin: 4px; }
+    background: #252525; color: #e5e5e5; border: 1px solid #5a5a5a;
+    border-radius: 2px; padding: 3px; min-height: 20px; }
+QToolBar::separator { background: #555555; width: 1px; margin: 4px; }
 """
 
+PANEL_HELP = {
+    "General": "Open, save, close, export, and navigate projects.",
+    "Tool sets": "Choose which tools appear to the left of the map.",
+    "Tool size": "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.",
+    "Snapping": "Configure snapping to existing vertices and line interiors.",
+}
 
-def make_toolbar(window, title, new_row=False):
-    if new_row:
+
+def apply_theme(app):
+    palette = QPalette()
+    for role, color in {
+        QPalette.ColorRole.Window: "#2b2b2b",
+        QPalette.ColorRole.WindowText: "#dedede",
+        QPalette.ColorRole.Base: "#202020",
+        QPalette.ColorRole.AlternateBase: "#303030",
+        QPalette.ColorRole.Text: "#e5e5e5",
+        QPalette.ColorRole.Button: "#383838",
+        QPalette.ColorRole.ButtonText: "#e5e5e5",
+        QPalette.ColorRole.Highlight: "#4f718c",
+        QPalette.ColorRole.HighlightedText: "#ffffff",
+        QPalette.ColorRole.ToolTipBase: "#444444",
+        QPalette.ColorRole.ToolTipText: "#eeeeee",
+        QPalette.ColorRole.Light: "#555555",
+        QPalette.ColorRole.Dark: "#181818",
+        QPalette.ColorRole.Mid: "#404040",
+    }.items():
+        palette.setColor(role, QColor(color))
+    app.setPalette(palette)
+    app.setStyleSheet(
+        "QToolTip { color: #eeeeee; background: #444444; border: 1px solid #777777; padding: 5px; }"
+    )
+
+
+def make_toolbar(window, title, new_row=False, vertical=False):
+    if new_row and not vertical:
         window.addToolBarBreak()
     bar = QToolBar(title, window)
     bar.setObjectName(title)
     bar.setMovable(False)
-    bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
     bar.setIconSize(QSize(22, 22))
     bar.setStyleSheet(STYLE)
-    heading = QLabel(title)
-    heading.setStyleSheet("font-weight: 600; padding: 0 7px;")
-    bar.addWidget(heading)
-    window.addToolBar(bar)
+    bar.setToolTip(PANEL_HELP.get(title, title))
+    if vertical:
+        bar.setOrientation(Qt.Orientation.Vertical)
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        bar.setIconSize(QSize(24, 24))
+        bar.setFixedWidth(52)
+        bar.setStyleSheet(STYLE + "QToolBar::separator { height: 1px; width: 38px; }")
+    elif title != "General":
+        heading = QLabel(title)
+        heading.setToolTip(PANEL_HELP.get(title, title))
+        heading.setStyleSheet("font-weight: 600; padding: 0 7px;")
+        bar.addWidget(heading)
+    if not vertical:
+        window.addToolBar(bar)
     return bar

@@ -8,7 +8,9 @@ Switch English / Russian using Language in the footer.
 Hover over buttons and settings for help. The right panel can be scrolled.
 Open JPG + JSON to start, or open a saved .dale project to continue.
 Ctrl+S saves the original files, editing operations and Undo/Redo history.
-Use the top panels for general actions, lines/vertices, pixels, and snapping.
+Top row: general text actions. Second row: tool set, size, and snapping.
+The selected tools appear left of the map as square icon-only buttons.
+Hover over any control for localized help; left tools include their names.
 Ctrl+wheel changes tool size; Alt-click adds a free closure corner.
 Closed contours are cyan, open contours are red. All lines are 2 screen pixels.
 Select a region in the footer to see its guarded dimensions and export only it.
@@ -26,7 +28,9 @@ DALE portable для Windows x64
 Наведите курсор на кнопку или параметр для подсказки. Панель прокручивается.
 Откройте JPG + JSON либо сохранённый проект .dale.
 Ctrl+S сохраняет исходники, изменения и историю отмены/повтора.
-Сверху — панели общих действий, линий/точек, пикселей и привязки.
+Первый ряд сверху — общие текстовые действия, второй — набор, размер и привязка.
+Выбранные инструменты находятся слева от карты: квадратные кнопки с иконками.
+У всех элементов есть локализованные подсказки; у инструментов — также названия.
 Ctrl + колесо меняет размер инструмента, Alt + клик добавляет угол замыкания.
 Замкнутые контуры голубые, незамкнутые красные; толщина — 2 экранных пикселя.
 Выберите область внизу окна для просмотра её габаритов и отдельного экспорта.

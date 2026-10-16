@@ -11,6 +11,7 @@
 - DALE is a local desktop image editor for Dungeon Alchemist exports used in Foundry VTT.
 - Source input is a JPG/JPEG plus Foundry scene JSON. Export is an RGBA PNG with exactly the original image dimensions and origin.
 - Never overwrite imported JPG/JSON or write temporary closure lines into Foundry JSON. Closures and brushes belong to DALE editing sessions only.
+- Automatic gap joins and signed contour offsets also remain editor-only. Distances use original image pixels, not screen pixels; exact and near T junctions must be supported.
 - Store geometry and brush coordinates in original image pixels. Preview resolution must never limit export resolution.
 - Keep geometry, import validation, and raster/export logic independent of Qt. Validate them with meaningful tests.
 - Do not claim semantic terrain recognition, real Dungeon Alchemist compatibility, or a Foundry integration test without evidence.

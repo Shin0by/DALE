@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
 from itertools import pairwise
 
-from shapely.geometry import GeometryCollection, LineString, MultiPoint
+from shapely import STRtree
+from shapely.geometry import GeometryCollection, LineString, MultiPoint, Point, box
 from shapely.ops import polygonize_full, snap, unary_union
 
-from dale.scene import Point, Segment
+from dale.scene import Point as PixelPoint
+from dale.scene import Segment
 
 
-def nearest_source(point: Point, segments: tuple[Segment, ...], tolerance: float) -> Point | None:
+def nearest_source(
+    point: PixelPoint, segments: tuple[Segment, ...], tolerance: float
+) -> PixelPoint | None:
     best = None
     best_distance = tolerance
     for a, b in segments:
@@ -33,9 +38,81 @@ class RegionAnalysis:
     area: object
     faces: int
     unresolved: tuple[Segment, ...]
+    joins: tuple[Segment, ...] = ()
 
 
-def analyze_regions(source: tuple[Segment, ...], closures: tuple = ()) -> RegionAnalysis:
+def _gap_joins(noded, tolerance: float) -> tuple[Segment, ...]:
+    lines = list(noded.geoms) if hasattr(noded, "geoms") else [noded]
+    degree = Counter(tuple(p) for line in lines for p in (line.coords[0], line.coords[-1]))
+    tips = sorted(point for point, count in degree.items() if count == 1)
+    if not tips:
+        return ()
+    direct_edges = {
+        tuple(sorted((tuple(line.coords[0]), tuple(line.coords[-1])))) for line in lines
+    }
+    tip_tree = STRtree([Point(point) for point in tips])
+    proposals = set()
+    for index, p in enumerate(tips):
+        candidates = []
+        bounds = box(p[0] - tolerance, p[1] - tolerance, p[0] + tolerance, p[1] + tolerance)
+        for other in tip_tree.query(bounds):
+            q = tips[int(other)]
+            if index == other or tuple(sorted((p, q))) in direct_edges:
+                continue
+            distance = math.dist(p, q)
+            if 0 < distance <= tolerance:
+                candidates.append((distance, *sorted((p, q))))
+        if candidates:
+            proposals.add(min(candidates))
+    joins, used = [], set()
+    # Prefer endpoint pairs to projections so a small corner gap gets one bridge,
+    # rather than two projections that create an artificial sliver polygon.
+    for _, p, q in sorted(proposals):
+        if p not in used and q not in used:
+            joins.append((p, q))
+            used.update((p, q))
+
+    line_tree = STRtree(lines)
+    projections = []
+    for p in tips:
+        if p in used:
+            continue
+        point = Point(p)
+        candidates = []
+        bounds = box(p[0] - tolerance, p[1] - tolerance, p[0] + tolerance, p[1] + tolerance)
+        for index in line_tree.query(bounds):
+            line = lines[int(index)]
+            distance = line.distance(point)
+            if distance <= 1e-7 or distance > tolerance:
+                continue
+            target = line.interpolate(line.project(point))
+            q = (target.x, target.y)
+            if q in used:
+                continue
+            candidates.append((distance, p, q))
+        if candidates:
+            projections.append(min(candidates))
+    for _, p, q in sorted(projections):
+        if p not in used and q not in used:
+            joins.append((p, q))
+            used.update((p, q))
+    return tuple(joins)
+
+
+def offset_region(area, offset: float):
+    if not math.isfinite(offset):
+        raise ValueError("Contour offset must be finite.")
+    result = area.buffer(offset, join_style="mitre") if offset else area
+    if result.is_empty:
+        raise ValueError("No enclosed area remains. Reduce the inward offset or close a boundary.")
+    return result
+
+
+def analyze_regions(
+    source: tuple[Segment, ...], closures: tuple = (), gap_tolerance: float = 0.0
+) -> RegionAnalysis:
+    if not math.isfinite(gap_tolerance) or gap_tolerance < 0:
+        raise ValueError("Gap tolerance must be finite and nonnegative.")
     lines = [LineString(segment) for segment in source if segment[0] != segment[1]]
     anchors = [point for path in closures if path for point in (path[0], path[-1])]
     if anchors:
@@ -49,10 +126,17 @@ def analyze_regions(source: tuple[Segment, ...], closures: tuple = ()) -> Region
         return RegionAnalysis(GeometryCollection(), 0, ())
     # Noding is essential when a closure ends on the middle of a source wall.
     noded = unary_union(lines)
+    joins = _gap_joins(noded, gap_tolerance) if gap_tolerance else ()
+    if joins:
+        reference = MultiPoint([point for join in joins for point in join])
+        reconciled = [snap(line, reference, 1e-7) for line in lines]
+        noded = unary_union(reconciled + [LineString(join) for join in joins])
     polygons, cuts, dangles, invalid = polygonize_full(noded)
     unresolved = []
     for collection in (cuts, dangles, invalid):
         for line in collection.geoms:
             coords = list(line.coords)
             unresolved.extend((tuple(a), tuple(b)) for a, b in pairwise(coords))
-    return RegionAnalysis(unary_union(list(polygons.geoms)), len(polygons.geoms), tuple(unresolved))
+    return RegionAnalysis(
+        unary_union(list(polygons.geoms)), len(polygons.geoms), tuple(unresolved), joins
+    )

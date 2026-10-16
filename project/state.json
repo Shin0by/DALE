@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "prototype_ready_for_real_samples",
+  "phase": "real_samples_inspected_and_manual_ui_testing",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -13,25 +13,39 @@
     "Target 16384 pixels per side; warn above 8192; validate memory before export.",
     "Support Foundry 13 and 14 as explicit targets; keep raster export common and future scene adapters separate.",
     "Elevation dropdown: 5-ft presets, custom whole feet; record intent in PNG metadata without claiming automatic Foundry placement.",
-    "Right-button drag pans in all tools, including at fit zoom."
+    "Right-button drag pans in all tools, including at fit zoom.",
+    "Explicit gap tolerance joins free endpoints and endpoint-to-segment T junctions in native pixels; default 0 disables it.",
+    "Signed contour offset expands or contracts the mask boundary without changing the PNG canvas or original JSON.",
+    "Applied masks are snapshots; setting changes preview the next mask.",
+    "Windows UI can be launched by double-clicking run.cmd; --image and --scene support preloaded manual tests."
   ],
   "validated": [
-    {"check": "unit_and_qt_event_tests", "result": "36 passed", "command": "python -m pytest -q"},
+    {"check": "unit_and_qt_event_tests", "result": "52 passed", "command": "python -m pytest -q"},
     {"check": "lint", "result": "passed", "command": "python -m ruff check ."},
     {"check": "visual_review", "result": "Offscreen synthetic editor screenshot inspected; text, wall overlays, closures, transparency, and elevation controls visible.", "command": "python tools/preview_demo.py"},
-    {"check": "maximum_size_synthetic_export", "dimensions": [16384, 16384], "export_seconds": 3.6, "peak_export_rss_mib": 1090, "result": "RGBA, dimensions, contour alpha, brush alpha, and elevation metadata verified.", "command": "python tools/verify_large_map.py --size 16384"}
+    {"check": "maximum_size_synthetic_export", "dimensions": [16384, 16384], "export_seconds": 3.6, "peak_export_rss_mib": 1090, "result": "RGBA, dimensions, contour alpha, brush alpha, and elevation metadata verified.", "command": "python tools/verify_large_map.py --size 16384"},
+    {"check": "owner_sample_inspection", "pairs": 6, "dimensions": [13500, 16200], "grid_pixels": 300, "grid_distance_ft": 5, "result": "Legacy-style scene schema, zero shifts/padding, matching canvases, identical day/night wall arrays, and incomplete/open contours verified. Representative daytime overlays visually inspected.", "command": "python tools/inspect_examples.py --previews", "details": "docs/sample-formats.md"},
+    {"check": "real_image_png_export", "dimensions": [13500, 16200], "export_seconds": 24.32, "output_bytes": 680799171, "result": "RGBA, inside/outside alpha, elevation metadata, and unchanged source SHA-256 hashes verified. This is not a finished floor mask or a Foundry import test.", "command": "python tools/inspect_examples.py --verify-export village-ruin-day-lvl2"},
+    {"check": "native_ui_launch", "result": "A responding Windows window titled DALE — Floor overlay editor was launched with the real daytime upper-floor pair for owner testing. Process lifetime is not tracked as persistent project state."}
+  ],
+  "completed": [
+    {"id": "NEXT-001", "result": "Inspected all six real input pairs and validated the current zero-padding/zero-shift import profile. Real image PNG export verified; live Foundry placement remains NEXT-002."}
   ],
   "pending": [
-    {"id": "NEXT-001", "task": "Validate import, scaling, padding, and wall alignment against real owner-provided JPG/JSON pairs in examples/."},
     {"id": "NEXT-002", "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."},
     {"id": "NEXT-003", "task": "Add a portable editing-session format with source fingerprints and safe reload."},
     {"id": "NEXT-004", "task": "Evaluate selected-region masking and edge refinement after real sample review."},
-    {"id": "NEXT-005", "task": "Package a Windows executable after the editing workflow is validated."}
+    {"id": "NEXT-005", "task": "Package a Windows executable after the editing workflow is validated. The source checkout already has a double-click launcher."},
+    {"id": "NEXT-006", "task": "Reduce PNG size by compactly encoding fully transparent pixels while preserving visible pixels, dimensions, and source-based restore behavior. The real image check produced a 680,799,171-byte PNG."},
+    {"id": "NEXT-007", "task": "Design boundary reuse across aligned floors and/or free region outlines for roofs absent from their own wall JSON. Do not infer heights from filenames."}
   ],
   "limitations": [
     "No semantic terrain/object segmentation.",
     "No direct Foundry connection, scene mutation, or multi-floor scene assembly.",
     "Unknown export variants require explicit adapter work rather than guessed coordinates.",
-    "Editor history is in-memory until persistent sessions are implemented."
+    "Editor history is in-memory until persistent sessions are implemented.",
+    "Only the observed legacy zero-shift/zero-padding import profile is validated against real examples; nonzero legacy shifts remain unverified.",
+    "The current PNG encoder retains RGB under zero-alpha pixels, producing very large real-map outputs.",
+    "Gap joining repairs local geometric gaps but cannot recover missing roof/terrain semantics."
   ]
 }

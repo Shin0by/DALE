@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -30,7 +31,7 @@ from dale.canvas import MapView
 from dale.placement import Placement
 from dale.raster import ExportCancelled, export_png, load_preview
 from dale.scene import load_pair
-from dale.session import ContourMask, Session
+from dale.session import Session
 
 
 class ExportWorker(QThread):
@@ -97,18 +98,38 @@ class MainWindow(QMainWindow):
             control.setDecimals(2)
         alignment = QPushButton("Apply alignment")
         alignment.clicked.connect(self.apply_alignment)
+        self.gap_tolerance = QDoubleSpinBox()
+        self.gap_tolerance.setRange(0, 4096)
+        self.gap_tolerance.setDecimals(2)
+        self.gap_tolerance.setSingleStep(1)
+        self.gap_tolerance.setToolTip(
+            "Connect free wall ends within this distance in original image pixels. "
+            "0 disables joining."
+        )
+        self.contour_offset = QSpinBox()
+        self.contour_offset.setRange(-4096, 4096)
+        self.contour_offset.setToolTip(
+            "Original image pixels: positive expands the contour, negative shrinks it."
+        )
+        self.gap_tolerance.valueChanged.connect(self.update_contour_settings)
+        self.contour_offset.valueChanged.connect(self.update_contour_settings)
         form = QFormLayout()
         form.addRow("Target", self.version)
         form.addRow("Elevation (ft)", self.elevation)
         form.addRow("Scene origin X", self.origin_x)
         form.addRow("Scene origin Y", self.origin_y)
+        form.addRow("Join gaps up to (px)", self.gap_tolerance)
+        form.addRow("Contour offset (px)", self.contour_offset)
         sidebar = QVBoxLayout()
         sidebar.addWidget(self.info)
         sidebar.addLayout(form)
         sidebar.addWidget(alignment)
         sidebar.addWidget(self.placement_hint)
         sidebar.addWidget(
-            QLabel("Cyan: source walls\nOrange: unresolved lines\nYellow: local closures")
+            QLabel(
+                "Cyan: source walls\nOrange: unresolved lines\nYellow: local closures\n"
+                "Purple: gap joins\nGreen: offset boundary"
+            )
         )
         sidebar.addWidget(self.diagnostics)
         help_text = QLabel(
@@ -204,6 +225,15 @@ class MainWindow(QMainWindow):
         self.view.show_walls = value
         self.view.viewport().update()
 
+    def update_contour_settings(self):
+        if self.view.session:
+            self.view.session.gap_tolerance = self.gap_tolerance.value()
+            self.view.session.contour_offset = self.contour_offset.value()
+            self.refresh()
+            self.statusBar().showMessage(
+                "Contour preview updated. Apply Remove outside/inside to use these settings.", 7000
+            )
+
     def can_discard(self):
         if not self.view.session or not (
             self.view.session.operations or self.view.pending or self.view.stroke
@@ -237,10 +267,20 @@ class MainWindow(QMainWindow):
         )
         if not json_path:
             return
+        self.load_sources(Path(image_path), Path(json_path))
+
+    def load_sources(self, image_path: Path, json_path: Path):
         try:
-            source = load_pair(Path(image_path), Path(json_path))
+            source = load_pair(image_path, json_path)
             preview = load_preview(source)
-            self.view.assign(Session(source), preview)
+            self.view.assign(
+                Session(
+                    source,
+                    gap_tolerance=self.gap_tolerance.value(),
+                    contour_offset=self.contour_offset.value(),
+                ),
+                preview,
+            )
             self.origin_x.setValue(0)
             self.origin_y.setValue(0)
             self.info.setText(
@@ -258,13 +298,17 @@ class MainWindow(QMainWindow):
             self.diagnostics.setText(
                 f"Closed faces: {analysis.faces}\n"
                 f"Unresolved segments: {len(analysis.unresolved)}\n"
+                f"Gap joins: {len(analysis.joins)}\n"
                 f"Editing operations: {len(self.view.session.operations)}"
             )
 
     def apply_alignment(self):
         if self.view.session and self.can_discard():
             session = Session(
-                self.view.session.source, (self.origin_x.value(), self.origin_y.value())
+                self.view.session.source,
+                (self.origin_x.value(), self.origin_y.value()),
+                gap_tolerance=self.gap_tolerance.value(),
+                contour_offset=self.contour_offset.value(),
             )
             self.view.assign(session, self.view.preview)
             self.refresh()
@@ -306,7 +350,12 @@ class MainWindow(QMainWindow):
             != QMessageBox.StandardButton.Yes
         ):
             return
-        self.view.session.add(ContourMask(analysis.area, mode))
+        try:
+            operation = self.view.session.make_mask(mode)
+        except ValueError as exc:
+            QMessageBox.information(self, "Review contour offset", str(exc))
+            return
+        self.view.session.add(operation)
         self.refresh()
 
     def export(self):
@@ -391,8 +440,16 @@ def configure_application(app):
 
 
 def main():
-    app = QApplication(sys.argv)
+    parser = argparse.ArgumentParser(description="DALE desktop floor overlay editor")
+    parser.add_argument("--image", type=Path)
+    parser.add_argument("--scene", type=Path)
+    options = parser.parse_args()
+    if bool(options.image) != bool(options.scene):
+        parser.error("Pass both --image and --scene to open a map pair.")
+    app = QApplication([sys.argv[0]])
     configure_application(app)
     window = MainWindow()
     window.show()
+    if options.image:
+        window.load_sources(options.image, options.scene)
     sys.exit(app.exec())

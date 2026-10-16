@@ -6,13 +6,15 @@ DALE — локальный редактор, который превращае�
 
 ## Development status
 
-Initial prototype. Real Dungeon Alchemist sample validation and verification in the owner's Foundry installation are pending. The initial workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented.
+Working prototype. Six real Dungeon Alchemist pairs have been inspected and opened, and one 13,500 × 16,200 source image has passed the PNG pipeline check. Verification in the owner's Foundry installation is pending. The workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented. See [the observed export profile](docs/sample-formats.md) for sample findings and current limitations.
 
-Implemented: wall overlays, temporary snapped polyline closures, inside/outside masking, erase/restore brushes, undo/redo, right-button drag panning in every tool, Foundry 13/14 selection, and a floor-elevation dropdown with 5-ft presets and custom integer feet. PNG metadata retains elevation intent; placement in Foundry is still configured separately.
+Implemented: wall overlays, temporary snapped polyline closures, adjustable gap joining including T junctions, signed contour offsets, inside/outside masking, erase/restore brushes, undo/redo, right-button drag panning in every tool, Foundry 13/14 selection, and a floor-elevation dropdown with 5-ft presets and custom integer feet. PNG metadata retains elevation intent; placement in Foundry is still configured separately.
 
 ## Run on Windows
 
 Requires 64-bit Python 3.11 or newer.
+
+Double-click **run.cmd** to open the desktop UI. If the local environment is absent, the launcher prepares it automatically. For explicit setup or console debugging:
 
 ```powershell
 python -m venv .venv

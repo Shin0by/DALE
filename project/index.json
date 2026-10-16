@@ -9,6 +9,7 @@
     "terminology": "docs/glossary.md",
     "decisions_and_boundaries": "docs/architecture.md",
     "external_evidence": "docs/research.md",
+    "observed_export_profile": "docs/sample-formats.md",
     "user_workflow": "docs/workflow.md",
     "private_samples": "examples/README.md"
   },
@@ -24,7 +25,10 @@
     "synthetic_demo": "tools/create_demo.py",
     "repository_validation": "tools/check_repository.py",
     "visual_preview": "tools/preview_demo.py",
-    "maximum_size_smoke_check": "tools/verify_large_map.py"
+    "maximum_size_smoke_check": "tools/verify_large_map.py",
+    "private_sample_inspection": "tools/inspect_examples.py",
+    "windows_launcher": "run.cmd",
+    "environment_setup": "tools/setup.ps1"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git."
 }

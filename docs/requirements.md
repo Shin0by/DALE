@@ -25,6 +25,9 @@ Prepare aligned floor assets for a Foundry VTT map: one complete ground-level im
 | FR-013 | Target Foundry 13 and 14. | Provide an explicit target-version selector, a common PNG image path, and version-aware placement guidance. Keep future scene/tile export adapters separate where schemas differ. Initial PNG export does not create Foundry levels. |
 | FR-014 | Configure floor elevation in feet. | Editable dropdown offers presets every 5 ft, including ground and negative heights; accept manual whole-number heights at 1-ft resolution. Reject fractions. Preserve selected target/elevation in PNG metadata and filename; explain that Foundry placement must be configured separately. |
 | FR-015 | Pan with the right mouse button. | Holding and dragging the right button moves the map with the cursor in every tool, including fit zoom and brush/closure modes. Panning creates no brush stroke or closure vertex. |
+| FR-016 | Configure automatic gap joining. | Adjustable maximum gap in original image pixels; 0 disables it. Join nearby free endpoints and endpoint-to-segment T junctions. Exact T intersections work without tolerance. Show generated joins separately and retain source walls unchanged. |
+| FR-017 | Configure a signed contour offset. | A positive pixel offset expands the closed contour; a negative offset shrinks it. Preview the effective boundary, apply it to inside/outside masks, preserve PNG canvas dimensions, and refuse an inward offset that eliminates all closed areas. |
+| FR-018 | Run and test the desktop UI directly. | Double-click `run.cmd` on Windows to open DALE; set up the local Python environment if absent. Allow an image/JSON pair to be opened from command-line arguments for agent-assisted manual testing. |
 
 ## Nonfunctional requirements
 
@@ -45,3 +48,4 @@ Prepare aligned floor assets for a Foundry VTT map: one complete ground-level im
 - Visible walls/roofs/shadows can extend past JSON centerlines. Exact pixel extraction and preservation of projecting details need real samples and optional future margins.
 - Supported target generations are Foundry 13 and 14, confirmed by the owner. Exact builds, floor module configuration, Dungeon Alchemist version, export perspective, and typical available RAM still need sample-driven validation.
 - Synthetic tests establish internal correctness. Real export alignment and usability in Foundry require separate validation.
+- Six owner-provided legacy-style export pairs have now been inspected and opened. See `docs/sample-formats.md` for exact scope, geometry gaps, common-canvas checks, and the verified real-image PNG export. Live Foundry placement remains unverified.

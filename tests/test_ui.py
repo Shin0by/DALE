@@ -108,3 +108,29 @@ def test_version_and_integer_elevation_controls(app):
     with pytest.raises(ValueError, match="whole"):
         window.placement()
     window.close()
+
+
+def test_contour_controls_update_topology_and_offset_preview_at_any_zoom(app, pair_factory):
+    source = pair_factory(
+        walls=[
+            {"c": [10, 20, 60, 20]},
+            {"c": [60, 20, 60, 270]},
+            {"c": [60, 270, 10, 270]},
+            {"c": [10, 270, 10, 23]},
+        ]
+    )
+    window = MainWindow()
+    window.view.assign(Session(source), load_preview(source))
+    assert window.view.analysis.faces == 0
+    window.gap_tolerance.setValue(3)
+    assert window.view.analysis.faces == 1
+    assert len(window.view.analysis.joins) == 1
+    window.contour_offset.setValue(5)
+    assert window.view.offset_path.boundingRect().left() == 5
+    assert window.view.offset_path.boundingRect().right() == 65
+    window.view.setTransform(QTransform.fromScale(12, 12))
+    window.refresh()
+    assert window.view.session.make_mask("outside").area.bounds == (5, 15, 65, 275)
+    window.gap_tolerance.setValue(0)
+    assert window.view.analysis.faces == 0
+    window.close()

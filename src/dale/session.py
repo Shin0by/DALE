@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from dale.geometry import analyze_regions
+from dale.geometry import analyze_regions, offset_region
 from dale.scene import Point, SceneInput
 
 
@@ -36,6 +36,8 @@ class Session:
     origin: Point = (0.0, 0.0)
     operations: list[Operation] = field(default_factory=list)
     future: list[Operation] = field(default_factory=list)
+    gap_tolerance: float = 0.0
+    contour_offset: float = 0.0
 
     @property
     def walls(self):
@@ -46,7 +48,10 @@ class Session:
         return tuple(op.points for op in self.operations if isinstance(op, Closure))
 
     def analysis(self):
-        return analyze_regions(self.walls, self.closures)
+        return analyze_regions(self.walls, self.closures, self.gap_tolerance)
+
+    def make_mask(self, mode: Literal["outside", "inside"]):
+        return ContourMask(offset_region(self.analysis().area, self.contour_offset), mode)
 
     def add(self, operation: Operation):
         self.operations.append(operation)

@@ -28,6 +28,19 @@ def test_mask_brush_and_restore_apply_in_order(pair_factory):
     assert inside.getpixel((30, 50)) == 0
 
 
+@pytest.mark.parametrize("mode", ["outside", "inside"])
+def test_offset_changes_mask_in_native_pixels_and_preserves_canvas(pair_factory, mode):
+    source = pair_factory()
+    session = Session(source, contour_offset=5)
+    mask = session.make_mask(mode)
+    alpha = render_alpha(source.size, source.size, [mask])
+    assert alpha.size == source.size
+    assert alpha.getpixel((7, 100)) == (255 if mode == "outside" else 0)
+    session.contour_offset = -5
+    alpha = render_alpha(source.size, source.size, [session.make_mask(mode)])
+    assert alpha.getpixel((12, 100)) == (0 if mode == "outside" else 255)
+
+
 @pytest.mark.parametrize("fraction", [0, 0.4])
 def test_export_stripes_match_full_render_preserve_rgb_and_source(pair_factory, fraction):
     source = pair_factory()

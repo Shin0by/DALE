@@ -22,3 +22,6 @@
 | Floor elevation | height, высота этажа | Intended vertical position in integer feet; presets are spaced 5 ft apart. Separate from pixel dimensions and grid size. |
 | Scene Level | native level | Foundry 14's native per-scene level document; not the same as a v13 module's data. |
 | Placement intent | PNG placement metadata | DALE's target version and elevation recorded in PNG text chunks; Foundry does not automatically apply these values. |
+| Gap tolerance | join distance, допуск соединения | Maximum original-image distance for an automatic editor-only wall connection; 0 disables it. |
+| T junction | Т-образное соединение | A wall endpoint meets, or lies near, the interior of another segment. |
+| Contour offset | margin, отступ контура | Signed image-pixel expansion (positive) or contraction (negative) of the closed region. |

@@ -42,6 +42,28 @@ def test_unrecognized_json_does_not_silently_become_an_empty_scene(pair_factory)
         load_pair(source.image_path, source.json_path)
 
 
+def test_observed_legacy_profile_keeps_sense_zero_segments(pair_factory):
+    source = pair_factory(
+        grid=300,
+        gridDistance=5.0,
+        gridUnits="ft",
+        shiftX=0,
+        shiftY=0,
+        img=None,
+        foreground=None,
+        globalLight=True,
+        darkness=0.6,
+        walls=[{"c": [10, 20, 60, 20], "move": 1, "sense": 0, "sound": 1, "door": 0}],
+        lights=[
+            {"x": 20, "y": 30, "bright": 5.0, "dim": 10.0, "tintAlpha": 0.5, "tintColor": "#ffaa00"}
+        ],
+    )
+    assert source.image_walls() == (((10, 20), (60, 20)),)
+    assert source.raw["grid"] == 300
+    assert source.raw["walls"][0]["sense"] == 0
+    assert source.raw["lights"][0]["tintColor"] == "#ffaa00"
+
+
 def test_reject_oversized_before_decoding(tmp_path):
     path = tmp_path / "wide.jpg"
     Image.new("RGB", (MAX_SIDE + 1, 1)).save(path)

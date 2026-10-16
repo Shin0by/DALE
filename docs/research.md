@@ -31,3 +31,5 @@ The owner requires both generations. The [v13 Tile model](https://foundryvtt.com
 ## Validation still required
 
 Confirm exact owner builds for the requested Foundry 13/14 targets, JSON coordinate conventions, background offsets, actual export dimensions, and floor workflows. Verify identical-size transparent PNGs on the owner's actual Foundry clients. The initial implementation must not equate successful synthetic tests with this external validation.
+
+The six supplied real pairs have now been inspected for image dimensions, zero offsets/padding, wall/light layout, day/night geometry equality, and contour topology. Their observed legacy-style field layout is documented in [the sample profile](sample-formats.md), with an official v9 scene-model comparison and a v13 wall-schema comparison. Real-image import/preview and one full-resolution PNG export have passed; live Foundry placement remains untested.

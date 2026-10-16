@@ -10,7 +10,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
-from dale.geometry import nearest_source
+from dale.geometry import nearest_source, offset_region
 from dale.raster import render_preview
 from dale.session import Closure, Stroke
 
@@ -69,6 +69,8 @@ class MapView(QGraphicsView):
         self.walls = ()
         self.original_path = QPainterPath()
         self.warning_path = QPainterPath()
+        self.join_path = QPainterPath()
+        self.offset_path = QPainterPath()
         self.render_timer = QTimer(self)
         self.render_timer.setSingleShot(True)
         self.render_timer.setInterval(35)
@@ -104,10 +106,21 @@ class MapView(QGraphicsView):
     def refresh(self):
         if not self.session:
             return
-        key = self.session.closures
+        key = self.session.closures, self.session.gap_tolerance, self.session.contour_offset
         if key != self.geometry_key:
             self.analysis = self.session.analysis()
             self.warning_path = line_path(self.analysis.unresolved)
+            self.join_path = line_path(self.analysis.joins)
+            self.offset_path = QPainterPath()
+            if self.session.contour_offset and self.analysis.faces:
+                try:
+                    area = offset_region(self.analysis.area, self.session.contour_offset)
+                    polygons = [area] if area.geom_type == "Polygon" else area.geoms
+                    for polygon in polygons:
+                        for ring in (polygon.exterior, *polygon.interiors):
+                            self.offset_path.addPath(line_path(pairwise(ring.coords)))
+                except ValueError:
+                    pass  # The mask action reports an offset that erases all enclosed areas.
             self.geometry_key = key
         self.update_image()
 
@@ -265,6 +278,10 @@ class MapView(QGraphicsView):
             painter.drawPath(self.original_path)
             painter.setPen(pen("#ff9d54", 2, True))
             painter.drawPath(self.warning_path)
+            painter.setPen(pen("#cf97ff", 3, True))
+            painter.drawPath(self.join_path)
+            painter.setPen(pen("#91ee9b", 2, True))
+            painter.drawPath(self.offset_path)
             painter.setPen(pen("#ffe071", 2, True))
             for points in self.session.closures:
                 painter.drawPath(line_path(pairwise(points)))

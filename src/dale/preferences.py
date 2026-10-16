@@ -5,6 +5,17 @@ import os
 import sys
 from pathlib import Path
 
+TOOL_VALUE_RANGES = {
+    "line_eraser_diameter": (1, 512, 24),
+    "vertex_eraser_diameter": (1, 512, 24),
+    "raster_erase_diameter": (1, 4096, 40),
+    "raster_restore_diameter": (1, 4096, 40),
+    "auto_close_distance_px": (1, 256, 14),
+    "global_close_distance_px": (1, 256, 14),
+    "snap_distance_px": (0, 256, 14),
+    "artwork_offset_px": (-4096, 4096, 0),
+}
+
 
 def settings_path() -> Path:
     if os.environ.get("DALE_SETTINGS_PATH"):
@@ -46,6 +57,33 @@ def save_language(path: Path, language: str):
 
 def save_foundry_major(path: Path, foundry_major: int):
     _save(path, foundry_major=foundry_major)
+
+
+def load_tool_values(path: Path) -> dict[str, int]:
+    stored = _load(path).get("tool_values", {})
+    if not isinstance(stored, dict):
+        stored = {}
+    return {
+        key: value if type(value := stored.get(key)) is int and low <= value <= high else default
+        for key, (low, high, default) in TOOL_VALUE_RANGES.items()
+    }
+
+
+def save_tool_value(path: Path, key: str, value: int):
+    low, high, _ = TOOL_VALUE_RANGES[key]
+    if type(value) is not int or not low <= value <= high:
+        raise ValueError("Tool value is outside its supported integer range.")
+    values = load_tool_values(path)
+    values[key] = value
+    _save(path, tool_values=values)
+
+
+def load_global_tool_settings(path: Path) -> bool:
+    return _load(path).get("global_tool_settings") is True
+
+
+def save_global_tool_settings(path: Path, enabled: bool):
+    _save(path, global_tool_settings=enabled)
 
 
 def load_move_related(path: Path) -> bool | None:

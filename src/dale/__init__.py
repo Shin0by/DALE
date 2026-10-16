@@ -1,6 +1,6 @@
 """DALE: local wall-guided transparency editing."""
 
-__version__ = "0.3.16"
+__version__ = "0.3.17"
 
 
 def application_title():

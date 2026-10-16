@@ -17,6 +17,85 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Window shortcuts": "Общие горячие клавиши",
+    "Scroll the available shortcuts for the current tool and window.": (
+        "Прокрутить доступные горячие клавиши текущего инструмента и окна."
+    ),
+    "Project": "Проект",
+    "Left-drag: pan the map.": "Левая кнопка с перетаскиванием: перемещение карты.",
+    "Right-drag: pan the map.": "Правая кнопка с перетаскиванием: перемещение карты.",
+    "Wheel: zoom at cursor.": "Колесо: масштаб карты у курсора.",
+    "Click a line: insert a contour point. Drag a circle: move it.": (
+        "Клик по линии: добавить точку контура. Тяните кружок для перемещения."
+    ),
+    "Double-click a circle: delete the point. Alt-drag: follow the line vector.": (
+        "Двойной клик по кружку: удалить точку. Alt при перетаскивании: вдоль линии."
+    ),
+    "Press, drag, release: draw a contour line.": "Нажать, тянуть, отпустить: новая линия контура.",
+    "Hover: preview contour connections. Click: review and apply.": (
+        "Наведение: предпросмотр замыкания контуров. Клик: подтверждение и применение."
+    ),
+    "Drag the circle: erase highlighted contour lines.": (
+        "Тяните круг: стереть подсвеченные линии контура."
+    ),
+    "Drag the circle: erase highlighted contour points.": (
+        "Тяните круг: стереть подсвеченные точки контура."
+    ),
+    "Click a region: select/deselect. Empty click: clear selection.": (
+        "Клик по области: выбрать/снять выбор. Клик по пустому месту: снять выделение."
+    ),
+    "Drag selected regions: move. Ctrl+wheel: scale.": (
+        "Тяните выбранные области для перемещения. Ctrl+колесо: масштабирование."
+    ),
+    "Right-click the tool button: configure connected lines.": (
+        "Правый клик по кнопке инструмента: настройка связанных линий."
+    ),
+    "Wheel: rotate selected regions by 0.1 degrees around their common center.": (
+        "Колесо: вращение выбранных областей на 0,1° вокруг общего центра."
+    ),
+    "Drag: erase raster pixels.": "Тяните мышь: стирание пикселей растра.",
+    "Drag: restore raster pixels.": "Тяните мышь: восстановление пикселей растра.",
+    "Undo: {undo} | Redo: {redo}": "Отменить: {undo} | Повторить: {redo}",
+    "Clear selection: {keys}": "Снять выделение: {keys}",
+    "Store settings globally": "Хранить настройки глобально",
+    "Otherwise, tool values are stored in the project file.": (
+        "Иначе значения инструментов хранятся в файле проекта."
+    ),
+    (
+        "Store all numeric tool values globally. Enabling copies current values; "
+        "opening a project keeps global values. Disable to restore this project's values. "
+        "Otherwise values are stored in the project file."
+    ): (
+        "Хранить все числовые значения инструментов в общем конфиге. Включение копирует "
+        "текущие значения; открытие проекта их не заменяет. Снимите галочку, чтобы "
+        "восстановить значения этого проекта. Иначе настройки хранятся в файле проекта."
+    ),
+    "Clear selection": "Снять выделение",
+    (
+        "Clear selected regions and contour highlights. "
+        "Cancel the current gesture without changing saved geometry or raster."
+    ): (
+        "Снять выделение областей и подсветку контуров. "
+        "Отменить текущий жест без изменения сохранённой геометрии и растра."
+    ),
+    "Tool values changed; preferences could not be written.": (
+        "Значения инструментов изменены, но сохранить настройки не удалось."
+    ),
+    "Export regions": "Экспорт областей",
+    "Auto-close contours": "Автозамыкание контуров",
+    "Edit contour points": "Точки контура",
+    "New contour line": "Новая линия контура",
+    "Erase contour lines": "Ластик линий контура",
+    "Erase contour points": "Ластик точек контура",
+    "Contour snapping (px)": "Прилипание контура (px)",
+    "Region artwork offset (px)": "Отступ изображения областей (px)",
+    "Erase raster pixels": "Ластик растра",
+    "Restore raster pixels": "Восстановление растра",
+    "Erase raster outside contours": "Стереть растр вне контуров",
+    "Erase raster inside contours": "Стереть растр внутри контуров",
+    "Contour line eraser diameter (px)": "Диаметр ластика линий контура (px)",
+    "Contour point eraser diameter (px)": "Диаметр ластика точек контура (px)",
+    "Contour auto-close distance (px)": "Допуск автозамыкания контуров (px)",
     "Import wall JSON": "Импорт JSON стен",
     "JSON or DALE projects (*.json *.dale)": "JSON или проекты DALE (*.json *.dale)",
     "JSON files in DALE project": "Файлы JSON в проекте DALE",
@@ -92,7 +171,7 @@ RUSSIAN = {
     ),
     ("Information"): ("Информация"),
     ("Settings"): ("Настройки"),
-    ("Close all contours"): ("Замкнуть всю карту"),
+    ("Close all contours"): ("Замкнуть все контуры"),
     ("Whole-map close distance (px)"): ("Допуск замыкания всей карты (px)"),
     (
         "Extend eligible lines across the whole map after confirmation. Distanc"
@@ -123,7 +202,7 @@ RUSSIAN = {
         "Клик выбирает минимальную замкнутую область под курсором или снимает е"
         "ё выделение. Клик по пустому месту очищает выбор."
     ),
-    ("Export selected regions"): ("Экспорт выбранных"),
+    ("Export selected regions"): ("Экспорт выбранных областей"),
     ("Export only the highlighted regions as separate PNGs."): (
         "Экспортировать только выделенные области отдельными PNG."
     ),
@@ -203,7 +282,7 @@ RUSSIAN = {
     ("The selected region lies outside the source image."): (
         "Выбранная область находится вне исходного изображения."
     ),
-    "Auto-close": "Автозамыкание",
+    "Auto-close": "Автозамыкание контуров",
     "Auto-close distance (px)": "Дальность автоприлипания (px)",
     "Ctrl+wheel: change the auto-close distance.": (
         "Ctrl + колесо: изменить дальность автоприлипания."
@@ -325,9 +404,9 @@ RUSSIAN = {
     "Lines and vertices": "Линии и точки",
     "Pixels": "Пиксели",
     "Snapping": "Прилипание",
-    "New line": "Новая линия",
-    "Erase lines": "Ластик линий",
-    "Erase vertices": "Ластик точек",
+    "New line": "Новая линия контура",
+    "Erase lines": "Ластик линий контура",
+    "Erase vertices": "Ластик точек контура",
     "Close map": "Закрыть карту",
     "Snap": "Прилипание",
     "Eraser (screen px)": "Диаметр (экранные px)",
@@ -455,11 +534,11 @@ RUSSIAN = {
     "Export PNGs": "Экспорт PNG",
     "File": "Файл",
     "Pan": "Перемещение",
-    "Edit points": "Точки",
-    "Erase": "Ластик",
-    "Restore": "Восстановление",
-    "Remove outside": "Удалить снаружи",
-    "Remove inside": "Удалить внутри",
+    "Edit points": "Точки контура",
+    "Erase": "Ластик растра",
+    "Restore": "Восстановление растра",
+    "Remove outside": "Стереть растр вне контуров",
+    "Remove inside": "Стереть растр внутри контуров",
     "Undo": "Отменить",
     "Redo": "Повторить",
     "Fit": "Вся карта",

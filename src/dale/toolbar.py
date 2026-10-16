@@ -285,20 +285,20 @@ class SizedToolButton(QToolButton):
         )
 
     def set_help(self, language):
-        tool_name = self.defaultAction().property("dale_tooltip_parts")[0]
+        tool_name = self.defaultAction().property("dale_tool_key")
         title, description, modifier = {
             "Erase lines": (
-                "Line eraser diameter (px)",
+                "Contour line eraser diameter (px)",
                 "This tool keeps its own diameter in screen pixels.",
                 "Ctrl+wheel: change this tool's diameter.",
             ),
             "Erase vertices": (
-                "Vertex eraser diameter (px)",
+                "Contour point eraser diameter (px)",
                 "This tool keeps its own diameter in screen pixels.",
                 "Ctrl+wheel: change this tool's diameter.",
             ),
             "Auto-close": (
-                "Auto-close distance (px)",
+                "Contour auto-close distance (px)",
                 "Independent distance in screen pixels; ordinary snapping is unchanged.",
                 "Ctrl+wheel: change the auto-close distance.",
             ),
@@ -319,7 +319,7 @@ class SizedToolButton(QToolButton):
                 "Ctrl+wheel: change this tool's diameter.",
             ),
             "Snapping (px)": (
-                "Snapping (px)",
+                "Contour snapping (px)",
                 (
                     "Distance to existing vertices or lines. Vertices take priority. Click "
                     "the icon to toggle snapping."
@@ -327,7 +327,7 @@ class SizedToolButton(QToolButton):
                 "Ctrl+wheel: change this value.",
             ),
             "Artwork offset (px)": (
-                "Artwork offset (px)",
+                "Region artwork offset (px)",
                 (
                     "Keep source JPG pixels beyond the lines. Positive expands the artwork; "
                     "negative cuts inward."
@@ -349,7 +349,11 @@ class SizedToolButton(QToolButton):
             (self.decrease_button, "Decrease by 1 px."),
             (self.increase_button, "Increase by 1 px."),
         ):
-            parts = [tool_name, description, modifier]
+            parts = [
+                self.defaultAction().property("dale_display_key") or tool_name,
+                description,
+                modifier,
+            ]
             button.setProperty("dale_tooltip_parts", parts)
             button.setToolTip("\n".join(translate(part, language) for part in parts))
 

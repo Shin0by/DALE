@@ -5,9 +5,14 @@ Open DALE.exe; keep the whole folder including _internal. No Python needed.
 JPG + JSON opens a map; Open resumes a current-format .dale project.
 JSON replaces walls for current JPG: open JSON directly or select from a .dale document list.
 Old project formats are not supported.
-Sets: Contours / Regions / Raster. Right Information/Settings include Language.
+Sets: Contours / Regions / Raster. Right: Project, Regions, Settings, Information.
+Project shows map/file data; Regions has selection; bottom Information shows active gestures
+and every available window shortcut, including Undo/Redo, file commands, Fit and clear selection.
 Right-drag pans; wheel zooms. Hover help explains tools and shortcuts.
 Sizes/tolerances are inside tool buttons; Ctrl+wheel changes them.
+All eight numeric values save in the project. Store settings globally copies current values
+to UserData/settings.json; enabled globals survive opening projects. Disable to restore project values.
+Clear selection follows Hand; Ctrl+Shift+A clears selected regions and contour highlights.
 Auto-close and Close all contours show white previews and Cancel / Yes confirmation.
 Regions selects individual cells. Move regions drags geometry only; Ctrl+wheel scales;
 Select Rotate regions, then ordinary wheel rotates 0.1 degree around common center.
@@ -26,9 +31,14 @@ Preserve projects during updates. Open editors retain their version until restar
 JPG + JSON открывает карту; Открыть — проект .dale текущего формата.
 JSON заменяет разметку JPG: обычный JSON или выбор из списка файлов пакета .dale.
 Старые форматы проектов не поддерживаются.
-Наборы: Контуры / Области / Растр. Справа Информация и Настройки с выбором языка.
+Наборы: Контуры / Области / Растр. Справа Проект, Области, Настройки, Информация.
+В Проекте — данные файла и карты; в Областях — выбор. Нижняя Информация показывает
+действия текущего инструмента и общие горячие клавиши, включая Ctrl+Z и Ctrl+Y.
 Правая кнопка перемещает карту; колесо меняет масштаб. Подсказки поясняют горячие клавиши.
 Размеры и допуски встроены в кнопки; Ctrl+колесо меняет их.
+Все восемь числовых значений хранятся в проекте. «Хранить настройки глобально» копирует
+текущие значения в UserData/settings.json; открытие проекта их не заменяет. Снятие галочки
+возвращает значения проекта. «Снять выделение» после «Руки»; Ctrl+Shift+A.
 Автозамыкание и Замкнуть всю карту показывают белый кант и подтверждение Отмена / Да.
 Области выбираются по отдельности. Перемещение меняет только контуры:
 Ctrl+колесо — масштабирование. Кнопка Вращение областей — обычное колесо по 0,1°.

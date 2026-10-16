@@ -417,7 +417,7 @@ def test_whole_map_close_uses_its_own_distance_and_one_confirmed_undo_step(app, 
     assert not window.statusBar().isVisible()
     assert window.information_group.title() == "Информация"
     assert window.settings_group.title() == "Настройки"
-    assert window.map_info.parentWidget() == window.information_group
+    assert window.map_info.parentWidget() == window.project_group
     window.saved_state = window.document_state()
     window.close()
 
@@ -886,7 +886,7 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
 def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_path):
     window = MainWindow(preferences_path=tmp_path / "language.json")
     assert window.language == "ru"
-    assert window.mode_actions["Edit points"].text() == "Точки"
+    assert window.mode_actions["Edit points"].text() == "Точки контура"
     assert "Клик" in window.mode_actions["Edit points"].toolTip()
     assert "Escape" in window.mode_actions["Edit points"].toolTip()
     assert "Ctrl" in window.geometry_eraser_tiles["Erase lines"].toolTip()
@@ -895,7 +895,7 @@ def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_p
     assert "Ctrl+E" in window.export_action.toolTip()
     assert "Горячие клавиши" in window.export_action.toolTip()
     window.language_control.setCurrentIndex(0)
-    assert window.mode_actions["Edit points"].text() == "Edit points"
+    assert window.mode_actions["Edit points"].text() == "Edit contour points"
     assert "Click a line" in window.mode_actions["Edit points"].toolTip()
     assert "Shortcut: Ctrl+E" in window.export_action.toolTip()
     window.mode_actions["Edit points"].trigger()
@@ -1107,4 +1107,168 @@ def test_artwork_control_is_left_and_global_padding_is_absent(app, pair_factory)
     window.contour_offset.setValue(5)
     assert "62 × 262" in window.map_info.text()
     window.saved_state = window.document_state()
+    window.close()
+
+
+def test_global_tool_values_copy_and_restore_every_numeric_button_after_restart(app, tmp_path):
+    path = tmp_path / "global.json"
+    window = MainWindow(preferences_path=path)
+    expected = {
+        "line_eraser_diameter": 31,
+        "vertex_eraser_diameter": 47,
+        "raster_erase_diameter": 59,
+        "raster_restore_diameter": 83,
+        "auto_close_distance_px": 29,
+        "global_close_distance_px": 61,
+        "snap_distance_px": 17,
+        "artwork_offset_px": -4,
+    }
+    assert not window.global_tools_control.isChecked()
+    for key, value in expected.items():
+        window.tool_value_controls[key].setValue(value)
+    window.global_tools_control.setChecked(True)
+    assert json.loads(path.read_text())["tool_values"] == expected
+    QTest.mouseClick(
+        window.sized_tools["Close all contours"].increase_button, Qt.MouseButton.LeftButton
+    )
+    expected["global_close_distance_px"] += 1
+    assert json.loads(path.read_text())["tool_values"] == expected
+    window.activate_mode("Erase")
+    wheel = QWheelEvent(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(),
+        QPoint(0, 120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.ControlModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    QApplication.sendEvent(window.view.viewport(), wheel)
+    expected["raster_erase_diameter"] = window.brush_control.value()
+    assert expected["raster_erase_diameter"] > 59
+    assert json.loads(path.read_text())["tool_values"] == expected
+    window.close()
+    restored = MainWindow(preferences_path=path)
+    assert restored.global_tools_control.isChecked()
+    assert restored.current_tool_values() == expected
+    assert restored.view.raster_diameters == {
+        "Erase": expected["raster_erase_diameter"],
+        "Restore": 83,
+    }
+    assert restored.view.geometry_diameters == {"Erase lines": 31, "Erase vertices": 47}
+    assert restored.view.snap_distance == 17 and restored.view.auto_close_distance == 29
+    restored.close()
+
+
+def test_global_settings_override_project_until_unchecked_and_do_not_overwrite_it(
+    app, pair_factory, tmp_path
+):
+    source = pair_factory()
+    project = MainWindow(preferences_path=tmp_path / "project-settings.json")
+    project.load_sources(source.image_path, source.json_path)
+    for i, control in enumerate(project.tool_value_controls.values()):
+        control.setValue(i + 21 if control is not project.contour_offset else 2)
+    expected_project = project.current_tool_values()
+    project.project_path = tmp_path / "values.dale"
+    assert project.save_project_file()
+    project.close()
+
+    path = tmp_path / "global-settings.json"
+    window = MainWindow(preferences_path=path)
+    for i, control in enumerate(window.tool_value_controls.values()):
+        control.setValue(i + 41 if control is not window.contour_offset else 7)
+    expected_global = window.current_tool_values()
+    window.global_tools_control.setChecked(True)
+    assert window.load_project_file(project.project_path)
+    assert window.current_tool_values() == expected_global
+    assert window.view.session.contour_offset == 7
+    assert window._project_tool_values == expected_project
+    window.project_path = tmp_path / "saved-with-globals.dale"
+    assert window.save_project_file()
+    with load_project(window.project_path) as saved:
+        assert saved.session.contour_offset == 2
+        for key, value in expected_project.items():
+            if key != "artwork_offset_px":
+                assert saved.ui_state[key] == value
+    window.global_tools_control.setChecked(False)
+    assert window.current_tool_values() == expected_project
+    assert window.view.session.contour_offset == 2
+    assert json.loads(path.read_text())["tool_values"] == expected_global
+    assert json.loads(path.read_text())["global_tool_settings"] is False
+    window.saved_state = window.document_state()
+    window.close()
+
+
+def test_clear_selection_follows_hand_and_clears_regions_and_contour_highlights(app, pair_factory):
+    source = pair_factory()
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select regions")
+    window.toggle_region_at((30, 100))
+    assert window.selected_regions
+    # QAction order, independent of localized labels or viewport width.
+    actions = window.toolbars[1].actions()
+    assert (
+        actions.index(window.clear_selection_action)
+        == actions.index(window.mode_actions["Pan"]) + 1
+    )
+    before = window.view.session.geometry(), tuple(window.view.session.operations)
+    window.clear_selection_action.trigger()
+    assert window.selected_regions == () and window.view.selected_path.isEmpty()
+    window.activate_mode("Edit points")
+    window.view.cursor_point = (10, 100)
+    window.view.update_hover()
+    assert window.view.highlighted_edges
+    window.clear_selection_action.trigger()
+    assert not window.view.highlighted_edges and window.view.cursor_point is None
+    assert before == (window.view.session.geometry(), tuple(window.view.session.operations))
+    assert window.view.mode == "Edit points"
+    window.close()
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(app, language):
+    window = MainWindow()
+    window.set_language(language, persist=False)
+    groups = [
+        window.sidebar_layout.itemAt(i).widget()
+        for i in range(window.sidebar_layout.count())
+        if window.sidebar_layout.itemAt(i).widget() is not None
+    ]
+    assert groups == [
+        window.project_group,
+        window.regions_group,
+        window.settings_group,
+        window.information_group,
+    ]
+    assert window.region_control.parentWidget() == window.regions_group
+    assert window.map_info.parentWidget() == window.project_group
+    assert window.information_group.isAncestorOf(window.mode_help)
+    for mode in window.mode_actions:
+        window.activate_mode(mode, prompt=False)
+        help_text = window.mode_help.text()
+        assert window.mode_actions[mode].text() in help_text
+        for keys in (
+            "Ctrl+I",
+            "Ctrl+O",
+            "Ctrl+S",
+            "Ctrl+Shift+S",
+            "Ctrl+E",
+            "Ctrl+Z",
+            "Ctrl+Y",
+            "Ctrl+Shift+A",
+            "F:",
+        ):
+            assert keys in help_text
+        if mode == "Rotate regions":
+            assert ("Колесо: вращение" if language == "ru" else "Wheel: rotate") in help_text
+            assert (
+                "Правый клик по кнопке" if language == "ru" else "Right-click the tool button"
+            ) in help_text
+            assert "Wheel: zoom" not in help_text and "Колесо: масштаб" not in help_text
+    window.export_action.setEnabled(False)
+    assert "Ctrl+E:" not in window.mode_help.text()
+    window.export_action.setEnabled(True)
+    assert "Ctrl+E:" in window.mode_help.text()
     window.close()

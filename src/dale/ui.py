@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
@@ -59,14 +60,19 @@ from dale.localization import (
 from dale.overlay_export import export_overlays, export_regions, prepare_overlay
 from dale.placement import Placement
 from dale.preferences import (
+    TOOL_VALUE_RANGES,
     load_directory,
     load_foundry_major,
+    load_global_tool_settings,
     load_language,
     load_move_related,
+    load_tool_values,
     save_directory,
     save_foundry_major,
+    save_global_tool_settings,
     save_language,
     save_move_related,
+    save_tool_value,
     settings_path,
 )
 from dale.project_io import SCHEMA_VERSION, load_project, read_json_documents, save_project
@@ -123,6 +129,11 @@ class MainWindow(QMainWindow):
     def __init__(self, preferences_path=None):
         super().__init__()
         self.preferences_path = preferences_path or settings_path()
+        self._tool_preferences_ready = False
+        self._remembered_tool_values = {}
+        self._applying_tool_values = False
+        self._project_tool_values = None
+        self.use_global_tool_settings = load_global_tool_settings(self.preferences_path)
         self.language = load_language(self.preferences_path)
         self.remembered_move_related = load_move_related(self.preferences_path)
         self.input_directory = load_directory(self.preferences_path, "input")
@@ -223,18 +234,47 @@ class MainWindow(QMainWindow):
             lambda index: self.set_language("en" if index == 0 else "ru")
         )
         form.addRow("Target", self.version)
-        form.addRow("Regions", self.region_control)
+        self.global_tools_control = QCheckBox("Store settings globally")
+        self.global_tools_control.setChecked(self.use_global_tool_settings)
+        self.global_tools_control.setToolTip(
+            "Store all numeric tool values globally. Enabling copies current values; "
+            "opening a project keeps global values. Disable to restore this project's values. "
+            "Otherwise values are stored in the project file."
+        )
+        self.global_tools_control.toggled.connect(self.set_global_tool_settings)
+        form.addRow(self.global_tools_control)
+        global_note = QLabel("Otherwise, tool values are stored in the project file.")
+        global_note.setWordWrap(True)
+        global_note.setToolTip(self.global_tools_control.toolTip())
+        form.addRow(global_note)
         form.addRow("Language", self.language_control)
         self.settings_group = QGroupBox("Settings")
         self.settings_group.setLayout(form)
+        self.project_group = QGroupBox("Project")
+        project_layout = QVBoxLayout(self.project_group)
+        for label in (self.info, self.map_info, self.diagnostics, self.feedback_label):
+            project_layout.addWidget(label)
+        self.regions_group = QGroupBox("Regions")
+        regions_layout = QVBoxLayout(self.regions_group)
+        regions_layout.addWidget(self.region_control)
         self.information_group = QGroupBox("Information")
         information_layout = QVBoxLayout(self.information_group)
-        for label in (self.info, self.map_info, self.diagnostics, self.feedback_label):
-            information_layout.addWidget(label)
+        self.mode_help = QLabel()
+        self.mode_help.setWordWrap(True)
+        help_scroll = QScrollArea()
+        help_scroll.setWidgetResizable(True)
+        help_scroll.setWidget(self.mode_help)
+        help_scroll.setMinimumHeight(160)
+        help_scroll.setMaximumHeight(240)
+        help_scroll.setToolTip("Scroll the available shortcuts for the current tool and window.")
+        information_layout.addWidget(help_scroll)
         sidebar = QVBoxLayout()
-        sidebar.addWidget(self.information_group)
+        self.sidebar_layout = sidebar
+        sidebar.addWidget(self.project_group)
+        sidebar.addWidget(self.regions_group)
         sidebar.addWidget(self.settings_group)
         sidebar.addStretch()
+        sidebar.addWidget(self.information_group)
         panel = QWidget()
         panel.setLayout(sidebar)
         sidebar_scroll = QScrollArea()
@@ -278,6 +318,22 @@ class MainWindow(QMainWindow):
 
         def action(bar, title, handler, shortcut=None):
             item = QAction(title, self)
+            item.setProperty("dale_tool_key", title)
+            display = {
+                "Auto-close": "Auto-close contours",
+                "Edit points": "Edit contour points",
+                "New line": "New contour line",
+                "Erase lines": "Erase contour lines",
+                "Erase vertices": "Erase contour points",
+                "Snapping (px)": "Contour snapping (px)",
+                "Artwork offset (px)": "Region artwork offset (px)",
+                "Erase": "Erase raster pixels",
+                "Restore": "Restore raster pixels",
+                "Remove outside": "Erase raster outside contours",
+                "Remove inside": "Erase raster inside contours",
+            }.get(title)
+            if display:
+                item.setProperty("dale_display_key", display)
             if bar.orientation() == Qt.Orientation.Vertical:
                 item.setIcon(tool_icon(title))
                 item.setProperty("dale_icon_only", True)
@@ -290,7 +346,7 @@ class MainWindow(QMainWindow):
                         "Save project": "Save",
                         "Save project as…": "Save as…",
                         "Close map": "Close",
-                        "Export PNGs": "Export",
+                        "Export PNGs": "Export regions",
                         "Pan": "Hand",
                         "Show walls": "Walls",
                     }.get(title, title),
@@ -398,6 +454,9 @@ class MainWindow(QMainWindow):
                 item.setChecked(mode == "Pan")
                 modes.addAction(item)
                 self.mode_actions[mode] = item
+        self.clear_selection_action = action(
+            categories, "Clear selection", self.clear_selection, "Ctrl+Shift+A"
+        )
         self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
         self.rotate_button = region_tools.widgetForAction(self.mode_actions["Rotate regions"])
         for mode, button in (
@@ -514,12 +573,18 @@ class MainWindow(QMainWindow):
                 "Show all walls or hide inactive geometry. "
                 "Selected regions and highlighted lines remain visible."
             ),
+            "Clear selection": (
+                "Clear selected regions and contour highlights. "
+                "Cancel the current gesture without changing saved geometry or raster."
+            ),
         }
         for item in self.findChildren(QAction):
             if item.text() in tips:
                 description = tips[item.text()]
                 parts = (
-                    [item.text(), description] if item.property("dale_icon_only") else [description]
+                    [item.property("dale_display_key") or item.text(), description]
+                    if item.property("dale_icon_only")
+                    else [description]
                 )
                 if item.text() in (
                     "New line",
@@ -555,14 +620,98 @@ class MainWindow(QMainWindow):
         for control in (
             self.version,
             self.language_control,
-            self.region_control,
         ):
             form.labelForField(control).setToolTip(control.toolTip())
+        self.initialize_tool_preferences()
+        for command in self.findChildren(QAction):
+            if not command.shortcut().isEmpty():
+                command.changed.connect(self.update_mode_help)
         self.set_language(self.language, persist=False)
         self.statusBar().showMessage(self.t("Ready. All editing is local."))
 
     def t(self, text, **values):
         return translate(text, self.language, **values)
+
+    def initialize_tool_preferences(self):
+        self.tool_value_controls = {
+            "line_eraser_diameter": self.geometry_brush_control,
+            "vertex_eraser_diameter": self.vertex_brush_control,
+            "raster_erase_diameter": self.brush_control,
+            "raster_restore_diameter": self.restore_brush_control,
+            "auto_close_distance_px": self.auto_close_control,
+            "global_close_distance_px": self.global_close_control,
+            "snap_distance_px": self.snap_distance,
+            "artwork_offset_px": self.contour_offset,
+        }
+        initial = (
+            load_tool_values(self.preferences_path)
+            if self.use_global_tool_settings
+            else {key: default for key, (_, _, default) in TOOL_VALUE_RANGES.items()}
+        )
+        for key, value in initial.items():
+            self.tool_value_controls[key].setValue(value)
+        self._remembered_tool_values = {
+            key: control.value() for key, control in self.tool_value_controls.items()
+        }
+        self._tool_preferences_ready = True
+        for control in self.tool_value_controls.values():
+            control.valueChanged.connect(self.remember_tool_values)
+
+    def remember_tool_values(self):
+        if not self._tool_preferences_ready or self._applying_tool_values:
+            return
+        if not self.use_global_tool_settings:
+            self._project_tool_values = self.current_tool_values()
+            return
+        for key, control in self.tool_value_controls.items():
+            value = control.value()
+            if self._remembered_tool_values.get(key) == value:
+                continue
+            try:
+                save_tool_value(self.preferences_path, key, value)
+                self._remembered_tool_values[key] = value
+            except OSError:
+                self.statusBar().showMessage(
+                    self.t("Tool values changed; preferences could not be written."), 7000
+                )
+
+    def current_tool_values(self):
+        return {key: control.value() for key, control in self.tool_value_controls.items()}
+
+    def apply_tool_values(self, values):
+        previous = self._applying_tool_values
+        self._applying_tool_values = True
+        try:
+            for key, value in values.items():
+                self.tool_value_controls[key].setValue(value)
+            if self.view.session:
+                self.view.session.contour_offset = values["artwork_offset_px"]
+                self.refresh()
+        finally:
+            self._applying_tool_values = previous
+
+    def set_global_tool_settings(self, enabled):
+        if enabled:
+            self._project_tool_values = self.current_tool_values()
+        self.use_global_tool_settings = enabled
+        try:
+            save_global_tool_settings(self.preferences_path, enabled)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+        if enabled:
+            self._remembered_tool_values.clear()
+            self.remember_tool_values()
+        elif self._project_tool_values is not None:
+            self.apply_tool_values(self._project_tool_values)
+
+    def clear_selection(self):
+        self.view.cancel_pending()
+        self.selected_regions = ()
+        self.view.region_pivot = None
+        self.view.cursor_point = self.view.hover_edge = None
+        self.view.update_hover()
+        self.update_map_info()
+        self.view.update_image()
 
     def set_language(self, language, persist=True):
         self.language = language
@@ -584,6 +733,7 @@ class MainWindow(QMainWindow):
                 self.placement_hint,
                 self.map_info,
                 self.region_control,
+                self.mode_help,
             ),
         )
         self.update_size_help()
@@ -593,6 +743,7 @@ class MainWindow(QMainWindow):
         if not self.view.session:
             self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.update_placement_hint()
+        self.update_mode_help()
         self.refresh()
         self.statusBar().clearMessage()
         if persist:
@@ -724,6 +875,67 @@ class MainWindow(QMainWindow):
         for tile in self.sized_tools.values():
             tile.set_help(self.language)
 
+    def update_mode_help(self):
+        mode = self.view.mode
+        instructions = {
+            "Pan": ["Left-drag: pan the map."],
+            "Edit points": [
+                "Click a line: insert a contour point. Drag a circle: move it.",
+                "Double-click a circle: delete the point. Alt-drag: follow the line vector.",
+                "Escape: cancel the current gesture.",
+            ],
+            "New line": [
+                "Press, drag, release: draw a contour line.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Auto-close": [
+                "Hover: preview contour connections. Click: review and apply.",
+                "Ctrl+wheel: change the auto-close distance.",
+            ],
+            "Erase lines": [
+                "Drag the circle: erase highlighted contour lines.",
+                "Ctrl+wheel: change this tool's diameter.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Erase vertices": [
+                "Drag the circle: erase highlighted contour points.",
+                "Ctrl+wheel: change this tool's diameter.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Select regions": ["Click a region: select/deselect. Empty click: clear selection."],
+            "Move regions": [
+                "Drag selected regions: move. Ctrl+wheel: scale.",
+                "Right-click the tool button: configure connected lines.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Rotate regions": [
+                "Wheel: rotate selected regions by 0.1 degrees around their common center.",
+                "Right-click the tool button: configure connected lines.",
+            ],
+            "Erase": [
+                "Drag: erase raster pixels.",
+                "Ctrl+wheel: change this tool's diameter.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Restore": [
+                "Drag: restore raster pixels.",
+                "Ctrl+wheel: change this tool's diameter.",
+                "Escape: cancel the current gesture.",
+            ],
+        }[mode]
+        lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
+        lines.append(self.t("Right-drag: pan the map."))
+        if mode != "Rotate regions":
+            lines.append(self.t("Wheel: zoom at cursor."))
+        lines.append("")
+        lines.append(self.t("Window shortcuts"))
+        for command in self.findChildren(QAction):
+            if not command.isEnabled() or command.shortcut().isEmpty():
+                continue
+            keys = command.shortcut().toString(QKeySequence.SequenceFormat.PortableText)
+            lines.append(f"{keys}: {command.text()}")
+        self.mode_help.setText("\n".join(lines))
+
     def configure_region_move(self, mode="Move regions"):
         dialog = QMessageBox(
             QMessageBox.Icon.Question,
@@ -792,6 +1004,7 @@ class MainWindow(QMainWindow):
         if mode == "Select regions" and self.selected_regions is None:
             self.selected_regions = ()
             self.update_map_info()
+        self.update_mode_help()
 
     def set_geometry_brush(self, mode, value):
         self.view.geometry_diameters[mode] = value
@@ -809,6 +1022,7 @@ class MainWindow(QMainWindow):
             control.blockSignals(True)
             control.setValue(value)
             control.blockSignals(False)
+        self.remember_tool_values()
 
     def set_auto_close_distance(self, value):
         self.view.auto_close_distance = value
@@ -879,6 +1093,7 @@ class MainWindow(QMainWindow):
             self.loaded_project.close()
             self.loaded_project = None
         self.project_path = self.saved_state = None
+        self._project_tool_values = None
         self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.diagnostics.clear()
         self.update_map_info()
@@ -928,7 +1143,9 @@ class MainWindow(QMainWindow):
             tuple(session.future),
             session.origin,
             session.gap_tolerance,
-            session.contour_offset,
+            self._project_tool_values["artwork_offset_px"]
+            if self.use_global_tool_settings and self._project_tool_values is not None
+            else session.contour_offset,
             self.version.currentIndex(),
             self.elevation.currentText(),
         )
@@ -979,7 +1196,18 @@ class MainWindow(QMainWindow):
                 path = path.with_name(path.name + ".dale")
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            save_project(self.view.session, path, self.ui_state())
+            project_session = self.view.session
+            project_ui = self.ui_state()
+            if self.use_global_tool_settings and self._project_tool_values is not None:
+                project_session = replace(
+                    project_session, contour_offset=self._project_tool_values["artwork_offset_px"]
+                )
+                project_ui.update(
+                    (key, value)
+                    for key, value in self._project_tool_values.items()
+                    if key != "artwork_offset_px"
+                )
+            save_project(project_session, path, project_ui)
             self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
@@ -1005,6 +1233,8 @@ class MainWindow(QMainWindow):
 
     def load_project_file(self, path):
         loaded = None
+        was_applying = self._applying_tool_values
+        self._applying_tool_values = True
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             loaded = load_project(path)
@@ -1014,25 +1244,27 @@ class MainWindow(QMainWindow):
                 self.loaded_project.close()
             self.loaded_project, loaded = loaded, None
             session, settings = self.loaded_project.session, self.loaded_project.ui_state
+            self._project_tool_values = {
+                key: session.contour_offset if key == "artwork_offset_px" else settings[key]
+                for key in TOOL_VALUE_RANGES
+            }
+            active_tool_values = (
+                self.current_tool_values()
+                if self.use_global_tool_settings
+                else self._project_tool_values
+            )
             self.set_language(settings["language"])
             controls = (self.gap_tolerance, self.contour_offset, self.origin_x, self.origin_y)
             for control in controls:
                 control.blockSignals(True)
             self.gap_tolerance.setValue(session.gap_tolerance)
-            self.contour_offset.setValue(session.contour_offset)
             self.origin_x.setValue(session.origin[0])
             self.origin_y.setValue(session.origin[1])
             for control in controls:
                 control.blockSignals(False)
             self.version.setCurrentIndex(0 if settings["foundry_major"] == 14 else 1)
             self.elevation.setCurrentText(str(settings["elevation_ft"]))
-            self.brush_control.setValue(settings["raster_erase_diameter"])
-            self.restore_brush_control.setValue(settings["raster_restore_diameter"])
-            self.geometry_brush_control.setValue(settings["line_eraser_diameter"])
-            self.vertex_brush_control.setValue(settings["vertex_eraser_diameter"])
-            self.auto_close_control.setValue(settings["auto_close_distance_px"])
-            self.global_close_control.setValue(settings["global_close_distance_px"])
-            self.snap_distance.setValue(settings["snap_distance_px"])
+            self.apply_tool_values(active_tool_values)
             self.snap_action.setChecked(settings["snap_enabled"])
             self.view.snap_enabled = settings["snap_enabled"]
             selected = settings["export_regions"]
@@ -1053,6 +1285,7 @@ class MainWindow(QMainWindow):
             self.saved_state = self.document_state()
             self.info.setText(path.name)
             self.refresh()
+            self.remember_tool_values()
             return True
         except Exception as exc:
             if loaded:
@@ -1060,6 +1293,7 @@ class MainWindow(QMainWindow):
             self.warning("Cannot open project", str(exc))
             return False
         finally:
+            self._applying_tool_values = was_applying
             QApplication.restoreOverrideCursor()
 
     def open_pair(self):
@@ -1183,6 +1417,7 @@ class MainWindow(QMainWindow):
                 ),
                 preview,
             )
+            self._project_tool_values = self.current_tool_values()
             self.origin_x.setValue(0)
             self.origin_y.setValue(0)
             self.info.setText(f"{source.image_path.name}\n" + "\n".join(source.warnings))
@@ -1560,6 +1795,9 @@ def main():
                 "show_walls": window.view.show_walls,
                 "selected_regions": window.selected_regions,
                 "artwork_offset_px": window.contour_offset.value(),
+                "global_tool_settings": window.global_tools_control.isChecked(),
+                "tool_values": window.current_tool_values(),
+                "mode_help": window.mode_help.text(),
                 "raster_diameters": window.view.raster_diameters,
                 "move_related_lines": window.view.move_related,
                 "project_schema_version": SCHEMA_VERSION,

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "foundry_semantic_research_and_exact_bicubic_alpha_export",
+  "phase": "scoped_tool_values_explicit_actions_and_context_sidebar",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -10,7 +10,7 @@
     "JPG plus Foundry 13/14 JSON; same-stem pairing. Separate JSON command imports ordinary JSON or chooses from all declared package JSON documents.",
     "No legacy support: schema 2 only; reject older/unknown archives, no migrations or old UI aliases.",
     "Every edge has stable ID, parent lineage and exact source JSON SHA256/array pointer/optional Foundry ID. Splits, merges, contacts and transforms preserve ancestry; deleted ancestors and contact markers persist in history/redo.",
-    "Two text-only top rows; Contours/Regions/Raster; one left tool column. Every numeric tool embeds its independent value. Right Information and Settings replace footer; minimum 1024x768. No visible height/origin controls or default map tooltip.",
+    "Two text-only top rows; Contours/Regions/Raster; one left tool column. Every numeric tool embeds its independent value. Right Project / Regions / Settings / Information replace footer; minimum 1024x768. No visible height/origin controls or default map tooltip.",
     "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
     "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
     "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
@@ -23,7 +23,10 @@
     "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines.",
     "Transform isolation requirement: freeze selected/optional related geometry before move/scale/rotation; do not snap, repair or extend stationary lines toward it. Owner-reported defect is pending NEXT-009, not fixed in this research task.",
     "Foundry semantic export is research only: distinct v13/v14 serializers, explicit floors/Regions/doors/teleport semantics, ordered endpoints/shapes and ID/UUID remapping. Preserve original/updated catalog separation; no legacy .dale support.",
-    "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded."
+    "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded.",
+    "All eight numeric tool values save in projects. Store settings globally defaults off; enabling copies active values to portable config, which loads first and overrides project numbers while enabled. Unchecking restores separate project values. Global-mode saving preserves the project numbers and artwork offset, not global overrides.",
+    "Clear selection follows Hand in the second top row; Ctrl+Shift+A clears selected cells/contour highlights and cancels previews without editing geometry/raster or changing mode. English/Russian action names identify regions, contours, lines/points or raster; internal keys remain stable.",
+    "Right blocks: Project (file/map/export/counts), Regions (selection dropdown), Settings (target/global scope/language), Information (current gestures and all enabled QAction shortcuts). Mode/language/action changes refresh help; Rotate regions explicitly documents wheel rotation and right-click on its button."
   ],
   "validated": [
     {
@@ -215,6 +218,11 @@
       "check": "exact_bicubic_alpha_and_left_artwork_offset",
       "result": "190 tests pass; ruff clean. Regression PNGs retain native JPG RGB, apply 300px artwork offset with/without prior outside masks, preserve eraser history, clip to JPG and use exact smoothed-alpha bounds. A fractional triangle contains real alpha 1/255; reconstructing its tight crop matches the full-canvas result byte for byte. Export stripes/crops have matching bicubic edges; empty/cancelled exports leave no output. UI checks cover the left artwork tile, absent global padding control, sidebar sizes and duplicate-free RU/EN/RU Ctrl+wheel help. Audited 82 controls through RU/EN/RU and inspected the final Regions layout at 1024x768.",
       "command": "python -m pytest -q; python -m ruff check .; python -m ruff format --check ."
+    },
+    {
+      "check": "scoped_tools_clear_selection_and_context_sidebar",
+      "result": "196 tests pass; ruff check/format clean. Qt coverage verifies all eight numeric values, copy-on-enable, arrow/Ctrl+wheel persistence and restart, global precedence on project load, restoration on uncheck, and preservation of project values during global-mode save. Clear selection is directly after Hand and clears selection/highlights without geometry/history changes. RU/EN help lists every actual enabled shortcut in all 11 modes and documents rotation wheel/right-click. Audited 86 controls through RU/EN/RU; inspected 1024x768 Regions and Rotate screenshots with separate Project/Regions/Settings/Information blocks.",
+      "command": "python -m pytest -q; python -m ruff check .; python artifacts/verify_current_ui.py; python artifacts/verify_rotation_visibility.py"
     }
   ],
   "completed": [
@@ -272,7 +280,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.16",
+  "current_version": "0.3.17",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",

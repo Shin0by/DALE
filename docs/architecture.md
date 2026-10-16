@@ -60,7 +60,7 @@ Fully transparent items are skipped, an entirely transparent set is rejected, an
 placement.json is a DALE coordinate manifest, not native Foundry import. Foundry 13/14/elevation primitives retain placement intent; actual elevation/visibility is set in Foundry.
 
 ## ADR-007: compact localized UI
-Two text-only top rows; Contours/Regions/Raster, one left column. 48x48 icons; 48x72 numeric tools with independent captions/arrows. Snapping only in Contours. Right Information/Settings replace footer; minimum 1024x768. No default map tooltip; all controls describe actual shortcuts/modifiers.
+Two text-only top rows; Contours/Regions/Raster, one left column. 48x48 icons; 48x72 numeric tools with independent captions/arrows. Snapping only in Contours. Right Project/Regions/Settings/Information replace footer; minimum 1024x768. Project holds map/file/export/counts, Regions owns the selection dropdown, Settings owns the global-scope checkbox/target/language. Bottom Information provides compact current-mode gestures and all enabled QAction shortcuts. React to mode/language/action changes and derive shortcuts from QAction; Rotate regions documents wheel and tool-button right-click without claiming wheel zoom. Help scrolls separately within a bounded container. No default map tooltip; all controls describe actual shortcuts/modifiers.
 
 Closed cyan/open pure red RGB(255,0,0). Black 3px backing + colored 1px center; white hover edges. Fixed 10-screen-pixel handles. Walls off suppresses all base geometry/offsets and inactive handles regardless of mode. Selected cells remain visible only in region tools. Hover previews carry a separate unresolved subpath, so white-edged drawing never restores all base centerlines. Explicit new-line/snap/drag/repair previews remain visible as active geometry.
 
@@ -68,6 +68,14 @@ Closed cyan/open pure red RGB(255,0,0). Black 3px backing + colored 1px center; 
 Title Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>). Every build invocation advances revision once, including failed attempts; major/minor only owner direction. Supplied ICO unchanged in Qt/PE.
 
 Refresh full root DALE/ and source hashes; preserve UserData/projects/running editors. Move locked old EXE into unique ignored storage if needed; never kill user process. Changed locked libraries may require restart.
+
+## ADR-009: numeric tool setting scope
+
+Eight values have stable preference keys: line_eraser_diameter, vertex_eraser_diameter, raster_erase_diameter, raster_restore_diameter, auto_close_distance_px, global_close_distance_px, snap_distance_px and artwork_offset_px. Validate integer ranges independently; malformed config entries use current defaults. The right Store settings globally checkbox is an application preference (global_tool_settings, default false), not a project flag.
+
+Off: current numeric values belong to the project. On: snapshot the project's current values, copy all active values into portable tool_values, then merge subsequent individual changes atomically with the existing config. Restore before opening a project; enabled global values override its numeric settings. Preserve an independent project snapshot while global values are active. Unchecking applies that snapshot, including the session's artwork offset, without changing raster/masks/history. Saving in global mode serializes a shallow session copy with the project offset and project UI numbers; never write the global override over the project's own values. A new JPG pair starts with the currently active values. Language, Foundry target, paths and related-line choice retain their existing independent policies.
+
+Qt control changes and view-driven Ctrl+wheel resizing converge on one persistence method; signal-blocked UI synchronization still records changed values. Initialization/project restoration suppress intermediate writes. Internal tool keys remain stable while explicit English/Russian labels name the affected regions, contours or raster. Clear selection cancels transient gestures, clears selected cells/pivot and hover geometry, then repaints; no committed operation is added.
 
 ## Resource and evidence boundaries
 JPG max 16384 per side; warn above 8192. Reduced preview, decoded source plus 128-row export stripes, memory preflight/cancellable worker. Source decoding is not interruptible; no bitmap undo history.

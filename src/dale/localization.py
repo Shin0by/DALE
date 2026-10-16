@@ -1,7 +1,7 @@
 """English source strings and Russian desktop translations."""
 
 from PySide6.QtCore import QTranslator
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractSpinBox,
@@ -16,8 +16,17 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Shortcut: {keys}": "Горячие клавиши: {keys}",
+    "Escape: cancel the current gesture.": "Escape: отменить текущий жест.",
+    "Ctrl+wheel: change this value.": "Ctrl + колесо: изменить это значение.",
+    "Ctrl+wheel: change this tool's diameter.": "Ctrl + колесо: диаметр этого инструмента.",
     "Snapping (px)": "Прилипание (px)",
     "Geometry eraser diameter (px)": "Диаметр ластика линий и точек (px)",
+    "Line eraser diameter (px)": "Диаметр ластика линий (px)",
+    "Vertex eraser diameter (px)": "Диаметр ластика точек (px)",
+    "This tool keeps its own diameter in screen pixels.": (
+        "Этот инструмент хранит собственный диаметр в экранных пикселях."
+    ),
     "Pixel eraser diameter (px)": "Диаметр пиксельного ластика (px)",
     "Restore brush diameter (px)": "Диаметр кисти восстановления (px)",
     "Diameter for line and vertex erasers. Ctrl+wheel changes it, independent of map zoom.": (
@@ -495,14 +504,21 @@ def translate_static(root: QWidget, language: str, excluded=()):
             for i, text in enumerate(original):
                 widget.setItemText(i, translate(text, language))
         parts = widget.property("dale_tooltip_parts")
-        if isinstance(widget, QToolButton) and widget.defaultAction() is not None:
-            parts = parts or widget.defaultAction().property("dale_tooltip_parts")
+        action = widget if isinstance(widget, QAction) else None
+        if isinstance(widget, QToolButton):
+            action = widget.defaultAction()
+            if action is not None:
+                parts = parts or action.property("dale_tooltip_parts")
         if parts:
-            widget.setToolTip("\n".join(translate(part, language) for part in parts))
-            continue
-        original = widget.property("dale_original_tooltip")
-        if original is None:
-            original = widget.toolTip()
-            widget.setProperty("dale_original_tooltip", original)
-        if original:
-            widget.setToolTip(translate(original, language))
+            tooltip = "\n".join(translate(part, language) for part in parts)
+        else:
+            original = widget.property("dale_original_tooltip")
+            if original is None:
+                original = widget.toolTip()
+                widget.setProperty("dale_original_tooltip", original)
+            tooltip = translate(original, language) if original else ""
+        if action is not None and not action.shortcut().isEmpty():
+            keys = action.shortcut().toString(QKeySequence.SequenceFormat.PortableText)
+            tooltip += "\n" + translate("Shortcut: {keys}", language, keys=keys)
+        if tooltip:
+            widget.setToolTip(tooltip)

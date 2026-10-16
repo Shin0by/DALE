@@ -183,6 +183,12 @@ def _load_ui(value):
     language = value.get("language", "ru")
     brush = number(value.get("brush_diameter", 40), "Brush diameter")
     geometry_diameter = number(value.get("geometry_diameter", 24), "Geometry eraser diameter")
+    line_diameter = number(
+        value.get("line_eraser_diameter", geometry_diameter), "Line eraser diameter"
+    )
+    vertex_diameter = number(
+        value.get("vertex_eraser_diameter", geometry_diameter), "Vertex eraser diameter"
+    )
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
     export_region = value.get("export_region", -1)
     zoom = number(value.get("zoom", 1), "Viewport zoom")
@@ -203,7 +209,13 @@ def _load_ui(value):
         raise ValueError("Invalid project interface language.")
     if tool_set not in ("geometry", "pixels"):
         raise ValueError("Invalid project tool set.")
-    if not 1 <= geometry_diameter <= 512 or not 0 <= snap_distance <= 256:
+    if (
+        any(
+            not 1 <= diameter <= 512
+            for diameter in (geometry_diameter, line_diameter, vertex_diameter)
+        )
+        or not 0 <= snap_distance <= 256
+    ):
         raise ValueError("Invalid project tool sizes or snap distance.")
     if type(export_region) is not int or not -1 <= export_region < 100_000:
         raise ValueError("Invalid project export region.")
@@ -218,6 +230,8 @@ def _load_ui(value):
         "language": language,
         "brush_diameter": int(brush),
         "geometry_diameter": int(geometry_diameter),
+        "line_eraser_diameter": int(line_diameter),
+        "vertex_eraser_diameter": int(vertex_diameter),
         "snap_distance_px": int(snap_distance),
         "snap_enabled": snap_enabled,
         "export_region": export_region,

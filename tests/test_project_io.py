@@ -33,6 +33,7 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(
             "mode": "Edit points",
             "pending_closure": [[10, 20]],
             "junction_policy": legacy_policy,
+            "geometry_diameter": 37,
         },
     )
     source.image_path.unlink()
@@ -48,6 +49,8 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(
         assert loaded.ui_state["mode"] == "Edit points"
         assert loaded.ui_state["pending_closure"] == ((10, 20),)
         assert "junction_policy" not in loaded.ui_state
+        assert loaded.ui_state["line_eraser_diameter"] == 37
+        assert loaded.ui_state["vertex_eraser_diameter"] == 37
         assert (
             render_alpha(source.size, source.size, loaded.session.operations).tobytes()
             == expected_alpha
@@ -65,6 +68,17 @@ def _rewrite(path, modify):
     with zipfile.ZipFile(path, "w") as archive:
         for name, data in members.items():
             archive.writestr(name, data)
+
+
+@pytest.mark.parametrize("field", ["line_eraser_diameter", "vertex_eraser_diameter"])
+@pytest.mark.parametrize("diameter", [0, 513])
+def test_independent_eraser_sizes_reject_out_of_range_archives(
+    pair_factory, tmp_path, field, diameter
+):
+    path = tmp_path / "invalid-size.dale"
+    save_project(Session(pair_factory()), path, {field: diameter})
+    with pytest.raises(ValueError, match="tool sizes"):
+        load_project(path)
 
 
 def test_archive_checksum_rejects_corrupted_history(pair_factory, tmp_path):

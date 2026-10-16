@@ -1,6 +1,6 @@
 """Native, code-drawn toolbar icons and consistent visible tool button styling."""
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QSpinBox,
     QStackedWidget,
+    QStyle,
+    QStyleOptionToolButton,
+    QStylePainter,
     QToolBar,
     QToolButton,
     QVBoxLayout,
@@ -271,14 +274,96 @@ class NumericToolTile(QFrame):
 
     def set_help(self, title, description, language):
         for control in (self, self.icon_button, self.editor(), self.editor().lineEdit()):
-            control.setProperty("dale_tooltip_parts", [title, description])
-            control.setToolTip(translate(title, language) + "\n" + translate(description, language))
+            parts = [title, description, "Ctrl+wheel: change this value."]
+            control.setProperty("dale_tooltip_parts", parts)
+            control.setToolTip("\n".join(translate(part, language) for part in parts))
         for button, description in (
             (self.decrease_button, "Decrease by 1 px."),
             (self.increase_button, "Increase by 1 px."),
         ):
-            button.setProperty("dale_tooltip_parts", [title, description])
-            button.setToolTip(translate(title, language) + "\n" + translate(description, language))
+            parts = [title, description, "Ctrl+wheel: change this value."]
+            button.setProperty("dale_tooltip_parts", parts)
+            button.setToolTip("\n".join(translate(part, language) for part in parts))
+
+
+class SizedToolButton(QToolButton):
+    """A 48 x 72 tool button with its diameter caption and small side arrows inside."""
+
+    def __init__(self, editor, action):
+        super().__init__()
+        self.editor_widget = editor
+        self.setDefaultAction(action)
+        self.setFixedSize(48, 72)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.setIconSize(QSize(24, 24))
+        editor.setParent(self)
+        editor.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        editor.lineEdit().setTextMargins(0, 0, 0, 0)
+        editor.setStyleSheet("""
+            QSpinBox { background: transparent; color: #dedede; border: 0; padding: 0;
+                font-size: 10px; min-height: 0; }
+            QLineEdit { background: transparent; border: 0; padding: 0; font-size: 10px; }
+        """)
+        editor.ensurePolished()
+        editor.setFixedSize(28, 18)
+        editor.move(10, 49)
+        self.decrease_button, self.increase_button = QToolButton(self), QToolButton(self)
+        for button, x, arrow, amount in (
+            (self.decrease_button, 1, Qt.ArrowType.LeftArrow, -1),
+            (self.increase_button, 38, Qt.ArrowType.RightArrow, 1),
+        ):
+            button.setArrowType(arrow)
+            button.setFixedSize(9, 18)
+            button.move(x, 49)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setStyleSheet("""
+                QToolButton { color: #969696; background: transparent; border: 0; padding: 0; }
+                QToolButton:hover { color: #cccccc; background: #505050; }
+                QToolButton:pressed { background: #252525; }
+            """)
+            button.clicked.connect(lambda checked=False, amount=amount: editor.stepBy(amount))
+
+    def editor(self):
+        return self.editor_widget
+
+    def paintEvent(self, event):
+        option = QStyleOptionToolButton()
+        self.initStyleOption(option)
+        option.icon = QIcon()
+        option.text = ""
+        painter = QStylePainter(self)
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, option)
+        self.icon().paint(
+            painter,
+            QRect(12, 12, 24, 24),
+            Qt.AlignmentFlag.AlignCenter,
+            QIcon.Mode.Normal if self.isEnabled() else QIcon.Mode.Disabled,
+            QIcon.State.On if self.isChecked() else QIcon.State.Off,
+        )
+
+    def set_help(self, language):
+        parts = [
+            *self.defaultAction().property("dale_tooltip_parts"),
+            "Line eraser diameter (px)"
+            if self.defaultAction().property("dale_tooltip_parts")[0] == "Erase lines"
+            else "Vertex eraser diameter (px)",
+            "This tool keeps its own diameter in screen pixels.",
+        ]
+        for control in (self, self.editor(), self.editor().lineEdit()):
+            control.setProperty("dale_tooltip_parts", parts)
+            control.setToolTip("\n".join(translate(part, language) for part in parts))
+        for button, description in (
+            (self.decrease_button, "Decrease by 1 px."),
+            (self.increase_button, "Increase by 1 px."),
+        ):
+            parts = [
+                self.defaultAction().property("dale_tooltip_parts")[0],
+                description,
+                "Ctrl+wheel: change this tool's diameter.",
+            ]
+            button.setProperty("dale_tooltip_parts", parts)
+            button.setToolTip("\n".join(translate(part, language) for part in parts))
 
 
 PANEL_HELP = {

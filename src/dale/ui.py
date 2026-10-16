@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from dale import __version__, application_title
-from dale.canvas import MapView, line_path
+from dale.canvas import GEOMETRY_ERASERS, MapView, line_path
 from dale.geometry import open_contour_count
 from dale.localization import (
     DesktopTranslator,
@@ -62,7 +62,14 @@ from dale.project_io import load_project, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
 from dale.session import Session
-from dale.toolbar import NumericToolTile, ToolSpinBox, apply_theme, make_toolbar, tool_icon
+from dale.toolbar import (
+    NumericToolTile,
+    SizedToolButton,
+    ToolSpinBox,
+    apply_theme,
+    make_toolbar,
+    tool_icon,
+)
 
 
 class ExportWorker(QThread):
@@ -254,6 +261,7 @@ class MainWindow(QMainWindow):
         geometry = make_toolbar(self, "Lines and vertices", vertical=True)
         pixels = make_toolbar(self, "Pixels", vertical=True)
         self.toolbars = (general, categories, geometry, pixels)
+        self.geometry_eraser_tiles = {}
         for bar in (geometry, pixels):
             container = QWidget()
             column = QVBoxLayout(container)
@@ -265,6 +273,7 @@ class MainWindow(QMainWindow):
             item = QAction(title, self)
             if bar.orientation() == Qt.Orientation.Vertical:
                 item.setIcon(tool_icon(title))
+                item.setProperty("dale_icon_only", True)
             if bar in (general, categories):
                 item.setProperty(
                     "dale_display_key",
@@ -282,8 +291,19 @@ class MainWindow(QMainWindow):
             item.triggered.connect(handler)
             if shortcut:
                 item.setShortcut(shortcut)
-            bar.addAction(item)
-            if bar.orientation() == Qt.Orientation.Vertical:
+            if title in GEOMETRY_ERASERS:
+                editor = ToolSpinBox()
+                editor.setRange(1, 512)
+                editor.setValue(self.view.geometry_diameters[title])
+                editor.valueChanged.connect(
+                    lambda value, mode=title: self.set_geometry_brush(mode, value)
+                )
+                tile = SizedToolButton(editor, item)
+                self.geometry_eraser_tiles[title] = tile
+                bar.addWidget(tile)
+            else:
+                bar.addAction(item)
+            if bar.orientation() == Qt.Orientation.Vertical and title not in GEOMETRY_ERASERS:
                 bar.widgetForAction(item).setFixedSize(48, 48)
             return item
 
@@ -336,13 +356,8 @@ class MainWindow(QMainWindow):
         self.walls_action = action(categories, "Show walls", self.toggle_walls)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
-        self.geometry_brush_control = ToolSpinBox()
-        self.geometry_brush_control.setRange(1, 512)
-        self.geometry_brush_control.setValue(self.view.geometry_diameter)
-        self.geometry_brush_control.setToolTip(
-            "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size."
-        )
-        self.geometry_brush_control.valueChanged.connect(self.set_geometry_brush)
+        self.geometry_brush_control = self.geometry_eraser_tiles["Erase lines"].editor()
+        self.vertex_brush_control = self.geometry_eraser_tiles["Erase vertices"].editor()
         pixels.addSeparator()
         action(pixels, "Remove outside", lambda: self.mask("outside"))
         action(pixels, "Remove inside", lambda: self.mask("inside"))
@@ -350,10 +365,7 @@ class MainWindow(QMainWindow):
         brush.setRange(1, 4096)
         brush.setValue(40)
         brush.valueChanged.connect(self.set_brush)
-        self.size_stack = QStackedWidget()
-        self.size_stack.addWidget(self.geometry_brush_control)
-        self.size_stack.addWidget(brush)
-        self.size_tile = NumericToolTile(self.size_stack, "Brush diameter")
+        self.size_tile = NumericToolTile(brush, "Brush diameter")
         self.tool_column.addWidget(self.size_tile, 0, Qt.AlignmentFlag.AlignHCenter)
         self.snap_action = QAction(tool_icon("Snapping (px)"), "Snapping (px)", self)
         self.snap_action.triggered.connect(self.set_snapping)
@@ -419,11 +431,23 @@ class MainWindow(QMainWindow):
         for item in self.findChildren(QAction):
             if item.text() in tips:
                 description = tips[item.text()]
-                if item in geometry.actions() or item in pixels.actions():
-                    item.setProperty("dale_tooltip_parts", [item.text(), description])
-                    item.setToolTip(item.text() + "\n" + description)
-                else:
-                    item.setToolTip(description)
+                parts = (
+                    [item.text(), description] if item.property("dale_icon_only") else [description]
+                )
+                if item.text() in (
+                    "Closure",
+                    "New line",
+                    "Edit points",
+                    "Erase lines",
+                    "Erase vertices",
+                    "Erase",
+                    "Restore",
+                ):
+                    parts.append("Escape: cancel the current gesture.")
+                if item.text() in ("Erase", "Restore", *GEOMETRY_ERASERS):
+                    parts.append("Ctrl+wheel: change this tool's diameter.")
+                item.setProperty("dale_tooltip_parts", parts)
+                item.setToolTip("\n".join(parts))
             display_key = item.property("dale_display_key")
             if display_key:
                 item.setText(display_key)
@@ -558,26 +582,21 @@ class MainWindow(QMainWindow):
         self.current_tool_set = key
         self.tool_stack.setCurrentIndex(0 if key == "geometry" else 1)
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
-        self.size_stack.setCurrentIndex(0 if key == "geometry" else 1)
         self.update_size_help()
         self.tool_set_actions[key].setChecked(True)
         if activate:
             self.activate_mode(self.last_tool_modes[key])
 
     def update_size_help(self):
-        if self.current_tool_set == "geometry":
-            title = "Geometry eraser diameter (px)"
-            description = (
-                "Diameter for line and vertex erasers. Ctrl+wheel changes it, "
-                "independent of map zoom."
-            )
-        else:
-            title = (
-                "Restore brush diameter (px)"
-                if self.last_tool_modes["pixels"] == "Restore"
-                else "Pixel eraser diameter (px)"
-            )
-            description = "Diameter in original image pixels. Ctrl+wheel changes it."
+        self.size_tile.setVisible(self.current_tool_set == "pixels")
+        for tile in self.geometry_eraser_tiles.values():
+            tile.set_help(self.language)
+        title = (
+            "Restore brush diameter (px)"
+            if self.last_tool_modes["pixels"] == "Restore"
+            else "Pixel eraser diameter (px)"
+        )
+        description = "Diameter in original image pixels. Ctrl+wheel changes it."
         self.size_tile.set_help(title, description, self.language)
 
     def activate_mode(self, mode):
@@ -588,14 +607,16 @@ class MainWindow(QMainWindow):
         self.mode_actions[mode].setChecked(True)
         self.view.set_mode(mode)
 
-    def set_geometry_brush(self, value):
-        self.view.geometry_diameter = value
+    def set_geometry_brush(self, mode, value):
+        self.view.geometry_diameters[mode] = value
+        self.sync_tool_sizes()
         self.view.viewport().update()
 
     def sync_tool_sizes(self):
         for control, value in (
             (self.brush_control, self.view.diameter),
-            (self.geometry_brush_control, self.view.geometry_diameter),
+            (self.geometry_brush_control, self.view.geometry_diameters["Erase lines"]),
+            (self.vertex_brush_control, self.view.geometry_diameters["Erase vertices"]),
         ):
             control.blockSignals(True)
             control.setValue(value)
@@ -624,12 +645,13 @@ class MainWindow(QMainWindow):
                 sizeable = (
                     self.brush_control,
                     self.geometry_brush_control,
+                    self.vertex_brush_control,
                     self.snap_distance,
                     self.gap_tolerance,
                     self.contour_offset,
                 )
                 while control is not None and control not in sizeable:
-                    if isinstance(control, NumericToolTile):
+                    if isinstance(control, (NumericToolTile, SizedToolButton)):
                         control = control.editor()
                         break
                     control = control.parentWidget()
@@ -720,6 +742,8 @@ class MainWindow(QMainWindow):
             "snap_enabled": self.view.snap_enabled,
             "snap_distance_px": self.view.snap_distance,
             "geometry_diameter": self.view.geometry_diameter,
+            "line_eraser_diameter": self.view.geometry_diameters["Erase lines"],
+            "vertex_eraser_diameter": self.view.geometry_diameters["Erase vertices"],
             "export_region": self.selected_region if self.selected_region is not None else -1,
             "tool_set": self.current_tool_set,
         }
@@ -787,7 +811,8 @@ class MainWindow(QMainWindow):
             self.version.setCurrentIndex(0 if settings["foundry_major"] == 14 else 1)
             self.elevation.setCurrentText(str(settings["elevation_ft"]))
             self.brush_control.setValue(settings["brush_diameter"])
-            self.geometry_brush_control.setValue(settings["geometry_diameter"])
+            self.geometry_brush_control.setValue(settings["line_eraser_diameter"])
+            self.vertex_brush_control.setValue(settings["vertex_eraser_diameter"])
             self.snap_distance.setValue(settings["snap_distance_px"])
             self.snap_action.setChecked(settings["snap_enabled"])
             self.view.snap_enabled = settings["snap_enabled"]
@@ -1135,6 +1160,7 @@ def main():
                 "version": __version__,
                 "window_title": window.windowTitle(),
                 "window_icon_loaded": not window.windowIcon().isNull(),
+                "geometry_eraser_diameters": window.view.geometry_diameters,
                 "language": window.language,
                 "foundry_major": window.placement().foundry_major,
                 "window_visible": window.isVisible(),

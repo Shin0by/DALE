@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "ordinary_geometry_editing",
+  "phase": "embedded_independent_eraser_sizes",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -22,9 +22,9 @@
     "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
     "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow.",
     "Latest color instruction: closed geometry cyan, open lines pure RGB (255, 0, 0) red; 3-screen-pixel cosmetic strokes with a black backing and 1-pixel color center. Supersedes prior thickness and diagnostic colors.",
-    "Two text-only top rows: unframed general commands, then geometry/pixel set selection plus Hand/Fit/Walls. Left square icon tools followed by double-height diameter and Snapping (px) tiles with centered inputs and visible minus/plus buttons; Russian term is Прилипание (px).",
+    "Two text-only top rows: general commands, then tool sets plus Hand/Fit/Walls. Left ordinary tools are 48x48; separate line/vertex eraser buttons are 48x72 with small editable diameter captions and gray side arrows below their icons. Pixel size and Snapping (px) retain separate tiles; geometry has no standalone size tile.",
     "New line uses press/drag/release; snapping radius 0-256 screen pixels, default 14, prioritizes vertices and excludes self-edges on movement.",
-    "Circular geometry erasers remove touched edges or vertices across swept drags, commit one undo step, and support Escape cancellation. Geometry diameter uses screen pixels; raster diameter uses source pixels.",
+    "Circular line and vertex erasers keep independent diameters (1-512 screen pixels, default 24), sweep drags, commit one undo step, and support Escape cancellation. Raster size uses source pixels.",
     "Ctrl+wheel changes active tool size globally; over size/distance controls it adjusts that control. Alt-click adds free closure corners.",
     "Single-row footer shows map dimensions, current closed/open component counts, crop dimensions including 3-pixel guards, region selection, and language. Minimum window is 1024 x 768; open counts remain connected unresolved groups.",
     "Optional project UI fields retain snapping, geometry size, mode, and export selection; older schema-1 archives load with defaults.",
@@ -32,7 +32,9 @@
     "Persist selected Foundry major (13/14) and language together in portable UserData/settings.json using merged atomic writes. Project loading restores and remembers its target version.",
     "Use the fixed English window title Dungeon Alchemist Levels Export with padded major/minor/revision display. Every Windows build invocation advances only revision automatically; major/minor require explicit owner instruction.",
     "Use the owner-supplied favicon.ico unchanged for Qt windows and the Windows EXE icon. Preserve shin0by.png as the original artwork reference and package both formats with source hashes.",
-    "Retire the dedicated junction deletion selector and policy. Ordinary wall points reconnect two neighbors; branching wall points remove incident edges without choosing a main continuation. Older archive junction_policy fields are ignored and omitted from new UI state."
+    "Retire the dedicated junction deletion selector and policy. Ordinary wall points reconnect two neighbors; branching wall points remove incident edges without choosing a main continuation. Older archive junction_policy fields are ignored and omitted from new UI state.",
+    "Store line_eraser_diameter and vertex_eraser_diameter separately in schema-1 UI settings. Missing fields inherit legacy geometry_diameter or 24. Arrow, typed, and Ctrl+wheel edits affect only their own tool; inactive size controls do not select a tool.",
+    "Localized tooltips show actual QAction shortcuts and tool-specific modifiers: Ctrl+wheel for sizes, Escape for cancellable gestures, and Alt-click for closure corners. Size captions and arrow controls include their modifier help; language switching must not duplicate shortcut lines."
   ],
   "validated": [
     {
@@ -66,9 +68,9 @@
     },
     {
       "check": "unit_and_qt_event_tests",
-      "result": "98 passed",
+      "result": "102 passed",
       "command": "python -m pytest -q",
-      "scope": "Geometry/export/archive/Qt coverage plus generic branch point deletion by double-click and eraser with undo; both retired archive policy values load without restoring the setting."
+      "scope": "Existing geometry/export/archive/Qt coverage plus independent Ctrl+wheel sizes, distinct diameter save/load, legacy shared-size fallback for both tools, and individual range rejection."
     },
     {
       "check": "visual_review",
@@ -167,6 +169,21 @@
       "check": "ordinary_point_editing_without_t_policy",
       "result": "Dedicated selector, canvas policy, straightest-main-wall heuristic, and active UI serialization field removed. Core and Qt tests verify 3/4-way branch deletion, both standard tools, and undo. Legacy archive fields are ignored. Audited 65 controls in RU/EN/RU; minimum-window screenshots inspected.",
       "command": "python -m pytest -q; python artifacts/verify_compact_ui.py; python tools/preview_demo.py"
+    },
+    {
+      "check": "packaged_ordinary_point_editing",
+      "version": "0.3.7",
+      "result": "Isolated-PATH startup loaded a legacy archive with retired junction_policy and its 4 operations. Native real-map launch exited 0 with no dedicated junction selector. All 53 source fingerprints matched; supplied ICO payloads remained exact. CI passed for commit 58ebabc."
+    },
+    {
+      "check": "embedded_independent_eraser_controls",
+      "result": "Qt checks passed for both 48x72 buttons: icon activation, gray arrows, direct 512-pixel input, independent Ctrl+wheel, inactive control edits, and distinct 31/79-pixel project restoration. Audited 71 controls in RU/EN/RU. Inspected geometry and minimum-window screenshots; separate geometry-size tile is absent.",
+      "command": "python artifacts/verify_sized_erasers.py; python tools/preview_demo.py"
+    },
+    {
+      "check": "localized_tool_shortcuts",
+      "result": "Verified actual assigned key sequences on actions and associated tool buttons in RU/EN/RU, without duplicate shortcut lines. All gesture tools mention Escape, sized tools/controls mention Ctrl+wheel, and Closure mentions Alt-click. Existing 102 tests pass with shortcut/help assertions.",
+      "command": "python -m pytest -q; ad hoc Qt shortcut audit"
     }
   ],
   "completed": [
@@ -214,7 +231,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.7",
+  "current_version": "0.3.9",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",

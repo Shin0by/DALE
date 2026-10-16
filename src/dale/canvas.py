@@ -73,7 +73,7 @@ class MapView(QGraphicsView):
         self.mode = "Pan"
         self.show_walls = True
         self.diameter = 40
-        self.geometry_diameter = 24
+        self.geometry_diameters = {mode: 24 for mode in GEOMETRY_ERASERS}
         self.snap_distance = 14
         self.snap_enabled = True
         self.pending = []
@@ -232,6 +232,16 @@ class MapView(QGraphicsView):
     @property
     def active_gesture(self):
         return bool(self.stroke) or self.drag_base is not None or self.line_start is not None
+
+    @property
+    def geometry_diameter(self):
+        mode = self.mode if self.mode in GEOMETRY_ERASERS else "Erase lines"
+        return self.geometry_diameters[mode]
+
+    @geometry_diameter.setter
+    def geometry_diameter(self, value):
+        mode = self.mode if self.mode in GEOMETRY_ERASERS else "Erase lines"
+        self.geometry_diameters[mode] = value
 
     def resize_tool(self, steps):
         attribute = "geometry_diameter" if self.mode in GEOMETRY_ERASERS else "diameter"

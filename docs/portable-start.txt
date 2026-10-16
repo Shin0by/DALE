@@ -12,8 +12,11 @@ Open JPG + JSON to start, or open a saved .dale project to continue.
 Ctrl+S saves the original files, editing operations and Undo/Redo history.
 Top row: unframed text commands. Second row: tool set, Hand, Fit, and Walls.
 The selected tools appear left of the map as square icon-only buttons.
-Diameter and Snapping (px) are left tiles with numbers and minus/plus buttons.
-Hover over any control for localized help; left tools include their names.
+Line/vertex erasers contain separate size captions and small gray side arrows.
+Each eraser button is 1.5 times normal height; click its number to type a size.
+Their independent diameters are saved in .dale projects.
+Pixel size and Snapping (px) remain left tiles with numbers and minus/plus buttons.
+Hover over controls for localized help, tool names, and applicable hotkeys.
 Ctrl+wheel changes tool size; Alt-click adds a free closure corner.
 Closed contours are cyan, open contours pure RGB (255, 0, 0) red.
 Lines are 3 screen pixels: black edges around a 1-pixel color center.
@@ -38,8 +41,11 @@ DALE portable для Windows x64
 Ctrl+S сохраняет исходники, изменения и историю отмены/повтора.
 Первый ряд сверху — текстовые команды, второй — набор, Рука, Вся карта и Стены.
 Выбранные инструменты находятся слева от карты: квадратные кнопки с иконками.
-Диаметр и Прилипание (px) — слева, с числом и кнопками минус/плюс.
-У всех элементов есть локализованные подсказки; у инструментов — также названия.
+У ластиков линий и точек отдельные числа размера с серыми стрелками по бокам.
+Кнопки выше обычных в 1,5 раза; нажмите на число, чтобы ввести свой размер.
+Независимые диаметры сохраняются в проектах .dale.
+Размер пиксельной кисти и Прилипание (px) — слева, с числом и минус/плюс.
+Подсказки элементов поясняют назначение, название инструмента и его горячие клавиши.
 Ctrl + колесо меняет размер инструмента, Alt + клик добавляет угол замыкания.
 Замкнутые контуры голубые, незамкнутые красные с RGB (255, 0, 0).
 Линии — 3 пикселя: чёрные края вокруг цветного центра в 1 пиксель.

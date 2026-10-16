@@ -243,6 +243,7 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     first.elevation.setCurrentText("17")
     first.set_language("en")
     first.geometry_brush_control.setValue(37)
+    first.vertex_brush_control.setValue(61)
     first.snap_distance.setValue(21)
     first.snap_action.setChecked(False)
     first.set_snapping(False)
@@ -265,6 +266,8 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert second.view.mode == "Closure"
     assert second.language == "en"
     assert second.view.geometry_diameter == 37
+    assert second.view.geometry_diameters == {"Erase lines": 37, "Erase vertices": 61}
+    assert second.vertex_brush_control.value() == 61
     assert second.view.snap_distance == 21
     assert not second.view.snap_enabled
     assert second.can_discard()
@@ -280,9 +283,16 @@ def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_p
     assert window.language == "ru"
     assert window.mode_actions["Edit points"].text() == "Точки"
     assert "Клик" in window.mode_actions["Edit points"].toolTip()
+    assert "Escape" in window.mode_actions["Edit points"].toolTip()
+    assert "Ctrl" in window.geometry_eraser_tiles["Erase lines"].toolTip()
+    assert "Escape" in window.geometry_eraser_tiles["Erase vertices"].toolTip()
+    assert "Ctrl" in window.geometry_eraser_tiles["Erase vertices"].increase_button.toolTip()
+    assert "Ctrl+E" in window.export_action.toolTip()
+    assert "Горячие клавиши" in window.export_action.toolTip()
     window.language_control.setCurrentIndex(0)
     assert window.mode_actions["Edit points"].text() == "Edit points"
     assert "Click a line" in window.mode_actions["Edit points"].toolTip()
+    assert "Shortcut: Ctrl+E" in window.export_action.toolTip()
     window.mode_actions["Edit points"].trigger()
     assert window.view.mode == "Edit points"
     window.language_control.setCurrentIndex(1)
@@ -418,6 +428,13 @@ def test_ctrl_wheel_resizes_tools_globally_without_zooming_or_changing_language(
     window.mode_actions["Erase lines"].trigger()
     wheel(window.language_control)
     assert window.view.geometry_diameter > 24
+    line_size = window.view.geometry_diameter
+    assert window.view.geometry_diameters["Erase vertices"] == 24
+    window.mode_actions["Erase vertices"].trigger()
+    wheel(window.info)
+    assert window.view.geometry_diameter > 24
+    assert window.vertex_brush_control.value() == window.view.geometry_diameter
+    assert window.view.geometry_diameters["Erase lines"] == line_size
     assert window.language == "ru"
     wheel(window.snap_distance)
     assert window.view.snap_distance == 15

@@ -112,3 +112,27 @@ def save_directory(path: Path, purpose: str, directory: Path):
     if purpose not in ("input", "output"):
         raise ValueError("Directory purpose must be input or output.")
     _save(path, **{f"{purpose}_directory": str(directory.resolve())})
+
+
+def load_recent_projects(path: Path) -> list[Path]:
+    stored = _load(path).get("recent_projects", [])
+    if not isinstance(stored, list):
+        return []
+    result, seen = [], set()
+    for value in stored:
+        if not isinstance(value, str):
+            continue
+        candidate = Path(value)
+        if not candidate.is_absolute() or candidate.suffix.lower() != ".dale":
+            continue
+        key = os.path.normcase(str(candidate))
+        if key not in seen:
+            seen.add(key)
+            result.append(candidate)
+        if len(result) == 10:
+            break
+    return result
+
+
+def save_recent_projects(path: Path, projects: list[Path]):
+    _save(path, recent_projects=[str(project.resolve()) for project in projects[:10]])

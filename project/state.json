@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "scene_terminology_responsive_png_bounds_and_tile_probe",
+  "phase": "sections_scene_settings_recent_projects_and_explicit_push_skill",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -10,7 +10,7 @@
     "Scene image (JPG/JPEG) plus Foundry 13/14 scene JSON; same-stem pairing. Separate JSON command loads a scene JSON directly or selects from all declared scene JSON documents in a DALE project.",
     "No legacy support: schema 2 only; reject older/unknown archives, no migrations or old UI aliases.",
     "Every edge has stable ID, parent lineage and exact source JSON SHA256/array pointer/optional Foundry ID. Splits, merges, contacts and transforms preserve ancestry; deleted ancestors and contact markers persist in history/redo.",
-    "File/Edit/About menus own general commands; one text-only contextual toolbar contains Contours/Regions/Raster and Hand/Clear selection/Fit/Walls. One left tool column with independent embedded numbers. Right Project/Settings/Information; Project nests Regions first, then File information. Minimum 1024x768; no height/origin controls, footer or default map tooltip.",
+    "File/Edit/About menus own general commands. Top panels: Sections (text Contours/Regions/Raster), Scene (text Levels), Main (36px square icon-only Hand/Clear selection/Fit/Show contours/Settings). One left toolbar in an unframed stack, no nested wrapper. Separate right Project/Scene/Settings pages; every page owns the same240px bottom Information. Levels cancels previews, hides left editing tools and uses Pan; empty Scene/Levels group reserves future controls without semantic generation.",
     "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
     "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
     "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
@@ -26,13 +26,15 @@
     "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded.",
     "All eight numeric tool values save in projects. Store settings globally defaults off; enabling copies active values to portable config, which loads first and overrides project numbers while enabled. Unchecking restores separate project values. Global-mode saving preserves the project numbers and artwork offset, not global overrides.",
     "Clear selection follows Hand in the second top row; Ctrl+Shift+A clears selected cells/contour highlights and cancels previews without editing geometry/raster or changing mode. English/Russian action names identify regions, contours, lines/points or raster; internal keys remain stable.",
-    "Right Project contains exactly two nested blocks: Regions (selection dropdown), then File information (file/map/export/counts). Settings orders target, language, Store settings globally and explanation. Bottom Information lists current gestures and actual enabled QAction shortcuts, including Ctrl+Q. Mode/language/action changes refresh help.",
+    "Right Project contains Regions then File information. Settings is a separate page opened by Main Settings, with target/language/global scope. Scene Levels is a separate placeholder page. All three Information copies share one current-mode/actual-enabled-shortcut source and top-aligned scrollable text; settings toggles back to the active scene/project page.",
     "Circular contours are existing editable polygon edges: press center, drag radius, release one undo step without confirmation. Preview changes vertices live in both directions. Diameter in imported grid cells <=0.5:4 vertices, <=1:6, <=2:8; then add two per started 2.5 cells, capped at4096. Missing/invalid grid uses100 source pixels per cell; source scale conversion and zoom-independent density. Ctrl+wheel adjusts active radius, Escape/Clear selection cancels. Exact contacts retain ancestry; source JSON stays unchanged.",
     "Foundry Regions offer native circle shapes, but DALE circular contours remain working polygon edges suitable for future wall/Region polygon export. Do not infer native circles after point edits or claim semantic scene generation.",
     "Auto-close and whole-map close show Cancel/Yes only when changes exist; no-op/empty-cursor information has only Close. File/Edit/About menu commands retain shortcuts; About displays the running title/version and localized purpose.",
     "Application and general workflow terminology is Scene, Scene image, Scene JSON and Contours in both languages. JSON contains a whole Scene, not only geometry. DALE project means .dale archive. Actual native fields/API/module names such as walls remain literal in technical format descriptions. No wire-field rename, alias or archive migration is introduced for UI terminology. Source warnings retranslate on language changes; obsolete UI translation entries are removed.",
     "Large exact PNG sidebar bounds run in one cancellable worker with immutable Session/polygon snapshots. Keep only the latest pending request, ignore stale results and cache at most16 outcomes. Inline scans are limited to262144 candidate pixels. Show localized pending state; defer ready-result repaint during active gestures. Export uses identical exact nonzero alpha bounds. Contour-only edits reuse unchanged raster preview/Pixmap. Cancel and join worker on application shutdown.",
-    "The added 13.351 scene probe changes only tiles and statistics, adding one locked Tile with screenshot-confirmed placement/texture/occlusion/restrictions. Future extracted floor PNGs will be referenced by Tile assets using resolved scene coordinates, explicit elevation/sort and version-specific Level/occlusion semantics. Tile generation remains future work; preserve originals and separate updated JSON catalog snapshots."
+    "The added 13.351 scene probe changes only tiles and statistics, adding one locked Tile with screenshot-confirmed placement/texture/occlusion/restrictions. Future extracted floor PNGs will be referenced by Tile assets using resolved scene coordinates, explicit elevation/sort and version-specific Level/occlusion semantics. Tile generation remains future work; preserve originals and separate updated JSON catalog snapshots.",
+    "Every Git push needs a fresh explicit owner request. Default origin/development; origin/release only when explicitly named and separately confirmed for a concrete commit/plan. Use the versioned dale-push skill/helper and local pre-push guard. No automatic push after edits/builds/commits/CI, no automatic failed-attempt retry or hook bypass; configure local Git only. Skill setup is not a push request.",
+    "File > Recent projects is always present. Merge up to10 unique absolute successful .dale open/save paths into portable preferences, newest first. Entry opening respects save/discard/cancel; missing paths stay disabled with help. Clear list preserves files. Never store temporary extraction paths."
   ],
   "validated": [
     {
@@ -252,6 +254,16 @@
       "sha256": "f225fcaf1f9aae25226c23ff48e558d3eeec9dac5fd7b7d09a0cd91122ab0738",
       "details": "docs/foundry-tile-format.md",
       "profile": "project/foundry-format-profile.json"
+    },
+    {
+      "check": "explicit_push_skill_and_local_guard",
+      "result": "250 tests pass; 17 isolated local-bare-remote tests cover read-only plans, default development, blocked direct pushes, separate release confirmation, stale HEAD/origin/tip, expiry, dirty state, single-attempt failure, normal/update/up-to-date pushes, other refs/tags/deletion and preserved custom hooks. Final helper receipt/lock changes passed all 17 focused cases. Ruff check/format and canonical/installed skill validation pass. Local core.hooksPath/default refspec configured, local development branch created, and discoverable user skill installed byte-for-byte. No live remote push was requested or performed during setup.",
+      "command": "python -m pytest -q; python -m pytest -q tests/test_git_push_policy.py; python -m ruff check .; python -m ruff format --check .; quick_validate.py skills/dale-push"
+    },
+    {
+      "check": "sections_scene_settings_recent_projects_and_single_left_frame",
+      "result": "254 tests pass; ruff check/format and repository index pass. Actual Qt tests verify three top panels, visible36px square icon-only common controls in RU/EN at1024x768, mutually exclusive Project/Scene/Settings pages, common contextual help copies, Levels-to-Pan without editing, return navigation and a direct left-toolbar stack without nested wrapper. Recent projects persist/reorder after successful saves/opens, honor cancellation, disable missing files with path help, and clear without deleting files. Preferences validate absolute .dale paths/deduplication/ten-entry limit and preserve other settings. Synthetic screenshots of every section plus scene/settings/recent menu inspected; localized control-help audit passed through RU/EN/RU. Levels remains an empty future-control group, not semantic floor generation.",
+      "command": "python -m pytest -q; python -m ruff check .; python -m ruff format --check .; python tools/check_repository.py; python artifacts/verify_section_panels.py"
     }
   ],
   "completed": [
@@ -309,7 +321,7 @@
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.19",
+  "current_version": "0.3.21",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -332,5 +344,18 @@
   },
   "project_schema_version": 2,
   "legacy_support": false,
+  "git_policy": {
+    "skill": "skills/dale-push/SKILL.md",
+    "helper": "skills/dale-push/scripts/push.py",
+    "hook": ".githooks/pre-push",
+    "remote": "origin",
+    "default_branch": "development",
+    "release_branch": "release",
+    "fresh_explicit_request_per_attempt": true,
+    "release_separate_confirmation": true,
+    "automatic_push": false,
+    "automatic_retry": false,
+    "global_git_changes": false
+  },
   "validation_history_note": "Older records describe historical released versions and superseded controls/guards. Current behavior is defined by decisions and requirements, with no legacy support."
 }

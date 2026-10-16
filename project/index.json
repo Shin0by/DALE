@@ -18,7 +18,8 @@
     "foundry_scene_atlas": "docs/foundry-scene-format.md",
     "foundry_export_feasibility": "docs/foundry-export-feasibility.md",
     "foundry_machine_profile": "project/foundry-format-profile.json",
-    "foundry_tile_probe": "docs/foundry-tile-format.md"
+    "foundry_tile_probe": "docs/foundry-tile-format.md",
+    "git_push_skill": "skills/dale-push/SKILL.md"
   },
   "code": {
     "import_and_coordinates": "src/dale/scene.py",
@@ -49,7 +50,10 @@
     "directional_auto_close": "src/dale/autoclose.py",
     "line_ancestry": "src/dale/provenance.py",
     "selected_region_transforms": "src/dale/region_transform.py",
-    "async_png_bounds": "src/dale/bounds_preview.py"
+    "async_png_bounds": "src/dale/bounds_preview.py",
+    "explicit_git_push": "skills/dale-push/scripts/push.py",
+    "git_push_guard": ".githooks/pre-push",
+    "git_push_policy_tests": "tests/test_git_push_policy.py"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git.",
   "build_environment_lock": "requirements-build.lock"

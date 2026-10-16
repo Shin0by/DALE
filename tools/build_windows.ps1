@@ -70,10 +70,10 @@ try {
         }
         Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\portable-start.txt') -Destination (Join-Path $portablePath 'START-HERE.txt') -Force
         $sourceFiles = @(
-            foreach ($directory in @('src\dale', 'docs', 'tools', 'tests', 'project', '.github')) {
+            foreach ($directory in @('src\dale', 'docs', 'tools', 'tests', 'project', '.github', 'skills')) {
                 Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse | Where-Object { $_.Extension -in @('.py', '.ps1', '.cmd', '.json', '.md', '.txt', '.yml', '.png', '.ico') }
             }
-            foreach ($file in @('AGENTS.md', 'README.md', 'pyproject.toml', 'requirements-build.lock', 'requirements-dev.lock', 'tools\build_windows.ps1', 'tools\desktop_entry.py', 'project\index.json', 'project\state.json')) {
+            foreach ($file in @('AGENTS.md', 'README.md', '.gitattributes', '.githooks\pre-push', 'pyproject.toml', 'requirements-build.lock', 'requirements-dev.lock', 'tools\build_windows.ps1', 'tools\desktop_entry.py', 'project\index.json', 'project\state.json')) {
                 Get-Item -LiteralPath (Join-Path $projectRoot $file)
             }
         )

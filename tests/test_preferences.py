@@ -7,11 +7,13 @@ from dale.preferences import (
     load_foundry_major,
     load_language,
     load_move_related,
+    load_recent_projects,
     load_tool_values,
     save_directory,
     save_foundry_major,
     save_language,
     save_move_related,
+    save_recent_projects,
     save_tool_value,
 )
 
@@ -89,3 +91,29 @@ def test_numeric_tool_preferences_merge_independently_and_validate_fields(tmp_pa
     assert load_tool_values(path)["artwork_offset_px"] == -123
     with pytest.raises(ValueError, match="integer range"):
         save_tool_value(path, "snap_distance_px", 257)
+
+
+def test_recent_projects_validate_paths_limit_entries_and_preserve_other_settings(tmp_path):
+    path = tmp_path / "settings.json"
+    assert load_recent_projects(path) == []
+    save_language(path, "en")
+    projects = [tmp_path / f"project-{index}.dale" for index in range(12)]
+    save_recent_projects(path, projects)
+    assert load_recent_projects(path) == projects[:10]
+    assert load_language(path) == "en"
+    path.write_text(
+        json.dumps(
+            {
+                "recent_projects": [
+                    None,
+                    42,
+                    "relative.dale",
+                    str(tmp_path / "x.json"),
+                    str(projects[0]),
+                    str(projects[0]),
+                    str(projects[1]),
+                ]
+            }
+        )
+    )
+    assert load_recent_projects(path) == projects[:2]

@@ -240,6 +240,7 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         "Open scene",
         "JSON",
         "Open project",
+        "Recent projects",
         "Save project",
         "Save project as…",
         "Export PNGs",
@@ -247,8 +248,8 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         "Exit",
     ]
     assert keys(window.edit_menu) == ["Undo", "Redo", "Clear selection"]
-    assert window.clear_selection_action in window.tool_set_toolbar.actions()
-    assert len(window.toolbars) == 4
+    assert window.clear_selection_action in window.basic_toolbar.actions()
+    assert len(window.toolbars) == 6
     assert window.toolbars[0] == window.tool_set_toolbar
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
@@ -1359,7 +1360,7 @@ def test_clear_selection_follows_hand_and_clears_regions_and_contour_highlights(
     window.toggle_region_at((30, 100))
     assert window.selected_regions
     # QAction order, independent of localized labels or viewport width.
-    actions = window.tool_set_toolbar.actions()
+    actions = window.basic_toolbar.actions()
     assert (
         actions.index(window.clear_selection_action)
         == actions.index(window.mode_actions["Pan"]) + 1
@@ -1389,7 +1390,6 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
     ]
     assert groups == [
         window.project_group,
-        window.settings_group,
         window.information_group,
     ]
     assert window.region_control.parentWidget() == window.regions_group
@@ -1429,6 +1429,83 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
     window.export_action.setEnabled(True)
     assert "Ctrl+E:" in window.mode_help.text()
     window.close()
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_sections_scene_settings_and_shared_information_panels(app, language):
+    window = MainWindow()
+    window.resize(1024, 768)
+    window.set_language(language, persist=False)
+    window.show()
+    app.processEvents()
+    assert [bar.windowTitle() for bar in window.toolbars[:3]] == (
+        ["Разделы", "Сцена", "Основное"] if language == "ru" else ["Sections", "Scene", "Main"]
+    )
+    for action in window.basic_toolbar.actions():
+        if action.property("dale_tool_key"):
+            button = window.basic_toolbar.widgetForAction(action)
+            assert button.width() == button.height() == 36
+            assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+            assert not button.icon().isNull() and button.toolTip()
+            assert button.isVisible()
+            assert window.basic_toolbar.rect().contains(button.geometry())
+    assert window.tool_stack.currentWidget().parentWidget() == window.tool_stack
+    assert window.tool_stack.currentWidget().orientation() == Qt.Orientation.Vertical
+    assert window.project_group.isVisible() and not window.settings_group.isVisible()
+    window.levels_action.trigger()
+    app.processEvents()
+    assert window.scene_group.isVisible() and window.scene_levels_group.isVisible()
+    assert not window.project_group.isVisible() and not window.settings_group.isVisible()
+    assert not window.left_panel.isVisible()
+    assert window.view.mode == "Pan"
+    assert window.t("Left-drag: pan the scene image.") in window.mode_help.text()
+    window.settings_action.trigger()
+    assert window.settings_group.isVisible() and not window.scene_group.isVisible()
+    assert not window.project_info_group.isVisible() and not window.regions_group.isVisible()
+    window.settings_action.trigger()
+    assert window.scene_group.isVisible()
+    window.tool_set_actions["regions"].trigger()
+    assert window.project_group.isVisible() and not window.scene_group.isVisible()
+    assert window.left_panel.isVisible() and not window.levels_action.isChecked()
+    assert len({label.text() for label in window.mode_help_labels.values()}) == 1
+    for key, group in window.information_groups.items():
+        assert group.parentWidget() == window.sidebar_pages[key]
+        assert group.title() == ("Информация" if language == "ru" else "Information")
+    window.close()
+
+
+def test_recent_projects_persist_reorder_cancel_and_keep_missing_entries(
+    app, pair_factory, tmp_path, monkeypatch
+):
+    window = MainWindow()
+    assert window.recent_menu.title() == "Последние проекты"
+    assert not window.recent_menu.actions()[0].isEnabled()
+    source = pair_factory()
+    window.load_sources(source.image_path, source.json_path)
+    first, second = tmp_path / "first.dale", tmp_path / "second.dale"
+    window.project_path = first
+    assert window.save_project_file()
+    window.project_path = second
+    assert window.save_project_file()
+    assert window.recent_projects == [second, first]
+    window.close()
+    restored = MainWindow()
+    assert restored.recent_projects == [second, first]
+    restored.recent_menu.actions()[1].trigger()
+    assert restored.project_path == first and restored.recent_projects == [first, second]
+    monkeypatch.setattr(restored, "can_discard", lambda: False)
+    restored.recent_menu.actions()[1].trigger()
+    assert restored.project_path == first and restored.recent_projects == [first, second]
+    second.unlink()
+    restored.set_language("en", persist=False)
+    missing = restored.recent_menu.actions()[1]
+    assert not missing.isEnabled() and "unavailable" in missing.toolTip()
+    assert str(second) in missing.toolTip()
+    restored.recent_menu.actions()[-1].trigger()
+    assert restored.recent_projects == [] and first.is_file()
+    assert json.loads(restored.preferences_path.read_text())["recent_projects"] == []
+    monkeypatch.setattr(restored, "can_discard", lambda: True)
+    restored.close()
 
 
 def test_large_png_bounds_do_not_block_ui_and_only_latest_snapshot_is_applied(

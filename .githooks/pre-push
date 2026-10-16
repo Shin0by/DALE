@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+if [ -x .venv/Scripts/python.exe ]; then
+    python=.venv/Scripts/python.exe
+elif [ -x .venv/bin/python ]; then
+    python=.venv/bin/python
+elif command -v python >/dev/null 2>&1; then
+    python=python
+elif command -v python3 >/dev/null 2>&1; then
+    python=python3
+else
+    echo "DALE push blocked: Python is required for the local push guard." >&2
+    exit 1
+fi
+exec "$python" skills/dale-push/scripts/push.py --repo "$root" hook "$@"

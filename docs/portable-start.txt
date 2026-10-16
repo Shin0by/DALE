@@ -5,8 +5,11 @@ Open DALE.exe; keep the whole folder including _internal. No Python needed.
 File > Open scene loads a scene image and scene JSON; Open project resumes a .dale project.
 File > JSON loads a scene JSON directly or selects one from a DALE project document list.
 Old project formats are not supported.
-Menus: File / Edit / About. Contextual tools: Contours / Regions / Raster.
-Right: Project, Settings, Information. Project nests Regions, then File information.
+Menus: File / Edit / About. File > Recent projects remembers ten opened/saved projects.
+Top: Sections (Contours / Regions / Raster), Scene (Levels), Main (square icons).
+Main > Settings opens its separate right page. Levels opens the empty scene-level page.
+Project nests Regions, then File information. Each right page has the same bottom Information.
+The left editing toolbar has a single frame.
 The global-settings checkbox follows Language. Bottom Information shows active gestures
 and every available window shortcut, including Undo/Redo, file commands, Fit and clear selection.
 Right-drag pans; wheel zooms. Hover help explains tools and shortcuts.
@@ -38,8 +41,11 @@ Preserve projects during updates. Open editors retain their version until restar
 Новый круглый контур: нажать в центре, тянуть радиус, отпустить. Грани меняются сразу:
 диаметр 0,5/1/2 клетки даёт 4/6/8 вершин, затем число растёт. Ctrl+колесо меняет радиус,
 Escape отменяет. Если автозамыкание ничего не меняет, в окне есть только «Закрыть».
-Меню: Файл / Правка / О программе. Наборы: Контуры / Области / Растр.
-Справа Проект, Настройки, Информация. В Проекте — сначала Области, затем Данные файла.
+Меню: Файл / Правка / О программе. Файл > Последние проекты хранит десять проектов.
+Сверху: Разделы (Контуры / Области / Растр), Сцена (Уровни), Основное (иконки).
+Шестерёнка открывает отдельную правую панель настроек. Уровни — пустую панель сцены.
+В Проекте — Области и Данные файла. Внизу каждой правой панели одинаковая Информация.
+Слева одна рамка панели инструментов.
 Галочка глобальных настроек следует за языком. Нижняя Информация показывает
 действия текущего инструмента и общие горячие клавиши, включая Ctrl+Z и Ctrl+Y.
 Правая кнопка перемещает карту; колесо меняет масштаб. Подсказки поясняют горячие клавиши.

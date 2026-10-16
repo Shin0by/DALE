@@ -105,6 +105,21 @@ def tool_icon(name):
     elif name == "Show contours":
         painter.drawRoundedRect(QRectF(3, 7, 18, 11), 6, 6)
         circle(12, 12.5, 3)
+    elif name == "Clear selection":
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.5, Qt.PenStyle.DashLine))
+        painter.drawRect(QRectF(3, 3, 16, 16))
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.8))
+        line((14, 14), (22, 22))
+        line((14, 22), (22, 14))
+    elif name == "Settings":
+        circle(12, 12, 6)
+        circle(12, 12, 2)
+        for angle in range(0, 360, 45):
+            painter.save()
+            painter.translate(12, 12)
+            painter.rotate(angle)
+            line((0, -6), (0, -10))
+            painter.restore()
     elif name in ("Auto-close", "Close all contours"):
         painter.drawPolyline(
             QPolygonF([QPointF(4, 9), QPointF(4, 19), QPointF(20, 19), QPointF(20, 9)])
@@ -367,7 +382,9 @@ class SizedToolButton(QToolButton):
 
 PANEL_HELP = {
     "General": "Open, save, close, export, and navigate projects.",
-    "Tool sets": "Choose which tools appear to the left of the scene image.",
+    "Sections": "Choose which tools appear to the left of the scene image.",
+    "Scene": "Open scene-level sections.",
+    "Main": "Common navigation, selection, visibility, and settings controls.",
     "Tool size": "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.",
     "Snapping": "Configure snapping to existing vertices and line interiors.",
 }
@@ -419,7 +436,7 @@ def make_toolbar(window, title, new_row=False, vertical=False):
     elif title != "General":
         heading = QLabel(title)
         heading.setToolTip(PANEL_HELP.get(title, title))
-        heading.setStyleSheet("font-weight: 600; padding: 0 7px;")
+        heading.setStyleSheet("font-weight: 600; padding: 0 3px;")
         bar.addWidget(heading)
     if not vertical:
         window.addToolBar(bar)

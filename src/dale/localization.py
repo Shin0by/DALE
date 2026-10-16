@@ -17,6 +17,27 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "Sections": "Разделы",
+    "Scene": "Сцена",
+    "Main": "Основное",
+    "Levels": "Уровни",
+    "Open scene-level sections.": "Открыть разделы работы со сценой.",
+    "Common navigation, selection, visibility, and settings controls.": (
+        "Общие действия: перемещение, выделение, видимость контуров и настройки."
+    ),
+    "Open the scene levels panel.": "Открыть панель уровней сцены.",
+    "Show or hide the application settings panel.": (
+        "Показать или скрыть панель настроек приложения."
+    ),
+    "Recent projects": "Последние проекты",
+    "No recent projects": "Нет последних проектов",
+    "Clear recent projects": "Очистить список проектов",
+    "Open a recently opened or saved DALE project.": "Открыть недавний проект DALE.",
+    "Open this recent DALE project.": "Открыть этот недавний проект DALE.",
+    "Project file is unavailable.": "Файл проекта недоступен.",
+    "Clear the list without deleting project files.": (
+        "Очистить список без удаления файлов проектов."
+    ),
     "PNG: calculating exact bounds…": "PNG: расчёт точных границ…",
     "PNG: bounds unavailable": "PNG: границы недоступны",
     ("Scene padding is nonzero. Verify contour alignment before editing."): (
@@ -425,7 +446,6 @@ RUSSIAN = {
         "Показать инструменты, не поместившиеся на панели."
     ),
     "General": "Общие действия",
-    "Tool sets": "Набор инструментов",
     "Snapping": "Прилипание",
     "New line": "Новая линия контура",
     "Erase lines": "Ластик линий контура",

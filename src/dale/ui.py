@@ -68,12 +68,14 @@ from dale.preferences import (
     load_global_tool_settings,
     load_language,
     load_move_related,
+    load_recent_projects,
     load_tool_values,
     save_directory,
     save_foundry_major,
     save_global_tool_settings,
     save_language,
     save_move_related,
+    save_recent_projects,
     save_tool_value,
     settings_path,
 )
@@ -140,6 +142,8 @@ class MainWindow(QMainWindow):
         self.remembered_move_related = load_move_related(self.preferences_path)
         self.input_directory = load_directory(self.preferences_path, "input")
         self.output_directory = load_directory(self.preferences_path, "output")
+        self.recent_projects = load_recent_projects(self.preferences_path)
+        self.scene_section_active = False
         self.setWindowTitle(application_title())
         self.resize(1280, 860)
         self.setMinimumSize(1024, 768)
@@ -269,40 +273,63 @@ class MainWindow(QMainWindow):
             file_layout.addWidget(label)
         project_layout.addWidget(self.regions_group)
         project_layout.addWidget(self.project_info_group)
-        self.information_group = QGroupBox("Information")
-        information_layout = QVBoxLayout(self.information_group)
-        self.mode_help = QLabel()
-        self.mode_help.setWordWrap(True)
-        help_scroll = QScrollArea()
-        help_scroll.setWidgetResizable(True)
-        help_scroll.setWidget(self.mode_help)
-        help_scroll.setMinimumHeight(160)
-        help_scroll.setMaximumHeight(240)
-        help_scroll.setToolTip("Scroll the available shortcuts for the current tool and window.")
-        information_layout.addWidget(help_scroll)
-        sidebar = QVBoxLayout()
-        self.sidebar_layout = sidebar
-        sidebar.addWidget(self.project_group)
-        sidebar.addWidget(self.settings_group)
-        sidebar.addStretch()
-        sidebar.addWidget(self.information_group)
-        panel = QWidget()
-        panel.setLayout(sidebar)
+        self.scene_group = QGroupBox("Scene")
+        scene_layout = QVBoxLayout(self.scene_group)
+        self.scene_levels_group = QGroupBox("Levels")
+        QVBoxLayout(self.scene_levels_group)
+        self.scene_levels_group.setMinimumHeight(80)
+        scene_layout.addWidget(self.scene_levels_group)
+        self.sidebar_stack = QStackedWidget()
+        self.sidebar_pages = {}
+        self.mode_help_labels = {}
+        self.information_groups = {}
+        for key, content in (
+            ("project", self.project_group),
+            ("scene", self.scene_group),
+            ("settings", self.settings_group),
+        ):
+            page = QWidget()
+            sidebar = QVBoxLayout(page)
+            sidebar.setContentsMargins(0, 0, 0, 0)
+            sidebar.addWidget(content)
+            sidebar.addStretch()
+            information = QGroupBox("Information")
+            information.setFixedHeight(240)
+            information_layout = QVBoxLayout(information)
+            help_label = QLabel()
+            help_label.setWordWrap(True)
+            help_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            help_scroll = QScrollArea()
+            help_scroll.setWidgetResizable(True)
+            help_scroll.setWidget(help_label)
+            help_scroll.setMinimumHeight(160)
+            help_scroll.setMaximumHeight(240)
+            help_scroll.setToolTip(
+                "Scroll the available shortcuts for the current tool and window."
+            )
+            information_layout.addWidget(help_scroll)
+            sidebar.addWidget(information)
+            self.sidebar_pages[key] = page
+            self.mode_help_labels[key] = help_label
+            self.information_groups[key] = information
+            self.sidebar_stack.addWidget(page)
+        self.sidebar_layout = self.sidebar_pages["project"].layout()
+        self.information_group = self.information_groups["project"]
+        self.mode_help = self.mode_help_labels["project"]
         sidebar_scroll = QScrollArea()
         sidebar_scroll.setWidgetResizable(True)
-        sidebar_scroll.setWidget(panel)
+        sidebar_scroll.setWidget(self.sidebar_stack)
         sidebar_scroll.setFixedWidth(360)
         layout = QHBoxLayout()
         left_panel = QWidget()
+        self.left_panel = left_panel
         left_panel.setFixedWidth(64)
         self.tool_column = QVBoxLayout(left_panel)
         self.tool_column.setContentsMargins(0, 0, 0, 0)
         self.tool_column.setSpacing(4)
         self.tool_stack = QStackedWidget()
         self.tool_stack.setFixedWidth(64)
-        self.tool_stack.setStyleSheet(
-            "QStackedWidget { background: #303030; border: 1px solid #494949; }"
-        )
+        self.tool_stack.setStyleSheet("QStackedWidget { background: transparent; border: 0; }")
         self.tool_column.addWidget(self.tool_stack)
         layout.addWidget(left_panel)
         layout.addWidget(self.view, 1)
@@ -323,20 +350,25 @@ class MainWindow(QMainWindow):
         ):
             menu.setToolTipsVisible(True)
             menu.setToolTip(tip)
-        categories = make_toolbar(self, "Tool sets")
+        categories = make_toolbar(self, "Sections")
         self.tool_set_toolbar = categories
+        self.scene_toolbar = make_toolbar(self, "Scene")
+        self.basic_toolbar = make_toolbar(self, "Main")
         geometry = make_toolbar(self, "Contours", vertical=True)
         region_tools = make_toolbar(self, "Regions", vertical=True)
         pixels = make_toolbar(self, "Raster", vertical=True)
-        self.toolbars = (categories, geometry, region_tools, pixels)
+        self.toolbars = (
+            categories,
+            self.scene_toolbar,
+            self.basic_toolbar,
+            geometry,
+            region_tools,
+            pixels,
+        )
         self.geometry_eraser_tiles = {}
         self.sized_tools = {}
         for bar in (geometry, region_tools, pixels):
-            container = QWidget()
-            column = QVBoxLayout(container)
-            column.setContentsMargins(0, 0, 0, 0)
-            column.addWidget(bar)
-            self.tool_stack.addWidget(container)
+            self.tool_stack.addWidget(bar)
 
         def action(bar, title, handler, shortcut=None):
             item = QAction(title, self)
@@ -359,10 +391,11 @@ class MainWindow(QMainWindow):
             if display:
                 item.setProperty("dale_display_key", display)
             vertical = isinstance(bar, QToolBar) and bar.orientation() == Qt.Orientation.Vertical
-            if vertical:
+            icon_only = vertical or bar == self.basic_toolbar
+            if icon_only:
                 item.setIcon(tool_icon(title))
                 item.setProperty("dale_icon_only", True)
-            if bar == categories:
+            if bar == categories or bar == self.basic_toolbar:
                 item.setProperty(
                     "dale_display_key",
                     {
@@ -430,6 +463,10 @@ class MainWindow(QMainWindow):
                 bar.addAction(item)
                 if vertical:
                     bar.widgetForAction(item).setFixedSize(48, 48)
+                elif bar == self.basic_toolbar:
+                    button = bar.widgetForAction(item)
+                    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    button.setFixedSize(36, 36)
             return item
 
         tool_sets = QActionGroup(self)
@@ -443,11 +480,18 @@ class MainWindow(QMainWindow):
             tool_sets.addAction(item)
             self.tool_set_actions[key] = item
         self.tool_set_actions["geometry"].setChecked(True)
-        categories.addSeparator()
+        self.levels_action = action(self.scene_toolbar, "Levels", self.select_scene_levels)
+        self.levels_action.setCheckable(True)
+        tool_sets.addAction(self.levels_action)
+        self.levels_action.setToolTip("Open the scene levels panel.")
 
         action(self.file_menu, "Open scene", self.open_pair, "Ctrl+I")
         action(self.file_menu, "JSON", self.open_json)
         action(self.file_menu, "Open project", self.open_project, QKeySequence.StandardKey.Open)
+        self.recent_menu = self.file_menu.addMenu("Recent projects")
+        self.recent_menu.menuAction().setProperty("dale_tool_key", "Recent projects")
+        self.recent_menu.setToolTipsVisible(True)
+        self.recent_menu.setToolTip("Open a recently opened or saved DALE project.")
         self.file_menu.addSeparator()
         action(
             self.file_menu, "Save project", self.save_project_file, QKeySequence.StandardKey.Save
@@ -471,7 +515,7 @@ class MainWindow(QMainWindow):
         modes.setExclusive(True)
         self.mode_actions = {}
         for bar, names in (
-            (categories, ("Pan",)),
+            (self.basic_toolbar, ("Pan",)),
             (
                 geometry,
                 (
@@ -493,7 +537,7 @@ class MainWindow(QMainWindow):
                 modes.addAction(item)
                 self.mode_actions[mode] = item
         self.clear_selection_action = action(
-            categories, "Clear selection", self.clear_selection, "Ctrl+Shift+A"
+            self.basic_toolbar, "Clear selection", self.clear_selection, "Ctrl+Shift+A"
         )
         self.edit_menu.addAction(self.clear_selection_action)
         self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
@@ -506,10 +550,19 @@ class MainWindow(QMainWindow):
             button.customContextMenuRequested.connect(
                 lambda point, m=mode: self.configure_region_move(m)
             )
-        action(categories, "Fit", self.view.fit_map, "F")
-        self.walls_action = action(categories, "Show contours", self.toggle_walls)
+        action(self.basic_toolbar, "Fit", self.view.fit_map, "F")
+        self.walls_action = action(self.basic_toolbar, "Show contours", self.toggle_walls)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
+        self.settings_action = action(
+            self.basic_toolbar,
+            "Settings",
+            lambda checked: self.show_sidebar(
+                "settings" if checked else "scene" if self.scene_section_active else "project"
+            ),
+        )
+        self.settings_action.setCheckable(True)
+        self.settings_action.setToolTip("Show or hide the application settings panel.")
         self.geometry_brush_control = self.geometry_eraser_tiles["Erase lines"].editor()
         self.vertex_brush_control = self.geometry_eraser_tiles["Erase vertices"].editor()
         pixels.addSeparator()
@@ -669,6 +722,7 @@ class MainWindow(QMainWindow):
         ):
             form.labelForField(control).setToolTip(control.toolTip())
         self.initialize_tool_preferences()
+        self.rebuild_recent_menu()
         for command in self.findChildren(QAction):
             if not command.shortcut().isEmpty():
                 command.changed.connect(self.update_mode_help)
@@ -799,16 +853,17 @@ class MainWindow(QMainWindow):
                 self.placement_hint,
                 self.map_info,
                 self.region_control,
-                self.mode_help,
+                *self.mode_help_labels.values(),
             ),
         )
         self.update_size_help()
-        for menu in (self.file_menu, self.edit_menu, self.about_menu):
+        for menu in (self.file_menu, self.edit_menu, self.about_menu, self.recent_menu):
             menu.menuAction().setToolTip(menu.toolTip())
         self.region_control.setToolTip(
             self.t("Choose all closed regions or one region to highlight and export.")
         )
         self.update_project_info()
+        self.rebuild_recent_menu()
         self.update_placement_hint()
         self.update_mode_help()
         self.refresh()
@@ -957,6 +1012,9 @@ class MainWindow(QMainWindow):
         self.view.viewport().update()
 
     def select_tool_set(self, key, activate=True):
+        self.scene_section_active = False
+        self.left_panel.show()
+        self.show_sidebar("project")
         self.current_tool_set = key
         self.tool_stack.setCurrentIndex({"geometry": 0, "regions": 1, "pixels": 2}[key])
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
@@ -964,6 +1022,73 @@ class MainWindow(QMainWindow):
         self.tool_set_actions[key].setChecked(True)
         if activate:
             self.activate_mode(self.last_tool_modes[key])
+
+    def show_sidebar(self, key):
+        self.sidebar_stack.setCurrentWidget(self.sidebar_pages[key])
+        self.settings_action.setChecked(key == "settings")
+
+    def select_scene_levels(self):
+        self.view.cancel_pending()
+        self.scene_section_active = True
+        self.levels_action.setChecked(True)
+        self.left_panel.hide()
+        self.activate_mode("Pan", prompt=False)
+        self.show_sidebar("scene")
+        self.update_mode_help()
+
+    def rebuild_recent_menu(self):
+        self.recent_menu.clear()
+        if not self.recent_projects:
+            empty = self.recent_menu.addAction(self.t("No recent projects"))
+            empty.setProperty("dale_original_text", "No recent projects")
+            empty.setEnabled(False)
+        for index, path in enumerate(self.recent_projects, 1):
+            item = self.recent_menu.addAction(f"{index}. {path.name.replace('&', '&&')}")
+            item.setData(str(path))
+            item.setEnabled(path.is_file())
+            item.setProperty(
+                "dale_tooltip_parts",
+                [
+                    "Open this recent DALE project."
+                    if path.is_file()
+                    else "Project file is unavailable.",
+                    str(path),
+                ],
+            )
+            item.setToolTip("\n".join(self.t(part) for part in item.property("dale_tooltip_parts")))
+            item.triggered.connect(lambda checked=False, path=path: self.open_recent_project(path))
+        if self.recent_projects:
+            self.recent_menu.addSeparator()
+            clear = self.recent_menu.addAction(self.t("Clear recent projects"))
+            clear.setProperty("dale_original_text", "Clear recent projects")
+            clear.setProperty(
+                "dale_original_tooltip", "Clear the list without deleting project files."
+            )
+            clear.setToolTip(self.t("Clear the list without deleting project files."))
+            clear.triggered.connect(self.clear_recent_projects)
+
+    def remember_recent_project(self, path):
+        resolved = path.resolve()
+        projects = [resolved, *(p for p in self.recent_projects if p != resolved)][:10]
+        try:
+            save_recent_projects(self.preferences_path, projects)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+        self.recent_projects = projects
+        self.rebuild_recent_menu()
+
+    def clear_recent_projects(self):
+        try:
+            save_recent_projects(self.preferences_path, [])
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+            return
+        self.recent_projects = []
+        self.rebuild_recent_menu()
+
+    def open_recent_project(self, path):
+        if self.can_discard():
+            self.load_project_file(path)
 
     def update_size_help(self):
         for tile in self.sized_tools.values():
@@ -1022,7 +1147,11 @@ class MainWindow(QMainWindow):
                 "Escape: cancel the current gesture.",
             ],
         }[mode]
-        lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
+        lines = (
+            [self.t("Levels"), *(self.t(line) for line in instructions)]
+            if self.scene_section_active
+            else [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
+        )
         lines.append(self.t("Right-drag: pan the scene image."))
         if mode != "Rotate regions":
             lines.append(self.t("Wheel: zoom at cursor."))
@@ -1033,7 +1162,8 @@ class MainWindow(QMainWindow):
                 continue
             keys = command.shortcut().toString(QKeySequence.SequenceFormat.PortableText)
             lines.append(f"{keys}: {command.text()}")
-        self.mode_help.setText("\n".join(lines))
+        for label in self.mode_help_labels.values():
+            label.setText("\n".join(lines))
 
     def configure_region_move(self, mode="Move regions"):
         dialog = QMessageBox(
@@ -1312,6 +1442,8 @@ class MainWindow(QMainWindow):
             self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
+            self.remember_recent_project(path)
+            self.update_project_info()
             self.statusBar().showMessage(self.t("Saved complete project: {path}", path=path), 10000)
             return True
         except Exception as exc:
@@ -1383,6 +1515,7 @@ class MainWindow(QMainWindow):
             self.view.centerOn(*settings["center"])
             self.project_path = path
             self.remember_directory("input", path.resolve().parent)
+            self.remember_recent_project(path)
             self.saved_state = self.document_state()
             self.update_project_info()
             self.refresh()

@@ -48,8 +48,8 @@ Calling this a legacy-style profile is an inference from the field layout, suppo
 
 ## Contour settings confirmed by owner feedback
 
-- **Join gaps up to (px)**: original-image distance, default 0 (disabled), range 0–4,096 with hundredth-pixel input. Node exact intersections first. Prefer nearby free endpoint pairs, then connect remaining ends to the nearest eligible segment, including its interior for T junctions. Use deterministic local bridges; do not chain an endpoint through multiple automatic joins. Generated joins are purple and remain editor-only.
-- **Contour offset (px)**: signed integer pixels, range -4,096 through 4,096. Union the closed faces, then buffer outward for positive values or inward for negative values, using mitered corners. Show the effective boundary in green. A positive offset retains more pixels for Remove outside and removes more for Remove inside. A fully eliminated inward region is rejected.
+- **Join gaps up to (px)**: original-image distance, default 0 (disabled), range 0–4,096 with hundredth-pixel input. Node exact intersections first. Prefer nearby free endpoint pairs, then connect remaining ends to the nearest eligible segment, including its interior for T junctions. Use deterministic local bridges; do not chain an endpoint through multiple automatic joins. Generated joins remain editor-only and follow the same cyan-closed/red-open classification as other lines.
+- **Contour offset (px)**: signed integer pixels, range -4,096 through 4,096. Union the closed faces, then buffer outward for positive values or inward for negative values, using mitered corners. Show the effective boundary as dashed cyan. A positive offset retains more pixels for Remove outside and removes more for Remove inside. A fully eliminated inward region is rejected.
 - Settings update contour previews immediately. Applied masks remain snapshots; undo an old mask and apply again to replace its result. Changing the numbers alone does not mutate an already applied mask or the source JSON. Zoom does not affect the numerical distances.
 
 ## Real-image export check

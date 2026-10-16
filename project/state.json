@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "updated": "2026-10-16",
-  "phase": "portable_delivery_and_bilingual_editor",
+  "phase": "geometry_toolbars_and_export_footer",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -20,7 +20,14 @@
     "Self-contained ZIP .dale projects preserve exact sources, operations and redo, placement, geometry, viewport, language/tool state, and unfinished closures.",
     "After every project update, rebuild the complete ignored DALE/ portable folder and preserve UserData/user files; record source hashes in build-info.json.",
     "English technical documentation/serialization and Russian chat; English/Russian UI with translated tooltips, persistent language selection, Russian initial default.",
-    "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow."
+    "Open pair automatically selects the sibling same-stem .json; show a JSON picker only when it is absent. Invalid matching JSON uses the existing import error flow.",
+    "Latest color instruction: resolved closed geometry cyan, unresolved/open lines red; all lines 2 screen pixels. Supersedes the earlier outer-red/interior-cyan request and original diagnostic colors.",
+    "Separate top General, Lines and vertices, Pixels, and Snapping toolbars with code-drawn icons and bordered/filled buttons.",
+    "New line uses press/drag/release; snapping radius 0-256 screen pixels, default 14, prioritizes vertices and excludes self-edges on movement.",
+    "Circular geometry erasers remove touched edges or vertices across swept drags, commit one undo step, and support Escape cancellation. Geometry diameter uses screen pixels; raster diameter uses source pixels.",
+    "Ctrl+wheel changes active tool size globally; over size/distance controls it adjusts that control. Alt-click adds free closure corners.",
+    "Footer shows map dimensions, current closed/open component counts, export crop dimensions including 3-pixel guards, all/one-region selection, and language. Open counts are connected unresolved groups, not guessed missing regions.",
+    "Optional project UI fields retain snapping, geometry size, mode, and export selection; older schema-1 archives load with defaults."
   ],
   "validated": [
     {
@@ -54,13 +61,13 @@
     },
     {
       "check": "unit_and_qt_event_tests",
-      "result": "75 passed",
+      "result": "90 passed",
       "command": "python -m pytest -q",
-      "scope": "Geometry, T junctions, point mouse events/spacing, portable ZIP history and source safety, cropped edge guards, language switching/preferences/dialogs."
+      "scope": "Existing coverage plus swept geometry erasers, line creation/T connections, snap priority/exclusions, right-drag in all tools, global Ctrl+wheel, selected export bounds and footer/project preferences."
     },
     {
       "check": "visual_review",
-      "result": "Russian and English synthetic editor screenshots inspected. All controls fit in the scrollable side panel; fixed circular point handles and source-aligned transparency visible.",
+      "result": "English/Russian screenshots inspected: three toolbar rows with four styled groups and icons, complete two-line footer with region/language selectors, cyan closed/red open lines, circular geometry eraser, selected-region highlight and exact 527x457 guarded crop preview.",
       "command": "python tools/preview_demo.py"
     },
     {
@@ -104,6 +111,11 @@
       "check": "automatic_json_pairing",
       "version": "0.2.1",
       "result": "Qt Open pair checks passed for automatic same-stem JSON loading without a second picker, fallback selection when absent, and cancellation preserving the active session. The full existing suite remains 75 passed."
+    },
+    {
+      "check": "packaged_geometry_toolbars_and_footer",
+      "version": "0.3.0",
+      "result": "Standalone isolated-PATH launch loaded the synthetic .dale archive and 4 history operations. Native Windows launch opened the real 13500x16200 pair. Both exited 0 through smoke timers; screenshots inspected for styled icons/panels, cyan/red line classification, complete footer and language control."
     }
   ],
   "completed": [
@@ -135,14 +147,14 @@
     },
     {
       "id": "NEXT-007",
-      "task": "Design boundary reuse across aligned floors and/or free region outlines for roofs absent from their own wall JSON. Do not infer heights from filenames."
+      "task": "Design reusable boundaries across aligned floors. Manual free outlines are now possible with New line; do not infer heights from filenames."
     }
   ],
   "limitations": [
     "No semantic terrain/object segmentation.",
     "No direct Foundry connection, scene mutation, native scene import export, or multi-floor scene assembly; actual Foundry 13/14 placement unverified.",
     "Only the observed legacy zero-shift/zero-padding profile is validated with real samples; nonzero legacy shifts and other variants need explicit evidence/adapters.",
-    "Gap joining cannot recover missing roof geometry. Boundary reuse/free outlines and per-face selection remain future work.",
+    "Gap joining cannot recover missing roof geometry. Trace missing outlines manually with New line; automatic boundary reuse and per-face selection inside a connected object remain future work.",
     "The preview omits the mandatory extra 3-pixel export guard; exported PNGs add it around the effective contour.",
     "Unknown low-level import/ZIP/library error details can remain English; application actions, tooltips, guidance, and dialogs are bilingual."
   ],
@@ -150,5 +162,6 @@
     "en",
     "ru"
   ],
-  "portable_entrypoint": "DALE/DALE.exe"
+  "portable_entrypoint": "DALE/DALE.exe",
+  "current_version": "0.3.0"
 }

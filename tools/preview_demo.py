@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from dale.raster import load_preview
 from dale.scene import load_pair
-from dale.session import Closure, ContourMask, Session, Stroke
+from dale.session import Closure, ContourMask, GeometryEdit, Session, Stroke
 from dale.ui import MainWindow, configure_application
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,7 @@ session = Session(source)
 session.add(Closure(((200, 350), (180, 400), (180, 450), (200, 500))))
 session.add(ContourMask(session.analysis().area, "outside"))
 session.add(Stroke(((740, 510), (780, 550)), 30))
+session.add(GeometryEdit(session.walls + (((950, 650), (1050, 750)),), session.closures))
 window = MainWindow()
 window.show()
 app.processEvents()
@@ -40,4 +41,15 @@ app.processEvents()
 english = destination.with_name("editor-preview-en.png")
 window.grab().save(str(english))
 print(english)
+window.set_language("ru", persist=False)
+window.mode_actions["Erase lines"].setChecked(True)
+window.view.set_mode("Erase lines")
+window.view.cursor_point = (990, 690)
+window.view.geometry_diameter = 50
+window.geometry_brush_control.setValue(50)
+window.region_control.setCurrentIndex(1)
+app.processEvents()
+eraser = destination.with_name("geometry-eraser-preview.png")
+window.grab().save(str(eraser))
+print(eraser)
 # No event loop is entered and no desktop window is shown by the offscreen platform.

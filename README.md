@@ -8,11 +8,11 @@ DALE — локальный редактор, который превращае�
 
 Working prototype. Six real Dungeon Alchemist pairs have been inspected and opened, and one 13,500 × 16,200 source image has passed the PNG pipeline check. Verification in the owner's Foundry installation is pending. The workflow uses wall geometry and manual cleanup; semantic terrain recognition is not implemented. See [the observed export profile](docs/sample-formats.md) for sample findings and current limitations.
 
-Implemented: wall overlays and temporary closures, adjustable gap joining including T junctions, signed contour offsets, draggable circular vertices, inside/outside masking, erase/restore brushes, undo/redo, right-button panning, complete `.dale` projects, English/Russian UI with tooltips, and separate cropped PNG export with a mandatory 3-pixel guard per object. Foundry 13/14 selection and integer-foot elevation retain placement intent; placement in Foundry is configured separately using the exported coordinate reference.
+Implemented: separate styled toolbars with icons; cyan closed/red open contours at 2 screen pixels; draggable circular vertices, drag-to-create lines, configurable vertex-first snapping, circular line/vertex erasers, and Ctrl+wheel size adjustment. Also includes gap joining with T junctions, signed offsets, pixel erase/restore, masking, undo/redo, right-drag pan, complete `.dale` projects, and separate cropped PNGs with mandatory 3-pixel guards. The footer shows map/crop dimensions, closed/open counts, export-region selection, and language. Foundry 13/14 selection and integer-foot elevation retain placement intent; placement is configured separately in Foundry.
 
 ## Run on Windows
 
-Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains the language choice. English and Russian can be switched in the right panel; hover over controls for help.
+Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains the language choice. English and Russian can be switched in the footer; hover over controls for help.
 
 The generated portable folder is ignored by Git. Repository updates must rebuild it using the command below. Build provenance is recorded in `DALE/build-info.json`; refresh preserves `UserData` and user projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
 

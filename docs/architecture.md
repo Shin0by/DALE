@@ -35,7 +35,7 @@ Default scene origin is `(0, 0)`. Nonzero padding triggers a warning and require
 
 ## Geometry policy
 
-Node intersections with Shapely before polygonization. Snap only to original source segments, within 14 viewport pixels. Reconcile projected closure anchors with nearby source lines at 1e-7 image pixels to handle floating-point error on angled segments; this is numerical reconciliation, not automatic gap repair. Give synthetic connectors a distinct visual style. Diagnose dangles, cuts, and invalid rings after polygonization; these may be exterior lines or internal partitions rather than actual gaps. The UI therefore asks for review when enclosed regions coexist with unresolved segments. Never silently bridge a gap or invent a wall.
+Node intersections with Shapely before polygonization. Use the Snapping toolbar radius (default 14, range 0-256 screen pixels), preferring vertices over segment projections. New lines and moved nodes snap to working walls and local paths. Exclude the moving node and its incident edges from snap targets. Closure anchors use working wall geometry; Alt-click inserts free corners. Reconcile projected closure anchors with nearby source lines at 1e-7 image pixels to handle floating-point error on angled segments; this is numerical reconciliation, not automatic gap repair. Classify source lines, local closures, and automatic joins consistently: closed geometry cyan, unresolved lines red, all at 2 cosmetic screen pixels. An unfinished path is red; an offset boundary is dashed cyan. Diagnose dangles, cuts, and invalid rings after polygonization; these may be exterior lines or internal partitions rather than actual gaps. The UI therefore asks for review when enclosed regions coexist with unresolved segments. Never silently bridge a gap or invent a wall.
 
 The explicit gap-tolerance setting described below authorizes visible editor-only bridge generation. It is disabled by default and is distinct from numerical reconciliation and cursor snapping.
 
@@ -45,7 +45,7 @@ All bounded faces are unioned for each mask operation. This is geometric extract
 
 Real samples contain small gaps, unclosed artwork, and T junctions. Exact line intersections are noded before tolerance repair. An explicit nonnegative gap tolerance (0 disables joining) creates editor-only bridge segments: prioritize nearby free endpoint pairs, then project remaining free endpoints to eligible source segments, including segment interiors. Use spatial indexes and deterministic distance/coordinate ordering. Each free end receives at most one automatic bridge. Generated joins are visible and never enter source JSON. This does not guarantee a useful polygon where wall metadata is absent or incomplete.
 
-After polygonization and face union, buffer the region by the signed offset. Positive expands, negative contracts; mitered corners preserve straight building edges. Reject empty results from excessive contraction. Settings affect image-space geometry independently of viewport zoom. Keep the original source walls available for snap projection and cyan overlay; show automatic joins in purple and the offset boundary in green. Previously applied masks remain immutable snapshots and can be undone.
+After polygonization and face union, buffer the region by the signed offset. Positive expands, negative contracts; mitered corners preserve straight building edges. Reject empty results from excessive contraction. Settings affect image-space geometry independently of viewport zoom. Keep source walls unchanged, classify working lines and joins by closed/open topology, and show the offset boundary as dashed cyan. Diagnostics retain the join/segment counts without separate diagnostic colors. Previously applied masks remain immutable snapshots and can be undone.
 
 The owner tests `DALE/DALE.exe`. A positional `.dale` path or `--image` and `--scene` arguments support preloaded testing. Python console/development scripts remain implementation tools.
 
@@ -83,4 +83,21 @@ Export cancellation is checked per stripe and progress covers the export stripes
 
 ## Delivery boundaries
 
-No direct Foundry mutation or floor-module dependency in the prototype. Preserve native resolution and source JSON while exporting separate crops. The observed legacy zero-shift/zero-padding profile is validated; other profiles require evidence. Per-face selection, free roof outlines/boundary reuse, semantic segmentation, refined edge antialiasing, and live Foundry assembly remain follow-up work.
+No direct Foundry mutation or floor-module dependency in the prototype. Preserve native resolution and source JSON while exporting separate crops. The observed legacy zero-shift/zero-padding profile is validated; other profiles require evidence. Manual free outlines can be assembled with New line. Per-face selection within a connected object, automatic boundary reuse across floors, semantic segmentation, refined edge antialiasing, and live Foundry assembly remain follow-up work.
+
+
+## ADR-007: toolbar tools, snapping, and status footer
+
+The latest owner color rule supersedes both the original diagnostic palette and the intermediate outer-red/interior-cyan request: draw resolved closed geometry cyan and unresolved segments red. All line pens are cosmetic, 2 screen pixels at any zoom. Keep fixed 10-screen-pixel circular handles.
+
+Provide distinct top QToolBars for general actions, geometry, pixels, and snapping. Use deterministic QPainter icons from `toolbar.py`, panel backgrounds, filled/bordered inactive buttons, and a clear checked state. Close map offers project saving without closing the application.
+
+New line captures a first endpoint on press and commits the second on release, with a live preview. Prefer existing vertices over closer line projections within the configured screen-space radius. Split target edges at connection points. Moving a node excludes its own incident edges from snap candidates; minimum handle spacing prevents crowded new points.
+
+Geometry erasers remove entire touched edges or vertices, not raster pixels. Sweep a capsule between mouse samples so fast drags do not miss geometry. Split local polylines into surviving runs. Preview immutable GeometryEdit snapshots and commit one per drag; Escape cancels. Vertex erasing reuses the selected junction-deletion policy. Automatic gap joins remain generated from tolerance rather than independently persisted walls.
+
+Pixel brush diameter uses source pixels; geometry eraser diameter uses screen pixels (1-512, default 24). Ctrl+wheel changes the active sized tool anywhere in the window. Over size/distance controls it adjusts that control. Reserve Alt-click for free closure corners; standard Ctrl shortcuts remain available.
+
+The permanent footer contains source map dimensions, current closed components and connected unresolved-group counts, export dimensions with the mandatory 3-pixel guard, an all/one-region selector, and language. An open count is a connected graph-component count, not inferred missing polygons. Closed counts use the current face union, while crop bounds and selection use the effective export mask snapshot. For multiple selected outputs show the largest actual PNG by pixel area; for one show exact dimensions and origin. Share `crop_bounds` between export and footer. Highlight the selected region without burning it into PNGs, and export only that region when selected.
+
+Save optional snap enablement/radius, geometry eraser diameter, current tools, and region selection in schema-1 project UI settings; defaults preserve loading older archives. Geometry and raster history serialization stay independent of Qt.

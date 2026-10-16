@@ -5,6 +5,105 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QAbstractButton, QComboBox, QLabel, QMenu, QToolBar, QWidget
 
 RUSSIAN = {
+    "General": "Общие действия",
+    "Lines and vertices": "Линии и точки",
+    "Pixels": "Пиксели",
+    "Snapping": "Привязка",
+    "New line": "Новая линия",
+    "Erase lines": "Ластик линий",
+    "Erase vertices": "Ластик точек",
+    "Close map": "Закрыть карту",
+    "Snap": "Привязка",
+    "Eraser (screen px)": "Диаметр (экранные px)",
+    "Brush (source px)": "Кисть (исходные px)",
+    "Distance (screen px)": "Радиус (экранные px)",
+    "All regions": "Все области",
+    (
+        "Closed: connected closed regions in current geometry. "
+        "Open: connected groups of unresolved lines. Export bounds include 3 px on every side."
+    ): (
+        "Замкнутые — связанные замкнутые области текущей геометрии. "
+        "Незамкнутые — связанные группы незамкнутых линий. "
+        "Габариты экспорта включают запас 3 px с каждой стороны."
+    ),
+    "Region {number}": "Область {number}",
+    "Choose all closed regions or one region to highlight and export.": (
+        "Выберите все замкнутые области или одну для подсветки и экспорта."
+    ),
+    "Map: not loaded | Closed: 0 | Open: 0": "Карта не загружена | Замкнутых: 0 | Незамкнутых: 0",
+    "Export: no closed region": "Экспорт: нет замкнутых областей",
+    "Export (+3 px): {width} × {height} px | X: {x}, Y: {y}": (
+        "Экспорт (+3 px): {width} × {height} px | X: {x}, Y: {y}"
+    ),
+    "Export: {count} PNGs | Largest crop (+3 px): {width} × {height} px": (
+        "Экспорт: {count} PNG | Наибольший PNG (+3 px): {width} × {height} px"
+    ),
+    "Map: {width} × {height} px | Closed: {closed} | Open: {open}\n{detail}": (
+        "Карта: {width} × {height} px | Замкнутых: {closed} | Незамкнутых: {open}\n{detail}"
+    ),
+    "Cyan: closed regions\nRed: open contours\nAll geometry lines: 2 screen pixels": (
+        "Голубой: замкнутые области\nКрасный: незамкнутые контуры\n"
+        "Толщина линий: 2 экранных пикселя"
+    ),
+    (
+        "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
+        "Ctrl+wheel: active tool size\nAlt-click: free closure corner\n\n"
+        "New line: press, drag, release\nEdit points: click line, drag circle\n"
+        "Double-click circle: delete\nGeometry erasers: drag the circle\n"
+        "Escape: cancel current gesture\n\n"
+        "Snap distance uses screen pixels.\nVertices take priority over lines.\n\n"
+        "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
+    ): (
+        "Правая кнопка: перемещение\nКолесо: масштаб у курсора\n"
+        "Ctrl + колесо: размер инструмента\nAlt + клик: угол замыкания\n\n"
+        "Новая линия: нажать, тянуть, отпустить\nТочки: клик по линии, тянуть кружок\n"
+        "Двойной клик: удалить точку\nЛастик геометрии: тяните круг\n"
+        "Escape: отменить текущий жест\n\n"
+        "Радиус привязки — в экранных пикселях.\nПриоритет у вершин, затем у линий.\n\n"
+        "Ctrl+S: сохранить проект\nPNG: отдельные области + 3 px запаса"
+    ),
+    "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size.": (
+        "Диаметр ластика геометрии в экранных пикселях. Ctrl + колесо меняет размер инструмента."
+    ),
+    "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors.": (
+        "Радиус привязки в экранных пикселях при любом масштабе. Сначала вершины, затем линии."
+    ),
+    "Snap the first/last click to a wall; Alt-click adds free corners.": (
+        "Первый и последний клик привязываются к стене; Alt + клик добавляет свободный угол."
+    ),
+    "Press for the first point, drag, release for the second. Snap now or when moving points.": (
+        "Нажатие задаёт первую точку, отпускание — вторую. "
+        "Привязка работает при создании и переносе."
+    ),
+    "Erase entire line segments touched by the circle. Drag is one undo step.": (
+        "Удалить отрезки, задетые кругом. Всё движение мышью отменяется одним шагом."
+    ),
+    "Erase vertices inside the circle using the selected junction deletion policy.": (
+        "Удалить точки внутри круга с учётом выбранного правила удаления Т-узлов."
+    ),
+    "Close the current map after offering to save its project.": (
+        "Закрыть текущую карту с предложением сохранить проект."
+    ),
+    "Enable snapping for new lines and moved vertices; vertices take priority.": (
+        "Включить привязку новых линий и перемещаемых точек; приоритет у вершин."
+    ),
+    "Click near a wall within the configured snap distance.": (
+        "Щёлкните рядом со стеной в пределах установленного радиуса привязки."
+    ),
+    (
+        "{count} unresolved segments remain. They may be gaps or unused/internal lines.\n"
+        "Apply the mask to the closed regions anyway? Choose No to repair with Closure."
+    ): (
+        "Осталось незамкнутых отрезков: {count}. Это могут быть зазоры или лишние линии.\n"
+        "Применить маску к замкнутым областям? Выберите «Нет», чтобы исправить контур."
+    ),
+    (
+        "No enclosed region exists. Use Closure to connect original walls: "
+        "click to snap, Alt-click for corners, click to snap the end."
+    ): (
+        "Нет замкнутых областей. Соедините стены: клик привязывает начало, "
+        "Alt + клик добавляет углы, последний клик привязывает конец."
+    ),
     "Floor overlay editor": "Редактор этажей",
     "Editing": "Редактирование",
     "History and view": "История и вид",

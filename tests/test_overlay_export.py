@@ -73,3 +73,17 @@ def test_cancelled_set_leaves_no_partial_directory(pair_factory, tmp_path):
         export_overlays(session, tmp_path, Placement(), cancelled=lambda: True)
     assert not list(tmp_path.glob(".dale-export-*"))
     assert not list(tmp_path.glob("*-overlays*"))
+
+
+def test_exporting_selected_region_uses_the_same_guarded_bounds_as_the_footer(
+    pair_factory, tmp_path
+):
+    source = pair_factory(
+        size=(200, 200), walls=_rectangle(10, 20, 20, 30) + _rectangle(100, 120, 40, 50)
+    )
+    folder = export_overlays(Session(source), tmp_path, Placement(), region_index=1)
+    manifest = json.loads((folder / "placement.json").read_text())
+    assert manifest["selected_region"] == 1
+    assert len(manifest["items"]) == 1
+    item = manifest["items"][0]
+    assert (item["x"], item["y"], item["width"], item["height"]) == (97, 117, 47, 57)

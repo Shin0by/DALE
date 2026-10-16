@@ -6,9 +6,10 @@ import argparse
 import json
 import os
 import sys
+from itertools import pairwise
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -16,6 +17,7 @@ from PySide6.QtGui import (
     QFontDatabase,
     QIntValidator,
     QKeySequence,
+    QPainterPath,
     QTransform,
 )
 from PySide6.QtWidgets import (
@@ -32,33 +34,35 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
-    QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
 from dale import __version__
-from dale.canvas import MapView
+from dale.canvas import MapView, line_path
+from dale.geometry import open_contour_count
 from dale.localization import DesktopTranslator, translate, translate_static
-from dale.overlay_export import export_overlays
+from dale.overlay_export import crop_bounds, export_overlays, export_regions
 from dale.placement import Placement
 from dale.preferences import load_language, save_language, settings_path
 from dale.project_io import load_project, save_project
 from dale.raster import ExportCancelled, load_preview
 from dale.scene import load_pair
 from dale.session import Session
+from dale.toolbar import make_toolbar, tool_icon
 
 
 class ExportWorker(QThread):
     progress = Signal(int)
     outcome = Signal(str, str)
 
-    def __init__(self, session, path, placement, parent):
+    def __init__(self, session, path, placement, parent, region_index=None):
         super().__init__(parent)
         self.source = session.source
         self.operations = tuple(session.operations)
         self.path = path
         self.placement = placement
+        self.region_index = region_index
         self.session = Session(
             session.source,
             session.origin,
@@ -75,6 +79,7 @@ class ExportWorker(QThread):
                 self.placement,
                 self.progress.emit,
                 self.isInterruptionRequested,
+                region_index=self.region_index,
             )
             self.outcome.emit("success", str(destination))
         except ExportCancelled:
@@ -96,6 +101,9 @@ class MainWindow(QMainWindow):
         self.project_path = None
         self.loaded_project = None
         self.saved_state = None
+        self.regions = ()
+        self.region_key = None
+        self.selected_region = None
         self.view = MapView()
         self.view.changed.connect(self.refresh)
         self.view.message.connect(
@@ -166,7 +174,6 @@ class MainWindow(QMainWindow):
         self.language_control.currentIndexChanged.connect(
             lambda index: self.set_language("en" if index == 0 else "ru")
         )
-        form.addRow("Language", self.language_control)
         form.addRow("Target", self.version)
         form.addRow("Elevation (ft)", self.elevation)
         form.addRow("Scene origin X", self.origin_x)
@@ -180,19 +187,16 @@ class MainWindow(QMainWindow):
         sidebar.addWidget(alignment)
         sidebar.addWidget(self.placement_hint)
         sidebar.addWidget(
-            QLabel(
-                "Cyan: source walls\nOrange: unresolved lines\nYellow: local closures\n"
-                "Purple: gap joins\nGreen: offset boundary"
-            )
+            QLabel("Cyan: closed regions\nRed: open contours\nAll geometry lines: 2 screen pixels")
         )
         sidebar.addWidget(self.diagnostics)
         help_text = QLabel(
-            "Right-drag: pan in every tool\nWheel: zoom at cursor\n\nClosure:\n"
-            "Click: snap start/end\nCtrl/Alt-click: free corner\nEscape: cancel\n\n"
-            "Edit points:\nClick line: insert point\nDrag circle: move\n"
-            "Double-click circle: delete\n"
-            "Circles keep their screen size.\n\n"
-            "Erase/Restore: drag to paint\nBrush size: original pixels\n\n"
+            "Right-drag: pan in every tool\nWheel: zoom at cursor\n"
+            "Ctrl+wheel: active tool size\nAlt-click: free closure corner\n\n"
+            "New line: press, drag, release\nEdit points: click line, drag circle\n"
+            "Double-click circle: delete\nGeometry erasers: drag the circle\n"
+            "Escape: cancel current gesture\n\n"
+            "Snap distance uses screen pixels.\nVertices take priority over lines.\n\n"
             "Ctrl+S: save complete project\nPNG: cropped regions + 3 px guard."
         )
         help_text.setWordWrap(True)
@@ -210,64 +214,104 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setLayout(layout)
         self.setCentralWidget(root)
-        toolbar = QToolBar("Editing")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
+        self.footer_label = QLabel()
+        self.footer_label.setMinimumWidth(100)
+        self.footer_label.setMinimumHeight(44)
+        self.footer_label.setMargin(3)
+        self.statusBar().setMinimumHeight(50)
+        self.statusBar().addPermanentWidget(self.footer_label, 1)
+        self.region_control = QComboBox()
+        self.region_control.setMinimumWidth(120)
+        self.region_control.setToolTip(
+            "Choose all closed regions or one region to highlight and export."
+        )
+        self.region_control.currentIndexChanged.connect(self.select_region)
+        self.statusBar().addPermanentWidget(self.region_control)
+        self.statusBar().addPermanentWidget(QLabel("Language"))
+        self.statusBar().addPermanentWidget(self.language_control)
+        general = make_toolbar(self, "General")
+        geometry = make_toolbar(self, "Lines and vertices", new_row=True)
+        pixels = make_toolbar(self, "Pixels", new_row=True)
+        snapping = make_toolbar(self, "Snapping")
+        self.toolbars = (general, geometry, pixels, snapping)
 
-        def action(title, handler, shortcut=None):
-            item = QAction(title, self)
+        def action(bar, title, handler, shortcut=None, compact=False):
+            item = QAction(tool_icon(title), title, self)
             item.triggered.connect(handler)
             if shortcut:
                 item.setShortcut(shortcut)
-            toolbar.addAction(item)
+            bar.addAction(item)
+            if compact:
+                bar.widgetForAction(item).setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
             return item
 
-        action("Open pair", self.open_pair, "Ctrl+I")
-        action("Open project", self.open_project, QKeySequence.StandardKey.Open)
-        action("Save project", self.save_project_file, QKeySequence.StandardKey.Save)
-        save_as = QAction("Save project as…", self)
-        save_as.setShortcut(QKeySequence.StandardKey.SaveAs)
-        save_as.triggered.connect(lambda: self.save_project_file(save_as=True))
+        action(general, "Open pair", self.open_pair, "Ctrl+I")
+        action(general, "Open project", self.open_project, QKeySequence.StandardKey.Open)
+        action(general, "Save project", self.save_project_file, QKeySequence.StandardKey.Save)
+        save_as = action(
+            general,
+            "Save project as…",
+            lambda: self.save_project_file(save_as=True),
+            QKeySequence.StandardKey.SaveAs,
+            compact=True,
+        )
         self.menuBar().addMenu("File").addAction(save_as)
-        self.export_action = action("Export PNGs", self.export, "Ctrl+E")
-        toolbar.addSeparator()
+        action(general, "Close map", self.close_document, compact=True)
+        self.export_action = action(general, "Export PNGs", self.export, "Ctrl+E")
+        general.addSeparator()
+        action(general, "Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo, True)
+        action(general, "Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo, True)
         modes = QActionGroup(self)
-        self.mode_actions = {}
         modes.setExclusive(True)
-        for mode in ("Pan", "Closure", "Edit points", "Erase", "Restore"):
-            item = action(mode, lambda checked=False, m=mode: self.view.set_mode(m))
-            item.setCheckable(True)
-            item.setChecked(mode == "Pan")
-            modes.addAction(item)
-            self.mode_actions[mode] = item
-        toolbar.addSeparator()
-        action("Remove outside", lambda: self.mask("outside"))
-        action("Remove inside", lambda: self.mask("inside"))
-        history = QToolBar("History and view")
-        history.setMovable(False)
-        self.addToolBarBreak()
-        self.addToolBar(history)
-        for name, handler, shortcut in (
-            ("Undo", lambda: self.history(False), QKeySequence.StandardKey.Undo),
-            ("Redo", lambda: self.history(True), QKeySequence.StandardKey.Redo),
-            ("Fit", self.view.fit_map, "F"),
+        self.mode_actions = {}
+        for bar, names in (
+            (general, ("Pan",)),
+            (geometry, ("Edit points", "New line", "Closure", "Erase lines", "Erase vertices")),
+            (pixels, ("Erase", "Restore")),
         ):
-            item = QAction(name, self)
-            item.triggered.connect(handler)
-            item.setShortcut(shortcut)
-            history.addAction(item)
-        self.walls_action = QAction("Show walls", self)
+            for mode in names:
+                item = action(bar, mode, lambda checked=False, m=mode: self.view.set_mode(m))
+                item.setCheckable(True)
+                item.setChecked(mode == "Pan")
+                modes.addAction(item)
+                self.mode_actions[mode] = item
+        action(general, "Fit", self.view.fit_map, "F", compact=True)
+        self.walls_action = action(general, "Show walls", self.toggle_walls, compact=True)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
-        self.walls_action.toggled.connect(self.toggle_walls)
-        history.addAction(self.walls_action)
-        history.addWidget(QLabel("  Brush diameter (px): "))
-        brush = QSpinBox()
-        self.brush_control = brush
+        geometry.addSeparator()
+        geometry.addWidget(QLabel("Eraser (screen px)"))
+        self.geometry_brush_control = QSpinBox()
+        self.geometry_brush_control.setRange(1, 512)
+        self.geometry_brush_control.setValue(self.view.geometry_diameter)
+        self.geometry_brush_control.setToolTip(
+            "Geometry eraser diameter in screen pixels. Ctrl+wheel changes the active tool size."
+        )
+        self.geometry_brush_control.valueChanged.connect(self.set_geometry_brush)
+        geometry.addWidget(self.geometry_brush_control)
+        pixels.addSeparator()
+        action(pixels, "Remove outside", lambda: self.mask("outside"))
+        action(pixels, "Remove inside", lambda: self.mask("inside"))
+        pixels.addWidget(QLabel("Brush (source px)"))
+        brush = self.brush_control = QSpinBox()
         brush.setRange(1, 4096)
         brush.setValue(40)
         brush.valueChanged.connect(self.set_brush)
-        history.addWidget(brush)
+        pixels.addWidget(brush)
+        self.snap_action = action(snapping, "Snap", self.set_snapping)
+        self.snap_action.setCheckable(True)
+        self.snap_action.setChecked(True)
+        snapping.addWidget(QLabel("Distance (screen px)"))
+        self.snap_distance = QSpinBox()
+        self.snap_distance.setRange(0, 256)
+        self.snap_distance.setValue(14)
+        self.snap_distance.setToolTip(
+            "Snap radius in screen pixels at any zoom. Prefer vertices, then line interiors."
+        )
+        self.snap_distance.valueChanged.connect(self.set_snap_distance)
+        snapping.addWidget(self.snap_distance)
+        self.view.size_changed.connect(self.sync_tool_sizes)
+        QApplication.instance().installEventFilter(self)
         tips = {
             "Open pair": "Load a source JPG and matching wall JSON.",
             "Open project": "Open a portable .dale archive including sources and undo history.",
@@ -281,7 +325,19 @@ class MainWindow(QMainWindow):
                 "Export separate cropped PNGs with a 3 px guard and a placement manifest."
             ),
             "Pan": "Drag to move the map. Right-drag works in every tool.",
-            "Closure": "Snap the first/last click to a wall; Ctrl/Alt-click adds free corners.",
+            "Closure": "Snap the first/last click to a wall; Alt-click adds free corners.",
+            "New line": (
+                "Press for the first point, drag, release for the second. "
+                "Snap now or when moving points."
+            ),
+            "Erase lines": (
+                "Erase entire line segments touched by the circle. Drag is one undo step."
+            ),
+            "Erase vertices": (
+                "Erase vertices inside the circle using the selected junction deletion policy."
+            ),
+            "Close map": "Close the current map after offering to save its project.",
+            "Snap": "Enable snapping for new lines and moved vertices; vertices take priority.",
             "Edit points": (
                 "Click a line to insert; drag a fixed-size circle t"
                 "o move; double-click it to delete."
@@ -322,7 +378,17 @@ class MainWindow(QMainWindow):
         self.language_control.blockSignals(True)
         self.language_control.setCurrentIndex(1 if language == "ru" else 0)
         self.language_control.blockSignals(False)
-        translate_static(self, language, (self.info, self.diagnostics, self.placement_hint))
+        translate_static(
+            self,
+            language,
+            (
+                self.info,
+                self.diagnostics,
+                self.placement_hint,
+                self.footer_label,
+                self.region_control,
+            ),
+        )
         if not self.view.session:
             self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
         self.update_placement_hint()
@@ -380,6 +446,69 @@ class MainWindow(QMainWindow):
         self.view.diameter = value
         self.view.viewport().update()
 
+    def set_geometry_brush(self, value):
+        self.view.geometry_diameter = value
+        self.view.viewport().update()
+
+    def sync_tool_sizes(self):
+        for control, value in (
+            (self.brush_control, self.view.diameter),
+            (self.geometry_brush_control, self.view.geometry_diameter),
+        ):
+            control.blockSignals(True)
+            control.setValue(value)
+            control.blockSignals(False)
+
+    def set_snapping(self, enabled):
+        self.view.snap_enabled = enabled
+        self.view.snap = None
+        self.view.viewport().update()
+
+    def set_snap_distance(self, value):
+        self.view.snap_distance = value
+        self.view.snap = None
+        self.view.viewport().update()
+
+    def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.Type.Wheel
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            and isinstance(watched, QWidget)
+            and watched.window() == self
+        ):
+            steps = event.angleDelta().y() / 120
+            if steps:
+                control = watched
+                sizeable = (
+                    self.brush_control,
+                    self.geometry_brush_control,
+                    self.snap_distance,
+                    self.gap_tolerance,
+                    self.contour_offset,
+                )
+                while control is not None and control not in sizeable:
+                    control = control.parentWidget()
+                if control in sizeable:
+                    control.stepBy(round(steps) or (1 if steps > 0 else -1))
+                else:
+                    self.view.resize_tool(steps)
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
+
+    def close_document(self):
+        if self.worker or not self.can_discard():
+            return
+        self.view.clear_map()
+        if self.loaded_project:
+            self.loaded_project.close()
+            self.loaded_project = None
+        self.project_path = self.saved_state = None
+        self.info.setText(self.t("Open an upper-floor JPG and its Foundry JSON to begin."))
+        self.diagnostics.clear()
+        self.update_footer()
+        self.setWindowTitle(f"DALE {__version__} — " + self.t("Floor overlay editor"))
+
     def toggle_walls(self, value):
         self.view.show_walls = value
         self.view.viewport().update()
@@ -397,6 +526,9 @@ class MainWindow(QMainWindow):
             )
 
     def can_discard(self):
+        if self.view.active_gesture:
+            self.information("Finish editing", "Finish or cancel the active stroke/closure first.")
+            return False
         if not self.view.session:
             return True
         if self.saved_state is not None and self.document_state() == self.saved_state:
@@ -442,12 +574,16 @@ class MainWindow(QMainWindow):
             "pending_closure": self.view.pending,
             "junction_policy": self.view.junction_policy,
             "language": self.language,
+            "snap_enabled": self.view.snap_enabled,
+            "snap_distance_px": self.view.snap_distance,
+            "geometry_diameter": self.view.geometry_diameter,
+            "export_region": self.selected_region if self.selected_region is not None else -1,
         }
 
     def save_project_file(self, checked=False, save_as=False):
         if not self.view.session:
             return False
-        if self.view.stroke or self.view.drag_base is not None:
+        if self.view.active_gesture:
             self.information("Finish editing", "Finish the active drag before saving.")
             return False
         path = self.project_path
@@ -508,6 +644,12 @@ class MainWindow(QMainWindow):
             self.version.setCurrentIndex(0 if settings["foundry_major"] == 14 else 1)
             self.elevation.setCurrentText(str(settings["elevation_ft"]))
             self.brush_control.setValue(settings["brush_diameter"])
+            self.geometry_brush_control.setValue(settings["geometry_diameter"])
+            self.snap_distance.setValue(settings["snap_distance_px"])
+            self.snap_action.setChecked(settings["snap_enabled"])
+            self.view.snap_enabled = settings["snap_enabled"]
+            selected = settings["export_region"]
+            self.region_control.setCurrentIndex(selected + 1 if selected < len(self.regions) else 0)
             self.walls_action.setChecked(settings["show_walls"])
             self.view.show_walls = settings["show_walls"]
             self.junction_delete.setCurrentIndex(
@@ -586,6 +728,7 @@ class MainWindow(QMainWindow):
 
     def refresh(self):
         self.view.refresh()
+        self.update_footer()
         if self.view.session:
             analysis = self.view.analysis
             self.diagnostics.setText(
@@ -598,6 +741,92 @@ class MainWindow(QMainWindow):
                     operations=len(self.view.session.operations),
                 )
             )
+
+    def select_region(self, index):
+        self.selected_region = index - 1 if index > 0 else None
+        self.update_footer()
+
+    def update_footer(self):
+        session = self.view.session
+        if session:
+            try:
+                regions = export_regions(session)
+            except ValueError:
+                regions = ()
+        else:
+            regions = ()
+        key = tuple(polygon.wkb for polygon in regions)
+        if key != self.region_key:
+            self.selected_region = None
+            self.region_key = key
+        self.regions = regions
+        self.region_control.blockSignals(True)
+        self.region_control.clear()
+        self.region_control.addItem(self.t("All regions"))
+        for index in range(len(regions)):
+            self.region_control.addItem(self.t("Region {number}", number=index + 1))
+        self.region_control.setCurrentIndex(
+            self.selected_region + 1 if self.selected_region is not None else 0
+        )
+        self.region_control.setEnabled(bool(regions))
+        self.region_control.blockSignals(False)
+        self.view.selected_path = QPainterPath()
+        if self.selected_region is not None:
+            polygon = regions[self.selected_region]
+            for ring in (polygon.exterior, *polygon.interiors):
+                self.view.selected_path.addPath(line_path(pairwise(ring.coords)))
+            self.view.selected_path.setFillRule(Qt.FillRule.OddEvenFill)
+        if not session:
+            self.footer_label.setText(self.t("Map: not loaded | Closed: 0 | Open: 0"))
+            return
+        if not regions:
+            detail = self.t("Export: no closed region")
+        else:
+            selected = (
+                (regions[self.selected_region],) if self.selected_region is not None else regions
+            )
+            bounds = [crop_bounds(polygon) for polygon in selected]
+            if len(bounds) == 1:
+                x, y, right, bottom = bounds[0]
+                detail = self.t(
+                    "Export (+3 px): {width} × {height} px | X: {x}, Y: {y}",
+                    width=right - x,
+                    height=bottom - y,
+                    x=x,
+                    y=y,
+                )
+            else:
+                largest = max(bounds, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+                detail = self.t(
+                    "Export: {count} PNGs | Largest crop (+3 px): {width} × {height} px",
+                    count=len(bounds),
+                    width=largest[2] - largest[0],
+                    height=largest[3] - largest[1],
+                )
+        self.footer_label.setText(
+            self.t(
+                "Map: {width} × {height} px | Closed: {closed} | Open: {open}\n{detail}",
+                width=session.source.size[0],
+                height=session.source.size[1],
+                closed=(
+                    0
+                    if self.view.analysis.area.is_empty
+                    else 1
+                    if self.view.analysis.area.geom_type == "Polygon"
+                    else len(self.view.analysis.area.geoms)
+                ),
+                open=open_contour_count(self.view.analysis.unresolved),
+                detail=detail,
+            )
+        )
+        self.footer_label.setToolTip(
+            self.t(
+                "Closed: connected closed regions in current geometry. "
+                "Open: connected groups of unresolved lines. "
+                "Export bounds include 3 px on every side."
+            )
+        )
+        self.view.viewport().update()
 
     def apply_alignment(self):
         if self.view.session and self.can_discard():
@@ -627,7 +856,7 @@ class MainWindow(QMainWindow):
             self.information(
                 "Close a boundary first",
                 "No enclosed region exists. Use Closure to connect original walls: "
-                "click to snap, Ctrl/Alt-click for corners, click to snap the end.",
+                "click to snap, Alt-click for corners, click to snap the end.",
             )
             return
         if (
@@ -635,7 +864,7 @@ class MainWindow(QMainWindow):
             and self.question(
                 "Review open contours",
                 self.t(
-                    "{count} unresolved segments remain (orange). "
+                    "{count} unresolved segments remain. "
                     "They may be gaps or unused/internal lines.\n"
                     "Apply the mask to the closed regions anyway? "
                     "Choose No to repair with Closure.",
@@ -658,7 +887,7 @@ class MainWindow(QMainWindow):
     def export(self):
         if not self.view.session or self.worker:
             return
-        if self.view.pending or self.view.stroke or self.view.drag_base is not None:
+        if self.view.pending or self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active stroke/closure first.")
             return
         try:
@@ -684,7 +913,9 @@ class MainWindow(QMainWindow):
         self.progress.setAutoClose(False)
         self.progress.setAutoReset(False)
         self.progress.setMinimumDuration(0)
-        self.worker = ExportWorker(self.view.session, Path(path), placement, self)
+        self.worker = ExportWorker(
+            self.view.session, Path(path), placement, self, self.selected_region
+        )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.outcome.connect(self.record_outcome)
         self.worker.finished.connect(self.export_finished)

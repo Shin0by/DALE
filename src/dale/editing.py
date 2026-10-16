@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from itertools import combinations, pairwise
 from typing import Literal
 
+from shapely.geometry import LineString
+from shapely.geometry import Point as ShapePoint
+
 from dale.scene import Point, Segment
 from dale.session import GeometryEdit
 
@@ -65,6 +68,72 @@ def hit_edge(geometry: GeometryEdit, point: Point, tolerance: float) -> EdgeHit 
             if value <= distance:
                 best, distance = EdgeHit("closure", path_index, edge_index, projected), value
     return best
+
+
+def snap_point(
+    geometry: GeometryEdit, point: Point, tolerance: float, exclude=None
+) -> Point | None:
+    """Prefer vertices over projections; a dragged node cannot snap to its own edges."""
+    if tolerance <= 0:
+        return None
+    candidates = [
+        (math.dist(point, vertex), vertex)
+        for vertex in vertices(geometry)
+        if (exclude is None or not _same(vertex, exclude)) and math.dist(point, vertex) <= tolerance
+    ]
+    if candidates:
+        return min(candidates)[1]
+    edges = list(geometry.walls)
+    edges.extend(edge for path in geometry.closures for edge in pairwise(path))
+    if exclude is not None:
+        edges = [edge for edge in edges if math.dist(project(exclude, edge)[0], exclude) > EPSILON]
+    hit = hit_edge(GeometryEdit(tuple(edges)), point, tolerance)
+    return hit.point if hit else None
+
+
+def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
+    if _same(start, end):
+        return geometry
+    walls = _split_at(_split_at(geometry.walls, start), end)
+    if tuple(sorted((start, end))) not in {tuple(sorted(edge)) for edge in walls}:
+        walls.append((start, end))
+    closures = tuple(
+        tuple(_expanded_path(tuple(_expanded_path(path, start)), end)) for path in geometry.closures
+    )
+    return GeometryEdit(tuple(walls), closures)
+
+
+def erase_geometry(geometry, start, end, radius, target, junction_policy="continue"):
+    """Erase touched edges or vertices across a swept circular brush, including fast drags."""
+    sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
+    if target == "vertices":
+        selected = [p for p in vertices(geometry) if sweep.distance(ShapePoint(p)) <= radius]
+        for point in selected:
+            if hit_vertex(geometry, point, EPSILON) is not None:
+                geometry = delete_vertex(geometry, point, junction_policy)
+        return geometry
+    if target != "lines":
+        raise ValueError("Unknown geometry eraser target.")
+
+    def touched(edge):
+        return sweep.distance(LineString(edge)) <= radius
+
+    walls = tuple(edge for edge in geometry.walls if not touched(edge))
+    closures = []
+    for path in geometry.closures:
+        run = []
+        for a, b in pairwise(path):
+            if touched((a, b)):
+                if len(run) >= 2:
+                    closures.append(tuple(run))
+                run = []
+            else:
+                if not run:
+                    run.append(a)
+                run.append(b)
+        if len(run) >= 2:
+            closures.append(tuple(run))
+    return GeometryEdit(walls, tuple(closures))
 
 
 def insert_vertex(geometry: GeometryEdit, hit: EdgeHit) -> GeometryEdit:

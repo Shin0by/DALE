@@ -182,13 +182,32 @@ def _load_ui(value):
     policy = value.get("junction_policy", "continue")
     language = value.get("language", "ru")
     brush = number(value.get("brush_diameter", 40), "Brush diameter")
+    geometry_diameter = number(value.get("geometry_diameter", 24), "Geometry eraser diameter")
+    snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
+    export_region = value.get("export_region", -1)
     zoom = number(value.get("zoom", 1), "Viewport zoom")
-    if mode not in ("Pan", "Closure", "Edit points", "Erase", "Restore"):
+    if mode not in (
+        "Pan",
+        "Closure",
+        "Edit points",
+        "Erase",
+        "Restore",
+        "New line",
+        "Erase lines",
+        "Erase vertices",
+    ):
         raise ValueError("Invalid project editing mode.")
     if policy not in ("continue", "remove") or not 1 <= brush <= 4096 or not 0 < zoom <= 10000:
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
+    if not 1 <= geometry_diameter <= 512 or not 0 <= snap_distance <= 256:
+        raise ValueError("Invalid project tool sizes or snap distance.")
+    if type(export_region) is not int or not -1 <= export_region < 100_000:
+        raise ValueError("Invalid project export region.")
+    snap_enabled = value.get("snap_enabled", True)
+    if type(snap_enabled) is not bool:
+        raise ValueError("Invalid project snapping preference.")
     return {
         "foundry_major": placement.foundry_major,
         "elevation_ft": placement.elevation_ft,
@@ -196,6 +215,10 @@ def _load_ui(value):
         "junction_policy": policy,
         "language": language,
         "brush_diameter": int(brush),
+        "geometry_diameter": int(geometry_diameter),
+        "snap_distance_px": int(snap_distance),
+        "snap_enabled": snap_enabled,
+        "export_region": export_region,
         "show_walls": bool(value.get("show_walls", True)),
         "zoom": zoom,
         "center": _point(value.get("center", [0, 0])),

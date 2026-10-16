@@ -5,8 +5,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QTransform
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QTransform, QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -28,7 +28,19 @@ def isolated_preferences(monkeypatch, tmp_path):
     monkeypatch.setenv("DALE_SETTINGS_PATH", str(tmp_path / "settings.json"))
 
 
-@pytest.mark.parametrize("mode", ["Pan", "Erase", "Restore", "Closure", "Edit points"])
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "Pan",
+        "Erase",
+        "Restore",
+        "Closure",
+        "Edit points",
+        "New line",
+        "Erase lines",
+        "Erase vertices",
+    ],
+)
 @pytest.mark.parametrize("zoomed", [False, True])
 def test_right_drag_pans_in_every_mode_without_editing(app, pair_factory, mode, zoomed):
     source = pair_factory()
@@ -70,7 +82,7 @@ def test_closure_click_modifiers_and_escape(app, pair_factory):
     click((30, 21))
     assert len(view.pending) == 1
     assert view.pending[0][1] == 20
-    click((15, 130), Qt.KeyboardModifier.ControlModifier)
+    click((15, 130), Qt.KeyboardModifier.AltModifier)
     click((25, 220), Qt.KeyboardModifier.AltModifier)
     click((59, 250))
     assert isinstance(view.session.operations[0], Closure)
@@ -203,6 +215,10 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     first.contour_offset.setValue(2)
     first.elevation.setCurrentText("17")
     first.set_language("en")
+    first.geometry_brush_control.setValue(37)
+    first.snap_distance.setValue(21)
+    first.snap_action.setChecked(False)
+    first.set_snapping(False)
     first.version.setCurrentIndex(1)
     first.view.session.add(Stroke(((20, 30), (30, 40)), 3))
     first.view.pending = [(10, 20), (30, 40)]
@@ -221,6 +237,9 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert second.placement().foundry_major == 13
     assert second.view.mode == "Closure"
     assert second.language == "en"
+    assert second.view.geometry_diameter == 37
+    assert second.view.snap_distance == 21
+    assert not second.view.snap_enabled
     assert second.can_discard()
     with load_project(first.project_path) as project:
         assert project.ui_state["pending_closure"] == ((10, 20), (30, 40))
@@ -276,3 +295,128 @@ def test_russian_review_dialog_and_standard_buttons(app, pair_factory, monkeypat
     dialog.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel)
     assert "Сохранить" in dialog.button(QMessageBox.StandardButton.Save).text()
     window.close()
+
+
+def test_new_line_press_release_and_later_vertex_drag_snap_to_existing_geometry(app, pair_factory):
+    source = pair_factory(
+        size=(200, 200),
+        walls=[
+            {"c": [50, 50, 150, 50]},
+            {"c": [150, 50, 150, 150]},
+        ],
+    )
+    view = MapView()
+    view.resize(500, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(100, 100)
+    view.set_mode("New line")
+    app.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(51, 51))
+    assert view.line_start == (50, 50)
+    assert not view.session.operations
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(149, 120))
+    assert len(view.session.operations) == 1
+    assert ((50, 50), (150, 120)) in view.session.walls
+    view.set_mode("Edit points")
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(150, 120))
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(149, 149))
+    assert ((50, 50), (150, 150)) in view.session.walls
+    view.session.undo()
+    assert ((50, 50), (150, 120)) in view.session.walls
+    view.close()
+
+
+def test_geometry_eraser_drag_is_one_undo_step_and_escape_discards_preview(app, pair_factory):
+    source = pair_factory(
+        size=(200, 200),
+        walls=[
+            {"c": [50, 30, 50, 170]},
+            {"c": [150, 30, 150, 170]},
+        ],
+    )
+    view = MapView()
+    view.resize(500, 500)
+    view.show()
+    view.assign(Session(source), load_preview(source))
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(100, 100)
+    view.set_mode("Erase lines")
+    app.processEvents()
+    start, end = view.mapFromScene(30, 100), view.mapFromScene(170, 100)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert not view.session.walls
+    assert len(view.session.operations) == 1
+    view.session.undo()
+    view.refresh()
+    assert len(view.session.walls) == 2
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(50, 100))
+    assert len(view.edit_preview.walls) == 1
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert len(view.session.walls) == 2
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    assert not view.session.operations
+    view.close()
+
+
+def test_ctrl_wheel_resizes_tools_globally_without_zooming_or_changing_language(app, pair_factory):
+    source = pair_factory()
+    window = MainWindow()
+    window.show()
+    window.load_sources(source.image_path, source.json_path)
+    app.processEvents()
+
+    def wheel(widget):
+        event = QWheelEvent(
+            QPointF(10, 10),
+            QPointF(10, 10),
+            QPoint(),
+            QPoint(0, 120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.ControlModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(widget, event)
+
+    zoom = window.view.transform().m11()
+    window.mode_actions["Erase"].trigger()
+    wheel(window.info)
+    assert window.view.diameter > 40
+    assert window.brush_control.value() == window.view.diameter
+    window.mode_actions["Erase lines"].trigger()
+    wheel(window.language_control)
+    assert window.view.geometry_diameter > 24
+    assert window.language == "ru"
+    wheel(window.snap_distance)
+    assert window.view.snap_distance == 15
+    assert window.view.transform().m11() == zoom
+    window.close()
+
+
+def test_footer_selection_shows_exact_guarded_export_dimensions_and_language(app, pair_factory):
+    source = pair_factory()
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    window.region_control.setCurrentIndex(1)
+    assert window.selected_region == 0
+    assert "80 × 300" in window.footer_label.text()
+    assert "57 × 257" in window.footer_label.text()
+    assert "Замкнутых: 1" in window.footer_label.text()
+    assert "Незамкнутых: 0" in window.footer_label.text()
+    assert not window.view.selected_path.isEmpty()
+    assert window.language_control.parentWidget() == window.statusBar()
+    window.set_language("en", persist=False)
+    assert "Closed: 1" in window.footer_label.text()
+    assert window.selected_region == 0
+    window.project_path = source.json_path.with_suffix(".dale")
+    assert window.save_project_file()
+    restored = MainWindow()
+    assert restored.load_project_file(window.project_path)
+    assert restored.selected_region == 0
+    assert "57 × 257" in restored.footer_label.text()
+    window.close()
+    restored.close()

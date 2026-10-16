@@ -41,6 +41,27 @@ class RegionAnalysis:
     joins: tuple[Segment, ...] = ()
 
 
+def open_contour_count(segments: tuple[Segment, ...]) -> int:
+    """Count connected unresolved groups, without guessing how missing edges should join them."""
+    if not segments:
+        return 0
+    noded = unary_union([LineString(edge) for edge in segments])
+    lines = list(noded.geoms) if hasattr(noded, "geoms") else [noded]
+    parent = {}
+
+    def find(point):
+        parent.setdefault(point, point)
+        while parent[point] != point:
+            parent[point] = parent[parent[point]]
+            point = parent[point]
+        return point
+
+    for line in lines:
+        a, b = tuple(line.coords[0]), tuple(line.coords[-1])
+        parent[find(a)] = find(b)
+    return len({find(point) for point in parent})
+
+
 def _gap_joins(noded, tolerance: float) -> tuple[Segment, ...]:
     lines = list(noded.geoms) if hasattr(noded, "geoms") else [noded]
     degree = Counter(tuple(p) for line in lines for p in (line.coords[0], line.coords[-1]))

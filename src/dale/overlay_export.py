@@ -17,20 +17,48 @@ from dale.session import ContourMask, Session
 EDGE_GUARD = 3
 
 
+def export_regions(session: Session):
+    masks = [
+        op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
+    ]
+    mask = masks[-1] if masks else session.make_mask("outside")
+    polygons = [mask.area] if mask.area.geom_type == "Polygon" else list(mask.area.geoms)
+    return tuple(
+        sorted((p for p in polygons if not p.is_empty), key=lambda p: (p.bounds[1], p.bounds[0]))
+    )
+
+
+def crop_bounds(polygon):
+    x0, y0, x1, y1 = polygon.bounds
+    return (
+        math.floor(x0) - EDGE_GUARD,
+        math.floor(y0) - EDGE_GUARD,
+        math.floor(x1) + EDGE_GUARD + 1,
+        math.floor(y1) + EDGE_GUARD + 1,
+    )
+
+
 def export_overlays(
-    session: Session, directory: Path, placement: Placement, progress=None, cancelled=None
+    session: Session,
+    directory: Path,
+    placement: Placement,
+    progress=None,
+    cancelled=None,
+    region_index=None,
 ) -> Path:
     directory = directory.resolve()
     masks = [
         op for op in session.operations if isinstance(op, ContourMask) and op.mode == "outside"
     ]
     mask = masks[-1] if masks else session.make_mask("outside")
-    polygons = [mask.area] if mask.area.geom_type == "Polygon" else list(mask.area.geoms)
-    polygons = sorted(
-        (p for p in polygons if not p.is_empty), key=lambda p: (p.bounds[1], p.bounds[0])
-    )
+    polygons = export_regions(session)
     if not polygons:
         raise ValueError("No closed contour is available for separate PNG export.")
+    selected = tuple(enumerate(polygons))
+    if region_index is not None:
+        if type(region_index) is not int or not 0 <= region_index < len(polygons):
+            raise ValueError("The selected export region is no longer available.")
+        selected = ((region_index, polygons[region_index]),)
     operations = [
         ContourMask(op.area.buffer(EDGE_GUARD), "outside")
         if isinstance(op, ContourMask) and op.mode == "outside"
@@ -56,6 +84,7 @@ def export_overlays(
         "elevation_ft": placement.elevation_ft,
         "source_image_size": source.size,
         "edge_guard_px": EDGE_GUARD,
+        "selected_region": region_index,
         "coordinate_units": "source-image pixels",
         "items": [],
         "note": "DALE placement manifest; not a Foundry scene import document.",
@@ -64,16 +93,10 @@ def export_overlays(
         staging = Path(temporary).resolve()
         if staging.parent != directory or destination.parent != directory:
             raise ValueError("Export staging and destination must stay inside the selected folder.")
-        for index, polygon in enumerate(polygons):
+        for part, (index, polygon) in enumerate(selected):
             if cancelled and cancelled():
                 raise ExportCancelled("Separate PNG export cancelled.")
-            x0, y0, x1, y1 = polygon.bounds
-            bounds = (
-                math.floor(x0) - EDGE_GUARD,
-                math.floor(y0) - EDGE_GUARD,
-                math.floor(x1) + EDGE_GUARD + 1,
-                math.floor(y1) + EDGE_GUARD + 1,
-            )
+            bounds = crop_bounds(polygon)
             x, y, right, bottom = bounds
             name = f"{stem}-part-{index + 1:03d}-{placement.elevation_ft}ft.png"
             guarded = polygon.buffer(EDGE_GUARD)
@@ -82,9 +105,9 @@ def export_overlays(
                 ContourMask(box(0, 0, source.size[0] - 1, source.size[1] - 1), "outside"),
             ]
 
-            def part_progress(percent, part=index):
+            def part_progress(percent, part=part):
                 if progress:
-                    progress(min(99, (part * 100 + percent) // len(polygons)))
+                    progress(min(99, (part * 100 + percent) // len(selected)))
 
             visible = export_png(
                 source,

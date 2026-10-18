@@ -1,79 +1,73 @@
-DALE — Dungeon Alchemist Levels Export
+Dungeon Alchemist Levels Export
 
-ENGLISH
-Open DALE.exe; keep the whole folder including _internal. No Python needed.
-File > Open scene loads a scene image and scene JSON; Open project resumes a .dale project.
-File > JSON loads a scene JSON directly or selects one from a DALE project document list.
-Old project formats are not supported.
-Menus: File / Edit / About. File > Recent projects remembers ten opened/saved projects.
-Top: Sections (Contours / Regions / Raster), Scene (Levels), Main (square icons).
-Main > Settings opens its separate right page. Levels opens level and wall-preset definitions.
-Scene keeps left tools visible. Add/Delete buttons manage cards; double-click edits; eyes hide levels.
-Level heights are whole feet: empty bottom/top means -/+infinity. RGB offers16 colors/full palette.
-Import/Export templates transfers definitions only, including import from another current .dale.
-Project format is3; older projects are unsupported. Without a scene, Save exports template JSON.
-Project nests Regions, then File information. Each right page has the same bottom Information.
-The left editing toolbar has a single frame.
-The global-settings checkbox follows Language. Bottom Information shows active gestures
-and every available window shortcut, including Undo/Redo, file commands, Fit and clear selection.
-Right-drag pans; wheel zooms. Hover help explains tools and shortcuts.
-Sizes/tolerances are inside tool buttons; Ctrl+wheel changes them.
-All eight numeric values save in the project. Store settings globally copies current values
-to UserData/settings.json; enabled globals survive opening projects. Disable to restore project values.
-Clear selection follows Hand; Ctrl+Shift+A clears selected regions and contour highlights.
-Auto-close and Close all contours show white previews and Cancel / Yes confirmation.
-No-op explanations have only Close. New circular contour: press center, drag radius, release.
-The polygon changes live: 0.5/1/2 cells in diameter use 4/6/8 vertices, then density grows.
-Ctrl+wheel adjusts radius while drawing; Escape cancels; one undo step on release.
-Regions selects individual cells. Move regions drags geometry only; Ctrl+wheel scales;
-Select Rotate regions, then ordinary wheel rotates 0.1 degree around common center.
-Right-click either transform tool to configure related lines.
-Show contours off hides inactive lines/handles; only selection and current tool highlights stay visible.
-Raster Erase/Restore have independent diameters. Save stores sources, history, redo, ancestry.
-Input/output folders are remembered independently.
-Left Artwork offset adds/cuts actual JPG pixels relative to lines. No global padding setting.
-PNG alpha uses light bicubic smoothing; exact bounds include every nonzero alpha pixel.
-placement.json records coordinates. Configure height in Foundry.
-Minimum 1024 x 768. UserData/settings.json retains preferences.
-Preserve projects during updates. Open editors retain their version until restarted.
+Vertices edits individual vertices and lines. Contours sits between Vertices and Regions. Click toggles a segment; double-click selects its connected contour; drag over10 screen pixels inverts segments in the box. Move/scale/rotate/copy exact selected lines, open or closed, without changing neighbours or raster. Alt uses the point/guide controls. Regions and PNG export retain standard closed-cell calculations. The top Main Select all button, immediately left of Clear selection, and Ctrl+A select all elements of the current section and height layer; Ctrl+Shift+A clears. Text fields keep normal text selection.
 
-РУССКИЙ
-Запускайте DALE.exe; переносите всю папку с _internal. Python не нужен.
-Файл > Открыть сцену загружает изображение сцены и JSON сцены; Открыть проект — файл .dale.
-Файл > JSON загружает JSON сцены напрямую или из списка документов проекта .dale.
-Старые форматы проектов не поддерживаются.
-Новый круглый контур: нажать в центре, тянуть радиус, отпустить. Грани меняются сразу:
-диаметр 0,5/1/2 клетки даёт 4/6/8 вершин, затем число растёт. Ctrl+колесо меняет радиус,
-Escape отменяет. Если автозамыкание ничего не меняет, в окне есть только «Закрыть».
-Меню: Файл / Правка / О программе. Файл > Последние проекты хранит десять проектов.
-Сверху: Разделы (Контуры / Области / Растр), Сцена (Уровни), Основное (иконки).
-Шестерёнка открывает панель настроек. Уровни — шаблоны этажей и пресеты стен.
-Слева инструменты остаются видимыми. Добавить/Удалить управляют карточками; двойной клик меняет их.
-Высоты — целые футы, включая0. Пустой низ/верх — минус/плюс бесконечность. Цвет:16 вариантов/RGB.
-Глазик скрывает содержимое уровня. Пресеты стен не имеют высоты; поля меняются по выбранным режимам.
-Импорт/экспорт шаблонов переносит только общие настройки, в том числе из другого проекта .dale.
-Формат проекта3; старые проекты не поддерживаются. Без сцены сохранение выгружает JSON шаблонов.
-В Проекте — Области и Данные файла. Внизу каждой правой панели одинаковая Информация.
-Слева одна рамка панели инструментов.
-Галочка глобальных настроек следует за языком. Нижняя Информация показывает
-действия текущего инструмента и общие горячие клавиши, включая Ctrl+Z и Ctrl+Y.
-Правая кнопка перемещает карту; колесо меняет масштаб. Подсказки поясняют горячие клавиши.
-Размеры и допуски встроены в кнопки; Ctrl+колесо меняет их.
-Все восемь числовых значений хранятся в проекте. «Хранить настройки глобально» копирует
-текущие значения в UserData/settings.json; открытие проекта их не заменяет. Снятие галочки
-возвращает значения проекта. «Снять выделение» после «Руки»; Ctrl+Shift+A.
-Автозамыкание и Замкнуть всю карту показывают белый кант и подтверждение Отмена / Да.
-Области выбираются по отдельности. Перемещение меняет только контуры:
-Ctrl+колесо — масштабирование. Кнопка Вращение областей — обычное колесо по 0,1°.
-При отключённом показе контуров видны только выбранные области и активная подсветка.
-Правый клик по инструменту снова открывает вопрос о связанных линиях.
-Ластик и восстановление растра имеют собственные диаметры.
-Проект хранит исходники, историю, повтор и происхождение линий.
-Папки открытия и сохранения запоминаются раздельно.
-Слева Отступ изображения добавляет/срезает пиксели JPG относительно линий. Общей рамки нет.
-PNG сглаживает альфа-край через bicubic и включает все ненулевые альфа-пиксели в границах JPG.
-Высоту задавайте в Foundry. Минимум окна 1024 x 768.
-Настройки — в UserData/settings.json. Открытый редактор использует свою версию до перезапуска.
+Line eraser deletes touched pieces up to intersections/endpoints. New cut/point contacts ask whether to connect figures; No keeps coincident points independent, Yes joins, Cancel aborts. Do not ask again remembers each tool's answer; right-click its left button to change/reset it. Editing independence persists in .dale; Regions/masks/PNG still use all geometric intersections. Consecutive wheel rotations form one undo step until the next action/save.
 
-Exact PNG dimensions for large scenes calculate in the background; editing stays available.
-Точные размеры PNG больших сцен рассчитываются в фоне, редактирование остаётся доступным.
+Run DALE.exe. Keep the entire folder including _internal; no Python/scripts needed. Preserve UserData when updating. A running editor keeps its version until restarted.
+
+Raster starts with region selection. Click toggles a cell; drag more than10 screen pixels in Regions/Raster to invert cells intersecting a rectangle. Empty click clears selection, Escape cancels the rectangle. Remove raster inside/outside uses selected regions only and is disabled without them. Preview and PNG share smoothed alpha edges and live Artwork offset; original images stay intact.
+
+Open Dataset manager with the square button left of the top Dataset dropdown (Ctrl+I). Add a scene image (JPEG/PNG/WebP/BMP/TIFF) and optional Scene JSON, or create empty sets. Importing an image into a completely empty set also opens its same-stem JSON if present. The dropdown switches image and contours together.
+
+Rename sets/files, delete components, or drag JSON/image onto another set and choose Move/Copy. Occupied targets require explicit replacement or cancellation. Deleting JSON deletes its contours; deleting the image retains contours. Apply commits to the working project, Cancel discards unapplied changes, Open dataset applies and activates. Save project writes all sets; reopening selects the first remaining set.
+
+Merge contours appends contours into one combined output, skipping only exact coordinate/property copies. Import/export full datasets between projects includes current edits and history. Scene JSON Add/Replace can select a .dale document: Current contours (DALE) reuses applied geometry; Save JSON saves separately without importing. Original documents remain available.
+
+File > Export JSON (Ctrl+Shift+J) exports the active set including unsaved edits. With source JSON, export edits walls while retaining every other Scene byte and original wall properties; otherwise it writes DALE contours. Physical filenames use the set name; internal Scene names and asset paths stay unchanged. Original inputs are protected. PNGs use the set name and exact final dimensions; placement.json records coordinates. Configure floors, heights, wall types and portals manually in Foundry.
+
+Edit contours by height layers infers height bands without wall clones; all contour tools remain available. Choose a band/exact range on the right; disable for PNG editing. Auto-close extends/shortens free ends along their vectors within screen-pixel tolerance, retaining contacts and nonzero walls. Preview/confirmation shows both counts.
+
+Two left Vertices buttons work only with Alt: adjacent right angles (highlighted legs and square marker) and contour X/Y (dashed guides). Independent1..9999 screen-pixel tolerances default14; both default off. Arrows/input/Ctrl+wheel adjust. New rectangle: press/stretch/release; Alt alignment applies to both corners. Regions has point and X/Y guide toggles with numeric tolerances. Both require Alt; points take priority. Hover highlights the nearest region vertex, press freezes it during dragging, and Ctrl+C chooses the same grab point for Ctrl+V. Move/paste shifts the whole figure; click to place, Escape cancels. Raster stays fixed.
+
+Current .dale schema7 preserves exact sources, all sets, edits, ancestry and undo/redo. Older formats are unsupported. UserData retains language/folders/recent projects/global numeric values. Whole region transforms retain exact independent membership through overlap, PNG export and reopen.
+
+«Вершины» служат для редактирования вершин и линий. «Контуры» находятся между «Вершинами» и «Областями». Клик выбирает или снимает выбор отрезка, двойной клик выбирает связанный контур, рамка дальше10 экранных пикселей инвертирует отрезки. Перемещайте, масштабируйте, вращайте и копируйте выбранные линии, включая незамкнутые. Alt применяет включённые привязки. Ctrl+A выбирает все элементы текущего раздела и слоя; Ctrl+Shift+A снимает выбор. В полях ввода Ctrl+A выделяет текст.
+
+Запустите DALE.exe. Переносите всю папку вместе с _internal; Python не нужен. При обновлении сохраняйте UserData. Открытый редактор использует прежнюю версию до перезапуска.
+
+Слева от списка «Набор» - квадратная кнопка менеджера (Ctrl+I). Добавьте изображение и необязательный JSON или создайте пустой набор. При добавлении изображения в полностью пустой набор также открывается JSON с тем же именем, если он есть. Верхний список переключает изображение и контуры вместе.
+
+Переименовывайте наборы/файлы, удаляйте компоненты, перетаскивайте их с выбором переноса или копирования. Занятое место требует замены или отмены. Удаление JSON удаляет и контуры; удаление изображения сохраняет контуры. «Применить» меняет рабочий проект, «Отмена» отменяет неприменённые правки, «Открыть набор» применяет и открывает. Сохранение записывает все наборы; при повторном открытии выбирается первый оставшийся.
+
+«Объединить контуры» дополняет текущие контуры одним итоговым JSON; пропускаются только точные копии координат и свойств. Импорт/экспорт наборов между проектами включает текущие правки и историю. Для получения исправленных контуров из .dale выберите его через добавление/замену JSON: «Исправленные контуры (DALE)» и «Импортировать». «Сохранить JSON…» сохраняет документ отдельно без импорта. Исходные документы остаются доступны.
+
+Файл > Экспорт JSON… (Ctrl+Shift+J) выгружает текущий набор с несохранёнными правками. При наличии исходного JSON экспорт меняет стены и сохраняет прочие данные сцены; без него выгружает контуры DALE. Имена физических файлов берутся из названия набора; имена сцены и пути внутри безопасного JSON не меняются. Исходники защищены от перезаписи. PNG содержит название набора и точный размер; placement.json - координаты. Этажи, высоты, типы стен и порталы настраивайте вручную в Foundry.
+
+Флажок «Редактировать контуры по слоям высоты» включает выбор слоя или точного диапазона справа. Общие стены не дублируются; ластики и прочие инструменты доступны. Автозамыкание продлевает или укорачивает свободные концы вдоль линий в пределах экранного допуска, сохраняя стыки и ненулевые стены. Подтверждение показывает оба счётчика.
+
+Слева две кнопки с Alt: «Прямые углы» по смежным линиям с подсветкой и значком90°; «Привязка по контуру» - X/Y по пунктиру. Допуски1..9999, по умолчанию14; обе выключены изначально. Стрелки/ввод/Ctrl+колесо меняют допуск. Прямоугольник: нажмите, растяните, отпустите; Alt выравнивает оба угла. В «Областях» Ctrl+C/Ctrl+V копируют контуры между наборами: предпросмотр, щелчок для вставки, Escape отменяет; Alt выравнивает копию целиком. Растр остаётся на месте.
+
+Текущий формат .dale -7; старые форматы не поддерживаются. Проект хранит исходники, наборы, правки и отмену/повтор. UserData хранит язык, папки, недавние проекты и глобальные значения. Перенос, масштабирование и поворот сохраняют область целиком, не меняя соседние контуры.
+
+The narrow arrow button left of the right panel hides/shows it and remembers visibility across restarts. Information uses all remaining height; scrolling appears only on overflow.
+Узкая кнопка со стрелкой слева от правой панели скрывает/раскрывает её и запоминает состояние при перезапуске. «Информация» занимает всё оставшееся место; прокрутка появляется только при нехватке высоты.
+
+Manager JSON actions share one row below the field: Load JSON, Replace JSON, Merge contours (append into one output), To another dataset and Delete JSON. Hover for the effect on existing content. Apply changes the working editor; Save project writes to disk.
+Под полем JSON один ряд действий: «Загрузить JSON», «Заменить JSON», «Объединить контуры» (дополнить одним итоговым JSON), «В другой набор» и «Удалить JSON». Подсказки поясняют результат и сохранение текущих данных. «Применить» меняет рабочий редактор; «Сохранить проект» записывает проект на диск.
+
+Button help uses Purpose, Condition and Keys sections. Numeric fields explain their value and units separately; keyboard instructions appear once with their effect.
+Подсказки кнопок разделены на «Назначение», «Условие» и «Клавиши». Числовые поля отдельно поясняют значение и единицы; каждое сочетание клавиш указано один раз с пояснением.
+
+Opening a dataset centers the camera and keeps its zoom. All contour tools remain available with height filtering. When source JSON exists, export preserves all Scene bytes outside walls in every editing mode.
+При открытии набора камера перемещается в центр, масштаб сохраняется. Все инструменты контуров доступны и при выборе слоя высоты. Если исходный JSON есть, экспорт сохраняет все данные сцены вне стен в любом режиме редактирования.
+
+В «Областях» есть две кнопки с допусками: «К точкам» и «По направляющим». Они применяются с Alt; точки имеют приоритет. Ближайшая к курсору вершина подсвечена до нажатия и остаётся опорной при переносе и копировании. Фигура перемещается целиком, без изменения окружения. Все инструменты контуров, включая ластики, доступны и при работе со слоями высоты. Экспорт JSON при наличии исходной сцены меняет только стены, сохраняя прочие данные.
+
+Regions: select a figure and press Del or click Delete region (eraser icon). Only exterior/hole outlines are removed; interior lines and image pixels remain. Ctrl+Z undoes, Ctrl+Y redoes.
+«Области»: выделите фигуру и нажмите Del или кнопку «Удалить область» с ластиком слева. Удаляются только границы, включая границы отверстий; линии внутри и изображение сохраняются. Ctrl+Z - отмена, Ctrl+Y - повтор.
+
+Contours: Del or Edit > Delete contours removes exactly the selected line IDs, including open/disconnected selections. Unselected crossing/coincident lines and raster stay in place. Ctrl+Z undoes; Ctrl+Y redoes. Delete in text/numeric fields edits their text. Finish/cancel gestures first.
+«Контуры»: Del или «Правка > Удалить контуры» удаляет только выбранные отрезки, включая незамкнутые и несвязанные. Невыбранные пересекающие или совпадающие линии и растр сохраняются. Ctrl+Z - отмена, Ctrl+Y - повтор. Del в поле ввода редактирует текст. Сначала завершите или отмените текущее действие.
+
+Double-click selects the contour hit by the first click, even with slight pointer movement at crossings. Earlier intentional selections remain; selection creates no geometry or copies.
+Двойной клик выбирает контур по первому щелчку, даже при небольшом сдвиге курсора у пересечения. Прежнее выделение сохраняется; выбор не создаёт линии или копии.
+
+Alignment switches in Vertices, Contours and Regions are independent and saved in the project. Each section applies its own point/guide flags. Numeric tolerances remain shared; hold Alt to use enabled alignment rules.
+Переключатели привязки в «Вершинах», «Контурах» и «Областях» независимы и сохраняются в проекте. Каждый раздел применяет свои состояния кнопок. Числовые допуски общие; привязка действует с Alt.
+
+Right-click question settings show the actual question first, followed by instructions about remembering/resetting the answer. This applies to both connection tools and adjacent-region PNG export.
+При правом клике на кнопку настройки вопроса сначала показан сам вопрос, затем пояснение о запоминании или сбросе ответа. Это относится к связыванию контуров и экспорту смежных областей.
+
+Regions opens Select regions without a dialog when no figure is selected. New line/rectangle/circle works in All height layers with ordinary unbounded walls; an explicit range supplies its heights. Tooltips begin with the button name above Purpose/Condition/Keys.
+При переходе в «Области» без выделения автоматически включается выбор, без всплывающего окна. Линия, прямоугольник и круг создаются и в режиме «Все слои»: типовые стены без ограничения высоты. Выбранный диапазон задаёт свои высоты. Подсказки начинаются с названия кнопки, затем идут назначение, условие и клавиши.

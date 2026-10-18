@@ -1,5 +1,22 @@
 # External research
 
+Owner scope replacement2026-10-17 (ADR-020): DALE edits one scene image and its optional source contour JSON, repairs/joins/closes contours, cleans alpha and exports separate native RGBA PNGs for all connected closed objects or selected minimum cells. Every PNG filename includes its exact final width and height in pixels. Levels, wall/floor presets, composition, portals, native Scene export and Foundry runtime configuration are cancelled; the owner configures these manually in Foundry. Earlier plans are historical, not a backlog.
+
+The following historical decisions/evidence do not authorize removed product features.
+
+Latest owner scope2026-10-17(ADR-018): portal authoring/generation is cancelled. No Portals UI, authored portal records, links, behaviors or importer scripts will be implemented. The owner creates/links portals manually in Foundry after import. Preserve native source JSON bytes; floor Regions, floors/walls/lights/background and0.01ft level heights remain in scope. Earlier portal-specific research is historical.
+
+
+Light-transfer scope update2026-10-17: the owner selected source wall-setting preservation and requires Dungeon Alchemist lights on the initial default level. The [v13 AmbientLight schema](https://foundryvtt.com/api/v13/classes/foundry.documents.BaseAmbientLight.html) confirms XY, elevation, config, hidden and wall/vision fields; [LightData](https://foundryvtt.com/api/v13/classes/foundry.data.LightData.html) describes the separate light configuration. Legacy bright/dim/tint fields need deliberate conversion. This adds planned light transfer, not a live import claim.
+
+## Scope and evidence update: 2026-10-17
+
+Required work is now additive level composition, a complete native Foundry package and authored portals (ADR-011..013), with application implementation explicitly stopped. First target is Foundry13 + Wall Height; the owner will add that module and has not accepted Levels. The six Dungeon Alchemist image/JSON pairs are conversion inputs, while the two fvtt-Scene-test exports are native target examples from core13.351/dnd5e5.3.3. The owner confirms the sample portals worked. The sample core version does not identify a current installation or module build.
+
+Read-only reinspection reproduces both indexed hashes and identical regions arrays; only tiles/_stats differ. This corroborates the existing atlas rather than replacing it. Native Region.color, polygon geometry, directed destinations and per-source choice have direct local evidence. The [v13 Region schema](https://foundryvtt.com/api/v13/classes/foundry.documents.BaseRegion.html) and [v13 TeleportToken schema](https://foundryvtt.com/api/v13/classes/foundry.data.regionBehaviors.TeleportTokenRegionBehaviorType.html) were rechecked for these fields. The [official Regions guide](https://foundryvtt.com/article/scene-regions/) describes user choice and destination Regions. No additional portal module is implied. Wall-height bounds are flags in the scene probe; the additional Tile's elevation20 is an explicit vertical coordinate, distinct from its500-pixel image height.
+
+Remaining generated-output evidence: native same-scene link handling when importing into a differently identified empty Scene, destination elevation/retrigger/confirmation behavior of generated portals, and stacked-floor visibility in the chosen v13 profile. The public teleport schema has no explicit arrival-height field. Do not erase owner-reported successful source behavior by labeling these different questions as proof that the source portals are unsupported. Private files remain local and unchanged.
+
 Checked: 2026-10-16. Sources below are official product documentation unless otherwise marked. These observations inform requirements; they do not establish support for an untested export variant.
 
 ## Foundry VTT

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "status": "research_only_not_an_export_contract",
-  "checked": "2026-10-16",
+  "checked": "2026-10-17",
   "source": {
     "local_path": "examples/fvtt-Scene-test-2WsAkxPbpDPmK2o4.json",
     "sha256": "a2fc432fde70b8009ef9691e1501005e658522040528b1ab0613d333684627d2",
@@ -830,7 +830,7 @@
     "Runtime interpretation of unusual restriction/null-threshold combinations",
     "Installed Wall Height version and exact runtime behavior",
     "Padded scene origin from 13.351 runtime",
-    "Teleport arrival elevation, placement and player confirmation",
+    "Detailed generated-output teleport arrival elevation, placement and controlling-player confirmation; owner confirms source portals worked",
     "Scene clone/import ID and destination UUID remapping",
     "Native v14 Level membership, surfaces and floor transitions",
     "Rotated shapes, circles, hole refill order, animations/audio and cross-scene links"
@@ -938,5 +938,11 @@
     "future_png_carrier": "Tile texture.src references region PNG; scene-aware crop position/size, explicit elevation and v14 Level membership",
     "live_runtime_verified": false,
     "details": "docs/foundry-tile-format.md"
+  },
+  "owner_confirmation": {
+    "date": "2026-10-17",
+    "source_scene_portals_worked": true,
+    "evidence_kind": "owner_report",
+    "scope": "Both native scene exports are target examples. Six other image/JSON pairs are Dungeon Alchemist conversion inputs. Existing wall-height fields and Tile elevation are confirmed serialized evidence; generated new-scene behavior still needs separate validation."
   }
 }

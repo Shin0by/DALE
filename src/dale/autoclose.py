@@ -1,4 +1,4 @@
-"""Indexed, cursor-local directional extension on working geometry; independent of Qt."""
+"""Indexed directional endpoint repair on working geometry; independent of Qt."""
 
 from __future__ import annotations
 
@@ -21,19 +21,23 @@ class AutoClosePlan:
     segments: tuple[Segment, ...] = ()
     extensions: tuple[Segment, ...] = ()
     connections: tuple = ()
+    retractions: tuple[Segment, ...] = ()
+
+    @property
+    def endpoint_moves(self):
+        return (*self.extensions, *self.retractions)
 
     def apply(self, geometry: GeometryEdit) -> GeometryEdit:
-        extended = extend_lines(geometry, self.extensions) if self.extensions else geometry
+        extended = extend_lines(geometry, self.endpoint_moves) if self.endpoint_moves else geometry
         return node_geometry(extended, self.connections)
 
 
 class AutoCloseIndex:
     """Trace cursor seeds through existing edges and eligible directional continuations.
 
-    Only dangling endpoints initiate repairs. Extend paired outward rays to their
-    intersection, then extend remaining tips to existing segment interiors.
-    Apply by lengthening existing segments
-    along their vectors, including when meeting the middle of a contour.
+    Only dangling endpoints initiate repairs. Meet paired line vectors, then
+    project remaining tips onto existing segments. Shortening stops at the first
+    existing contact and never collapses/reverses a raw segment.
     """
 
     def __init__(self, geometry: GeometryEdit, tolerance: float):
@@ -41,6 +45,7 @@ class AutoCloseIndex:
             raise ValueError("Auto-close distance must be finite and nonnegative.")
         self.tolerance = tolerance
         edges = (*geometry.walls, *(edge for path in geometry.closures for edge in pairwise(path)))
+        self.raw_edges = edges
         lines = [LineString(edge) for edge in edges if math.dist(*edge) > EPSILON]
         network = unary_union(lines)
         parts = list(network.geoms) if hasattr(network, "geoms") else [network]
@@ -49,13 +54,14 @@ class AutoCloseIndex:
         )
         self.lines = [LineString(edge) for edge in self.segments]
         self.tree = STRtree(self.lines)
-        extensions = self._propose_extensions() if tolerance else ()
+        extensions, retractions = self._propose_moves() if tolerance else ((), ())
+        moves = (*extensions, *retractions)
         # Node continuations as well: crossing a third line really connects it.
-        anchors = MultiPoint([point for edge in extensions for point in edge])
+        anchors = MultiPoint([point for edge in moves for point in edge])
         joined = unary_union(
             [
                 *(snap(line, anchors, EPSILON) for line in self.lines),
-                *(LineString(edge) for edge in extensions),
+                *(LineString(edge) for edge in moves),
             ]
         )
         parts = list(joined.geoms) if hasattr(joined, "geoms") else [joined]
@@ -77,7 +83,7 @@ class AutoCloseIndex:
         # intersection. Keep its original coordinate in the same traced group.
         graph_points = sorted(parent)
         point_tree = STRtree([Point(point) for point in graph_points])
-        for point in {p for edge in (*self.segments, *extensions) for p in edge}:
+        for point in {p for edge in (*self.segments, *moves) for p in edge}:
             if point not in parent:
                 x, y = point
                 nearby = [
@@ -91,6 +97,7 @@ class AutoCloseIndex:
                     parent[point] = find(nearest)
         self.groups = defaultdict(list)
         self.extensions = defaultdict(list)
+        self.retractions = defaultdict(list)
         self.connections = defaultdict(list)
         self.roots = []
         for edge in self.segments:
@@ -99,6 +106,8 @@ class AutoCloseIndex:
             self.groups[root].append(edge)
         for edge in extensions:
             self.extensions[find(edge[0])].append(edge)
+        for edge in retractions:
+            self.retractions[find(edge[0])].append(edge)
         for point, count in sorted(degree.items()):
             if count >= 3:
                 self.connections[find(point)].append(point)
@@ -107,7 +116,7 @@ class AutoCloseIndex:
         x, y = point
         return box(x - self.tolerance, y - self.tolerance, x + self.tolerance, y + self.tolerance)
 
-    def _propose_extensions(self):
+    def _propose_moves(self):
         degree = Counter(point for edge in self.segments for point in edge)
         neighbors = {}
         for a, b in self.segments:
@@ -115,10 +124,32 @@ class AutoCloseIndex:
         tips = sorted(point for point in degree if degree[point] == 1)
         tip_tree = STRtree([Point(point) for point in tips])
         directions = {}
+        limits = {}
+        raw_incident = defaultdict(list)
+        for a, b in self.raw_edges:
+            raw_incident[a].append(b)
+            raw_incident[b].append(a)
         for tip in tips:
             neighbor = neighbors[tip]
             length = math.dist(tip, neighbor)
             directions[tip] = ((tip[0] - neighbor[0]) / length, (tip[1] - neighbor[1]) / length)
+            limits[tip] = length  # First inward graph node: never trim past another contact.
+
+        def permitted(tip, end):
+            delta = end[0] - tip[0], end[1] - tip[1]
+            travel = sum(a * b for a, b in zip(delta, directions[tip], strict=True))
+            if travel < -limits[tip] - EPSILON:
+                return False
+            if travel < 0 and any(
+                other in directions and math.dist(other, end) <= -travel + EPSILON
+                for other in raw_incident[tip]
+            ):
+                # An open target crossing the meeting point has two possible
+                # retained halves. Only its uniquely nearer free end may trim;
+                # a midpoint tie stays a T contact instead of choosing a half.
+                return False
+            return all(math.dist(tip, other) + travel > EPSILON for other in raw_incident[tip])
+
         pairs, projections = [], []
         for index, tip in enumerate(tips):
             direction = directions[tip]
@@ -130,7 +161,7 @@ class AutoCloseIndex:
                     continue
                 target = tips[int(other)]
                 meet = _ray_meeting(tip, direction, target, directions[target], self.tolerance)
-                if meet is not None:
+                if meet is not None and all(permitted(start, end) for start, end in meet[0]):
                     edges, travel = meet
                     pairs.append((max(travel), sum(travel), tip, target, edges))
             for line_index in self.tree.query(self._bounds(tip)):
@@ -144,7 +175,7 @@ class AutoCloseIndex:
                 offset = a[0] - tip[0], a[1] - tip[1]
                 travel = _cross(offset, delta) / denominator
                 fraction = _cross(offset, direction) / denominator
-                if 0 < travel <= self.tolerance and -1e-10 <= fraction <= 1 + 1e-10:
+                if 0 < abs(travel) <= self.tolerance and -1e-10 <= fraction <= 1 + 1e-10:
                     # Preserve target endpoints exactly when the intersection is one.
                     target = (
                         a
@@ -153,18 +184,50 @@ class AutoCloseIndex:
                         if fraction >= 1
                         else (a[0] + fraction * delta[0], a[1] + fraction * delta[1])
                     )
-                    projections.append((travel, tip, target))
-        extensions, used = set(), set()
+                    if permitted(tip, target):
+                        projections.append((abs(travel), tip, target))
+        groups, used = [], set()
         # Prefer full corner repairs over two projections that invent a sliver.
         for _, _, tip, target, edges in sorted(pairs):
             if tip not in used and target not in used:
-                extensions.update(edges)
+                groups.append(edges)
                 used.update((tip, target))
         for _, tip, target in sorted(projections):
             if tip not in used:
-                extensions.add((tip, target))
+                groups.append(((tip, target),))
                 used.add(tip)
-        return tuple(sorted(extensions))
+        # Opposite-end moves are individually valid but may together collapse
+        # or reverse a short segment. Reject both complete dependent corners.
+        rejected = set()
+        while True:
+            destinations = {a: b for i, g in enumerate(groups) if i not in rejected for a, b in g}
+            bad = set()
+            for a, b in self.raw_edges:
+                new_a, new_b = destinations.get(a, a), destinations.get(b, b)
+                if (new_a, new_b) == (a, b):
+                    continue
+                length = math.dist(a, b)
+                if (
+                    length <= EPSILON
+                    or sum((new_b[k] - new_a[k]) * (b[k] - a[k]) for k in (0, 1))
+                    <= EPSILON * length
+                ):
+                    bad.update(
+                        i
+                        for i, group in enumerate(groups)
+                        if any(start in (a, b) for start, _ in group)
+                    )
+            if not bad - rejected:
+                break
+            rejected.update(bad)
+        moves = sorted(
+            edge for i, group in enumerate(groups) if i not in rejected for edge in group
+        )
+        extending, shortening = [], []
+        for start, end in moves:
+            travel = sum((end[k] - start[k]) * directions[start][k] for k in (0, 1))
+            (shortening if travel < 0 else extending).append((start, end))
+        return tuple(extending), tuple(shortening)
 
     def at(self, point) -> AutoClosePlan:
         if not self.tolerance:
@@ -179,6 +242,7 @@ class AutoCloseIndex:
             tuple(edge for root in sorted(roots) for edge in self.groups[root]),
             tuple(edge for root in sorted(roots) for edge in self.extensions[root]),
             tuple(point for root in sorted(roots) for point in self.connections[root]),
+            tuple(edge for root in sorted(roots) for edge in self.retractions[root]),
         )
 
     def all(self) -> AutoClosePlan:
@@ -187,6 +251,7 @@ class AutoCloseIndex:
             self.segments,
             tuple(edge for root in sorted(self.extensions) for edge in self.extensions[root]),
             tuple(point for root in sorted(self.connections) for point in self.connections[root]),
+            tuple(edge for root in sorted(self.retractions) for edge in self.retractions[root]),
         )
 
 
@@ -195,7 +260,7 @@ def _cross(a, b):
 
 
 def _ray_meeting(p, u, q, v, tolerance):
-    """Meet outward rays without bending or moving their existing segments."""
+    """Meet signed line vectors; callers constrain inward travel and retained length."""
     offset = q[0] - p[0], q[1] - p[1]
     denominator = _cross(u, v)
     if abs(denominator) <= 1e-10:
@@ -211,8 +276,8 @@ def _ray_meeting(p, u, q, v, tolerance):
         return None
     first = _cross(offset, v) / denominator
     second = _cross(offset, u) / denominator
-    if not -EPSILON <= first <= tolerance or not -EPSILON <= second <= tolerance:
+    if not -tolerance <= first <= tolerance or not -tolerance <= second <= tolerance:
         return None
     intersection = (p[0] + first * u[0], p[1] + first * u[1])
     edges = tuple((tip, intersection) for tip in (p, q) if tip != intersection)
-    return (edges, (max(0, first), max(0, second))) if edges else None
+    return (edges, (abs(first), abs(second))) if edges else None

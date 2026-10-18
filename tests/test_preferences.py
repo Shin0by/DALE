@@ -3,19 +3,55 @@ import json
 import pytest
 
 from dale.preferences import (
+    load_connection_choice,
     load_directory,
-    load_foundry_major,
     load_language,
+    load_merge_selected_regions,
     load_move_related,
     load_recent_projects,
+    load_right_panel_visible,
     load_tool_values,
+    save_connection_choice,
     save_directory,
-    save_foundry_major,
     save_language,
+    save_merge_selected_regions,
     save_move_related,
     save_recent_projects,
+    save_right_panel_visible,
     save_tool_value,
 )
+
+
+def test_connection_questions_are_independent_and_merge_portable_preferences(tmp_path):
+    path = tmp_path / "settings.json"
+    save_language(path, "en")
+    assert load_connection_choice(path, "Edit points") is None
+    save_connection_choice(path, "Erase lines", False)
+    save_connection_choice(path, "Edit points", True)
+    assert load_connection_choice(path, "Erase lines") is False
+    assert load_connection_choice(path, "Edit points") is True
+    save_connection_choice(path, "Erase lines", None)
+    assert load_connection_choice(path, "Erase lines") is None
+    assert load_connection_choice(path, "Edit points") is True
+    assert load_language(path) == "en"
+    with pytest.raises(ValueError):
+        save_connection_choice(path, "Erase lines", 1)
+
+
+def test_selected_export_question_is_optional_validated_and_merges_preferences(tmp_path):
+    path = tmp_path / "settings.json"
+    assert load_merge_selected_regions(path) is None
+    save_language(path, "en")
+    save_connection_choice(path, "Edit points", True)
+    for value in (True, False, None):
+        save_merge_selected_regions(path, value)
+        assert load_merge_selected_regions(path) is value
+        assert load_language(path) == "en"
+        assert load_connection_choice(path, "Edit points") is True
+    path.write_text('{"merge_selected_regions": 1}')
+    assert load_merge_selected_regions(path) is None
+    with pytest.raises(ValueError):
+        save_merge_selected_regions(path, 1)
 
 
 def test_language_preferences_survive_restart_and_invalid_files(tmp_path):
@@ -27,31 +63,29 @@ def test_language_preferences_survive_restart_and_invalid_files(tmp_path):
     assert load_language(path) == "ru"
 
 
-def test_foundry_and_language_preferences_merge_and_survive_restart(tmp_path):
+def test_right_panel_visibility_defaults_and_merges_with_other_preferences(tmp_path):
     path = tmp_path / "settings.json"
-    assert load_foundry_major(path) == 14
-    save_foundry_major(path, 13)
+    assert load_right_panel_visible(path)
     save_language(path, "en")
-    assert load_foundry_major(path) == 13
-    assert load_language(path) == "en"
-    save_foundry_major(path, 14)
-    assert load_language(path) == "en"
-    assert load_foundry_major(path) == 14
-    path.write_text(json.dumps({"foundry_major": "13", "language": "en"}), encoding="utf-8")
-    assert load_foundry_major(path) == 14
-    path.write_text("[]", encoding="utf-8")
-    assert load_foundry_major(path) == 14
+    save_right_panel_visible(path, False)
+    assert not load_right_panel_visible(path)
+    save_tool_value(path, "snap_distance_px", 23)
+    assert not load_right_panel_visible(path) and load_language(path) == "en"
+    save_right_panel_visible(path, True)
+    assert load_right_panel_visible(path) and load_tool_values(path)["snap_distance_px"] == 23
+    data = json.loads(path.read_text())
+    data["right_panel_visible"] = "false"
+    path.write_text(json.dumps(data))
+    assert load_right_panel_visible(path)
 
 
 def test_related_line_choice_is_optional_and_preserves_other_preferences(tmp_path):
     path = tmp_path / "settings.json"
     assert load_move_related(path) is None
-    save_foundry_major(path, 13)
     save_language(path, "en")
     for choice in (True, False, None):
         save_move_related(path, choice)
         assert load_move_related(path) is choice
-        assert load_foundry_major(path) == 13
         assert load_language(path) == "en"
 
 
@@ -75,14 +109,13 @@ def test_input_and_output_directories_are_independent_and_merge(tmp_path):
 def test_numeric_tool_preferences_merge_independently_and_validate_fields(tmp_path):
     path = tmp_path / "settings.json"
     save_language(path, "en")
-    save_foundry_major(path, 13)
     save_tool_value(path, "artwork_offset_px", -123)
     save_tool_value(path, "snap_distance_px", 0)
     save_tool_value(path, "raster_restore_diameter", 4096)
     assert load_tool_values(path)["artwork_offset_px"] == -123
     assert load_tool_values(path)["snap_distance_px"] == 0
     assert load_tool_values(path)["raster_restore_diameter"] == 4096
-    assert load_language(path) == "en" and load_foundry_major(path) == 13
+    assert load_language(path) == "en"
     data = json.loads(path.read_text())
     data["tool_values"].update(line_eraser_diameter=True, auto_close_distance_px=257)
     path.write_text(json.dumps(data))

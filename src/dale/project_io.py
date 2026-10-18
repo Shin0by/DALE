@@ -9,25 +9,31 @@ import re
 import shutil
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
+from uuid import uuid4
 
 from shapely.geometry import mapping, shape
 
 from dale import __version__
-from dale.placement import Placement
-from dale.provenance import decode_record, encode_record
-from dale.scene import load_pair, number
-from dale.scene_templates import MAX_TEMPLATE_BYTES, SceneTemplates, read_template_bytes
-from dale.session import Closure, ContourMask, GeometryEdit, Session, Stroke
+from dale.provenance import SourceWall, decode_record, encode_record, geometry_edges
+from dale.scene import SceneInput, load_pair, number, open_source, scene_from_json
+from dale.session import (
+    AddedSourceWall,
+    Closure,
+    ContourMask,
+    GeometryEdit,
+    Session,
+    SourceRepairEdit,
+    Stroke,
+)
 
 FORMAT = "dale-project"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 7
 LIMITS = {
     "manifest.json": 64 * 1024,
     "history.json": 64 * 1024 * 1024,
-    "templates.json": MAX_TEMPLATE_BYTES,
-    "sources/map.jpg": 1024 * 1024 * 1024,
+    "sources/map.image": 1024 * 1024 * 1024,
     "sources/scene.json": 32 * 1024 * 1024,
 }
 
@@ -38,6 +44,10 @@ class JsonDocument:
     name: str
     kind: str
     data: bytes
+    image_name: str | None = None
+    image_member: str | None = None
+    image_path: Path | None = field(default=None, compare=False)
+    is_current: bool = False
 
 
 def _archive_manifest(archive):
@@ -45,8 +55,7 @@ def _archive_manifest(archive):
     names = [entry.filename for entry in entries]
     if len(names) != len(set(names)) or "manifest.json" not in names:
         raise ValueError(
-            "Project archive must contain exactly the five expected members "
-            "and declared JSON files."
+            "Project archive must contain exactly the expected members and declared JSON files."
         )
     if archive.getinfo("manifest.json").file_size > LIMITS["manifest.json"]:
         raise ValueError("Oversized project manifest.")
@@ -56,9 +65,43 @@ def _archive_manifest(archive):
             "Unsupported DALE project format or version. Older projects are not supported."
         )
     documents = manifest.get("json_documents")
-    if not isinstance(documents, list) or not 1 <= len(documents) <= 100:
+    if not isinstance(documents, list) or not 0 <= len(documents) <= 100:
         raise ValueError("A current project requires a JSON document catalog.")
-    expected = dict(LIMITS)
+    expected = {key: value for key, value in LIMITS.items() if key != "sources/scene.json"}
+    source_kind = manifest.get("source_kind")
+    if source_kind not in ("image", "json", "empty"):
+        raise ValueError("Invalid project source kind.")
+    if source_kind != "image":
+        expected.pop("sources/map.image")
+    if manifest.get("datasets", False) is not False:
+        if manifest["datasets"] is not True or manifest.get("catalog_views"):
+            raise ValueError("Invalid project datasets declaration.")
+        expected["datasets.json"] = LIMITS["history.json"]
+    if manifest.get("catalog_views", False) is not False:
+        if manifest["catalog_views"] is not True:
+            raise ValueError("Invalid project catalog views declaration.")
+        expected["catalog-views.json"] = LIMITS["history.json"]
+    images = manifest.get("catalog_images", [])
+    if not isinstance(images, list) or len(images) > 100:
+        raise ValueError("Invalid project image catalog.")
+    image_entries = set()
+    for item in images:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not 1 <= len(item["name"]) <= 256
+            or not isinstance(item.get("member"), str)
+            or not re.fullmatch(r"sources/images/[a-f0-9]{64}\.image", item["member"])
+        ):
+            raise ValueError("Invalid project image catalog entry.")
+        pair = item["name"], item["member"]
+        if (
+            pair in image_entries
+            or manifest.get("sha256", {}).get(item["member"]) != Path(item["member"]).stem
+        ):
+            raise ValueError("Invalid or duplicate project image catalog entry.")
+        image_entries.add(pair)
+        expected[item["member"]] = LIMITS["sources/map.image"]
     identifiers, members = set(), set()
     for document in documents:
         if not isinstance(document, dict):
@@ -84,11 +127,38 @@ def _archive_manifest(archive):
         identifiers.add(identifier)
         members.add(member)
         expected[member] = LIMITS["sources/scene.json"]
-    if "sources/scene.json" not in members or set(names) != set(expected):
+        image_member = document.get("image_member")
+        image_name = document.get("image_name")
+        if image_member is not None:
+            if (
+                not isinstance(image_member, str)
+                or not isinstance(image_name, str)
+                or not 1 <= len(image_name) <= 256
+                or image_member != "sources/map.image"
+                and not re.fullmatch(r"sources/images/[a-f0-9]{64}\.image", image_member)
+                or image_member == "sources/map.image"
+                and source_kind != "image"
+            ):
+                raise ValueError("Invalid catalog image reference.")
+            expected[image_member] = LIMITS["sources/map.image"]
+            if (
+                image_member.startswith("sources/images/")
+                and manifest.get("sha256", {}).get(image_member) != Path(image_member).stem
+            ):
+                raise ValueError("Invalid catalog image checksum reference.")
+        elif image_name is not None:
+            raise ValueError("A catalog image name requires its image member.")
+    if set(names) != set(expected):
         raise ValueError(
-            "Project archive must contain exactly the five expected members "
-            "and declared JSON files."
+            "Project archive must contain exactly the expected members and declared JSON files."
         )
+    if source_kind == "json" and "sources/scene.json" not in members:
+        raise ValueError("A JSON-only project requires its original scene JSON.")
+    current_id = manifest.get("current_contours_id")
+    if current_id is not None and not any(
+        d["id"] == current_id and d["id"] != "source" and d["kind"] == "updated" for d in documents
+    ):
+        raise ValueError("Invalid current contours JSON catalog reference.")
     for entry in entries:
         if entry.flag_bits & 1 or not 0 <= entry.file_size <= expected[entry.filename]:
             raise ValueError("Encrypted or oversized project member.")
@@ -103,32 +173,232 @@ def _read_json_documents(archive, manifest):
         data = archive.read(entry["member"])
         if hashlib.sha256(data).hexdigest() != manifest.get("sha256", {}).get(entry["member"]):
             raise ValueError(f"Project checksum mismatch: {entry['member']}.")
-        documents.append(JsonDocument(entry["id"], entry["name"], entry["kind"], data))
+        documents.append(
+            JsonDocument(
+                entry["id"],
+                entry["name"],
+                entry["kind"],
+                data,
+                entry.get("image_name"),
+                entry.get("image_member"),
+                is_current=entry["id"] == manifest.get("current_contours_id"),
+            )
+        )
     return tuple(documents)
 
 
 def read_json_documents(path: Path):
-    """Read the declared JSON catalog without extracting or decoding the scene image."""
+    """Offer original/stored JSON and the applied contours, reading only image headers."""
     with zipfile.ZipFile(path) as archive:
-        return _read_json_documents(archive, _archive_manifest(archive))
+        manifest = _archive_manifest(archive)
+        catalog = _catalog_from_archive(archive, manifest)
+        original = next((d for d in catalog.documents if d.id == "source"), None)
+        documents = list(_session_json_documents(catalog.base_session, original))
+        for key, view in catalog.views.items():
+            if key != catalog.base_key and view.session.operations:
+                identifier = "view-" + hashlib.sha256(repr(key).encode()).hexdigest()[:24]
+                documents.append(replace(catalog.snapshot(key), id=identifier))
+        if manifest["source_kind"] == "image":
+            documents = [
+                replace(d, image_member="sources/map.image", image_name=manifest["image_name"])
+                if d.id == "source" or d.is_current and d.id.startswith("current-contours")
+                else d
+                for d in documents
+            ]
+        return tuple(documents)
 
 
-def _read_templates(archive, manifest):
-    payload = archive.read("templates.json")
-    if hashlib.sha256(payload).hexdigest() != manifest.get("sha256", {}).get("templates.json"):
-        raise ValueError("Project checksum mismatch: templates.json.")
-    return read_template_bytes(payload)
+def _checked_bytes(archive, manifest, member):
+    data = archive.read(member)
+    if hashlib.sha256(data).hexdigest() != manifest.get("sha256", {}).get(member):
+        raise ValueError(f"Project checksum mismatch: {member}.")
+    return data
 
 
-def read_project_templates(path: Path):
-    """Read shared definitions without decoding/extracting image, geometry or history."""
-    with zipfile.ZipFile(path) as archive:
-        return _read_templates(archive, _archive_manifest(archive))
+def _catalog_from_archive(archive, manifest):
+    from dale.catalog import CatalogImage, SceneCatalog
+
+    documents = _read_json_documents(archive, manifest)
+    members = {d.image_member for d in documents if d.image_member}
+    members.update(item["member"] for item in manifest.get("catalog_images", []))
+    if manifest["source_kind"] == "image":
+        members.add("sources/map.image")
+    sizes = {}
+    for member in members:
+        with archive.open(member) as stream, open_source(stream) as image:
+            sizes[member] = image.size
+    size = sizes.get("sources/map.image")
+    if manifest["source_kind"] == "empty":
+        size = _empty_size(manifest)
+    original = next((d for d in documents if d.id == "source"), None)
+    source = (
+        scene_from_json(original.data, size)
+        if original
+        else SceneInput(None, None, size, {}, (), size, (0, 0), ())
+    )
+    session, ui = _restore_session(source, documents, manifest, _read_history(archive, manifest))
+    catalog = SceneCatalog(
+        session,
+        ui,
+        sizes,
+        tuple(
+            CatalogImage(item["name"], item["member"], None, sizes[item["member"]])
+            for item in manifest.get("catalog_images", [])
+        ),
+    )
+    if manifest.get("catalog_views"):
+        catalog.restore(json.loads(_checked_bytes(archive, manifest, "catalog-views.json")))
+    if manifest.get("datasets"):
+        from dale.datasets import DatasetCatalog
+
+        image_inputs = (
+            [CatalogImage(manifest["image_name"], "sources/map.image", None, size)]
+            if manifest["source_kind"] == "image"
+            else []
+        )
+        image_inputs.extend(
+            CatalogImage(item["name"], item["member"], None, sizes[item["member"]])
+            for item in manifest.get("catalog_images", [])
+        )
+        catalog = DatasetCatalog.restore(
+            session,
+            ui,
+            documents,
+            image_inputs,
+            json.loads(_checked_bytes(archive, manifest, "datasets.json")),
+        )
+    return catalog
 
 
 def _hash(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def extract_catalog_image(project: Path, document: JsonDocument, destination: Path):
+    if document.image_member is None:
+        return None
+    with zipfile.ZipFile(project) as archive:
+        manifest = _archive_manifest(archive)
+        if document.image_member not in manifest.get("sha256", {}):
+            raise ValueError("Unknown catalog image.")
+        with archive.open(document.image_member) as source, destination.open("wb") as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+        if _hash(destination) != manifest["sha256"][document.image_member]:
+            destination.unlink(missing_ok=True)
+            raise ValueError("Project catalog image checksum mismatch.")
+    return destination
+
+
+def append_project_document(project: Path, document: JsonDocument):
+    """Atomically append one JSON/image snapshot without changing existing payloads."""
+    project = project.resolve()
+    if project.suffix.lower() != ".dale":
+        raise ValueError("Choose an existing DALE project.")
+    if not isinstance(document.name, str) or not 1 <= len(document.name) <= 256:
+        raise ValueError("Invalid catalog set name.")
+    if len(document.data) > LIMITS["sources/scene.json"]:
+        raise ValueError("Scene JSON exceeds the project limit.")
+    image_digest, image_size = None, None
+    if document.image_path:
+        if document.image_path.stat().st_size > LIMITS["sources/map.image"]:
+            raise ValueError("Catalog image exceeds the project limit.")
+        with open_source(document.image_path) as image:
+            image_size = image.size
+        image_digest = _hash(document.image_path)
+    elif document.image_member:
+        raise ValueError("A catalog image is unavailable for export.")
+    scene_from_json(document.data, image_size)
+    before = _hash(project)
+    temporary = None
+    try:
+        with zipfile.ZipFile(project) as archive:
+            manifest = _archive_manifest(archive)
+            _catalog_from_archive(archive, manifest)
+            stored = _read_json_documents(archive, manifest)
+            image_member = None
+            if image_digest:
+                image_member = (
+                    "sources/map.image"
+                    if image_digest == manifest["sha256"].get("sources/map.image")
+                    else f"sources/images/{image_digest}.image"
+                )
+            result = replace(
+                document,
+                id="set-" + uuid4().hex,
+                kind="updated",
+                image_member=image_member,
+                is_current=False,
+            )
+            for existing in stored:
+                if (
+                    not existing.is_current
+                    and existing.name == result.name
+                    and existing.data == result.data
+                    and existing.image_name == result.image_name
+                    and manifest["sha256"].get(existing.image_member) == image_digest
+                ):
+                    return replace(existing, image_path=document.image_path), False
+            if len(stored) >= 100:
+                raise ValueError("The project already contains 100 JSON documents.")
+            if sum(len(d.data) for d in stored) + len(document.data) > 128 * 1024 * 1024:
+                raise ValueError("Project JSON documents exceed the 128 MiB combined limit.")
+            member = f"sources/json/{result.id}.json"
+            entry = {"id": result.id, "name": result.name, "kind": result.kind, "member": member}
+            if image_member:
+                entry.update(
+                    image_member=image_member,
+                    image_name=result.image_name or result.image_path.name,
+                )
+                manifest["sha256"][image_member] = image_digest
+            manifest["json_documents"].append(entry)
+            manifest["sha256"][member] = hashlib.sha256(result.data).hexdigest()
+            manifest["app_version"] = __version__
+            descriptor, name = tempfile.mkstemp(
+                prefix=".dale-append-", suffix=".tmp", dir=project.parent
+            )
+            temporary = Path(name)
+            with os.fdopen(descriptor, "wb") as stream:
+                with zipfile.ZipFile(stream, "w", allowZip64=True) as target:
+                    for info in archive.infolist():
+                        if info.filename == "manifest.json":
+                            target.writestr(info, _json_bytes(manifest))
+                            continue
+                        digest = hashlib.sha256()
+                        with (
+                            archive.open(info) as source,
+                            target.open(info, "w", force_zip64=True) as output,
+                        ):
+                            while chunk := source.read(1024 * 1024):
+                                digest.update(chunk)
+                                output.write(chunk)
+                        if digest.hexdigest() != manifest["sha256"].get(info.filename):
+                            raise ValueError(f"Project checksum mismatch: {info.filename}.")
+                    target.writestr(member, result.data, zipfile.ZIP_DEFLATED)
+                    if image_member and image_member not in archive.namelist():
+                        digest = hashlib.sha256()
+                        with (
+                            document.image_path.open("rb") as source,
+                            target.open(image_member, "w", force_zip64=True) as output,
+                        ):
+                            while chunk := source.read(1024 * 1024):
+                                digest.update(chunk)
+                                output.write(chunk)
+                        if digest.hexdigest() != image_digest:
+                            raise ValueError("The image changed during export. Try again.")
+                stream.flush()
+                os.fsync(stream.fileno())
+        with zipfile.ZipFile(temporary) as verification:
+            _archive_manifest(verification)
+            _read_json_documents(verification, manifest)
+        if _hash(project) != before:
+            raise ValueError("The destination project changed during export. Try again.")
+        os.replace(temporary, project)
+        temporary = None
+        return result, True
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _point(value):
@@ -158,16 +428,43 @@ def _encode(operation):
             "restore": operation.restore,
         }
     if isinstance(operation, ContourMask):
-        return {"type": "mask", "area": mapping(operation.area), "mode": operation.mode}
-    if isinstance(operation, GeometryEdit):
         return {
-            "type": "geometry",
+            "type": "mask",
+            "area": mapping(operation.area),
+            "mode": operation.mode,
+            "boundary": mapping(operation.boundary) if operation.boundary is not None else None,
+        }
+    if isinstance(operation, GeometryEdit):
+        result = {
+            "type": "source_repair" if isinstance(operation, SourceRepairEdit) else "geometry",
             "walls": operation.walls,
             "closures": operation.closures,
             "lineage": [encode_record(record) for record in operation.lineage],
             "ancestry": [encode_record(record) for record in operation.ancestry],
             "vertices": operation.vertex_lineage,
         }
+        if operation.wall_styles:
+            from dale.wall_styles import encode_styles
+
+            result["wall_styles"] = encode_styles(operation.wall_styles)
+        if isinstance(operation, SourceRepairEdit):
+            result["additions"] = [
+                {
+                    "native_id": a.native_id,
+                    "bottom": a.bottom,
+                    "top": a.top,
+                    **(
+                        {
+                            "source_ref": asdict(a.source_ref),
+                            "properties": json.loads(a.properties_json),
+                        }
+                        if a.source_ref is not None
+                        else {}
+                    ),
+                }
+                for a in operation.additions
+            ]
+        return result
     raise ValueError("Unsupported editing operation.")
 
 
@@ -198,8 +495,18 @@ def _decode(value):
             raise ValueError("Invalid project mask polygon.")
         if not all(abs(v) <= 1e9 for v in area.bounds):
             raise ValueError("Project mask coordinates exceed the supported range.")
-        return ContourMask(area, value["mode"])
-    if kind == "geometry":
+        if "boundary" not in value:
+            raise ValueError("A current project mask requires its boundary snapshot.")
+        boundary = shape(value["boundary"]) if value["boundary"] is not None else None
+        if boundary is not None and (
+            boundary.geom_type not in ("Polygon", "MultiPolygon")
+            or boundary.is_empty
+            or not boundary.is_valid
+            or not all(abs(v) <= 1e9 for v in boundary.bounds)
+        ):
+            raise ValueError("Invalid project mask boundary.")
+        return ContourMask(area, value["mode"], boundary)
+    if kind in ("geometry", "source_repair"):
         walls = tuple(_points(edge) for edge in value["walls"])
         closures = tuple(_points(path) for path in value["closures"])
         if any(len(edge) != 2 for edge in walls) or any(len(path) < 2 for path in closures):
@@ -212,11 +519,42 @@ def _decode(value):
             raise ValueError("Invalid or excessive line provenance.")
         if len(lineage) != len(walls) + sum(len(path) - 1 for path in closures):
             raise ValueError("Line provenance is required in the current project format.")
-        return GeometryEdit(
+        operation_type = SourceRepairEdit if kind == "source_repair" else GeometryEdit
+        extra = {}
+        if "wall_styles" in value:
+            from dale.wall_styles import decode_styles
+
+            extra["wall_styles"] = decode_styles(value["wall_styles"])
+        if kind == "source_repair":
+            additions = value.get("additions")
+            if not isinstance(additions, list) or len(additions) > 100_000:
+                raise ValueError("Invalid authored contour list.")
+            if any(
+                not isinstance(a, dict)
+                or set(a)
+                not in (
+                    {"native_id", "bottom", "top"},
+                    {"native_id", "bottom", "top", "source_ref", "properties"},
+                )
+                for a in additions
+            ):
+                raise ValueError("Invalid authored contour definition.")
+            extra["additions"] = tuple(
+                AddedSourceWall(
+                    a["native_id"],
+                    a["bottom"],
+                    a["top"],
+                    SourceWall(**a["source_ref"]) if "source_ref" in a else None,
+                    _json_bytes(a["properties"]) if "properties" in a else None,
+                )
+                for a in additions
+            )
+        return operation_type(
             walls,
             closures,
             tuple(decode_record(r) for r in lineage),
             tuple(decode_record(r) for r in ancestry),
+            **extra,
         )
     raise ValueError(f"Unsupported project operation type: {kind!r}.")
 
@@ -227,15 +565,85 @@ def _json_bytes(value):
     )
 
 
+def _read_history(archive, manifest):
+    data = archive.read("history.json")
+    if hashlib.sha256(data).hexdigest() != manifest.get("sha256", {}).get("history.json"):
+        raise ValueError("Project checksum mismatch: history.json.")
+    return json.loads(data)
+
+
+def _session_json_documents(session, original=None):
+    documents = ((original,) if original else ()) + tuple(session.json_documents)
+    geometry = session.geometry()
+    if geometry.walls == session.source.image_walls(session.origin) and not geometry.closures:
+        return documents
+    identifiers = {d.id for d in documents}
+    identifier, suffix = "current-contours", 1
+    while identifier in identifiers:
+        identifier = f"current-contours-{suffix}"
+        suffix += 1
+    return (*documents, replace(current_contours_document(session), id=identifier))
+
+
+def current_contours_document(session):
+    """Freeze current extraction geometry and retain its original asset names."""
+    geometry = session.geometry()
+    # This is an extraction contour snapshot, not a regenerated Foundry Scene.
+    # Image-space coordinates deliberately bake the working origin/scale, not artwork offset.
+    payload = _json_bytes(
+        {
+            "name": "Current contours (DALE)",
+            "width": session.source.size[0],
+            "height": session.source.size[1],
+            "padding": 0,
+            "grid": {"size": session.source.cell_pixels},
+            "walls": [
+                {"_id": record.id, "c": [float(value) for point in edge for value in point]}
+                for edge, record in zip(
+                    geometry_edges(geometry.walls, geometry.closures),
+                    geometry.lineage,
+                    strict=True,
+                )
+            ],
+        }
+    )
+    source = session.source
+    name = source.json_name or (source.json_path.name if source.json_path else None)
+    if not name:
+        name = (
+            Path(source.image_name or (source.image_path.name if source.image_path else "Contours"))
+            .with_suffix(".json")
+            .name
+        )
+    return JsonDocument(
+        "current-contours",
+        name,
+        "updated",
+        payload,
+        source.image_name or (source.image_path.name if source.image_path else None),
+        image_path=source.image_path,
+        is_current=True,
+    )
+
+
 def save_project(
-    session: Session,
-    destination: Path,
-    ui_state: dict | None = None,
-    *,
-    templates: SceneTemplates | None = None,
+    session: Session, destination: Path, ui_state: dict | None = None, *, catalog=None
 ):
+    view_bytes = None
+    if catalog is not None:
+        catalog.capture(ui_state or {})
+        if getattr(catalog, "managed", False):
+            catalog.prepare()
+        session = catalog.base_session
+        ui_state = catalog.views[catalog.base_key].ui
+        session = replace(
+            session, contour_offset=ui_state.get("artwork_offset_px", session.contour_offset)
+        )
+        view_bytes = _json_bytes(catalog.encode())
+        if len(view_bytes) > LIMITS["history.json"]:
+            raise ValueError("Catalog editing history exceeds the project limit.")
     destination = destination.resolve()
-    sources = (session.source.image_path, session.source.json_path)
+    sources = tuple(path for path in (session.source.image_path, session.source.json_path) if path)
     if destination in (path.resolve() for path in sources) or (
         destination.exists() and any(os.path.samefile(destination, path) for path in sources)
     ):
@@ -249,30 +657,66 @@ def save_project(
         "ui": ui_state or {},
     }
     history_bytes = _json_bytes(history)
-    template_bytes = (templates or SceneTemplates()).validated().to_bytes()
-    if len(template_bytes) > MAX_TEMPLATE_BYTES:
-        raise ValueError("Scene templates exceed the 2 MiB limit.")
     if len(history_bytes) > LIMITS["history.json"]:
         raise ValueError("Editing history exceeds the 64 MiB project limit.")
     manifest = {
         "format": FORMAT,
         "schema_version": SCHEMA_VERSION,
         "app_version": __version__,
-        "image_name": session.source.image_path.name,
-        "scene_name": session.source.json_path.name,
+        "source_kind": "image"
+        if session.source.image_path
+        else "json"
+        if session.source.json_bytes is not None
+        else "empty",
+        "image_name": session.source.image_name
+        or (session.source.image_path.name if session.source.image_path else None),
+        "scene_name": session.source.json_name
+        or (session.source.json_path.name if session.source.json_path else None),
         "sha256": {
-            "sources/map.jpg": _hash(sources[0]),
-            "sources/scene.json": _hash(sources[1]),
             "history.json": hashlib.sha256(history_bytes).hexdigest(),
-            "templates.json": hashlib.sha256(template_bytes).hexdigest(),
         },
     }
-    documents = (
-        JsonDocument("source", session.source.json_path.name, "original", sources[1].read_bytes()),
-        *session.json_documents,
+    if manifest["source_kind"] == "empty":
+        manifest["empty_size"] = session.source.size
+    if session.source.image_path:
+        manifest["sha256"]["sources/map.image"] = _hash(session.source.image_path)
+    if view_bytes is not None:
+        managed = getattr(catalog, "managed", False)
+        manifest["datasets" if managed else "catalog_views"] = True
+        manifest["sha256"]["datasets.json" if managed else "catalog-views.json"] = hashlib.sha256(
+            view_bytes
+        ).hexdigest()
+    original = (
+        JsonDocument(
+            "source",
+            manifest["scene_name"],
+            "original",
+            session.source.json_bytes
+            if session.source.json_bytes is not None
+            else session.source.json_path.read_bytes(),
+            image_name=session.source.image_name,
+            image_path=session.source.image_path,
+        )
+        if session.source.json_bytes is not None or session.source.json_path
+        else None
     )
+    documents = _session_json_documents(session, original)
+    if len(documents) > bool(original) + len(session.json_documents):
+        manifest["current_contours_id"] = documents[-1].id
     manifest["json_documents"] = []
     payloads = {}
+    image_payloads = {}
+    if catalog is not None and catalog.extra_images:
+        manifest["catalog_images"] = []
+        for item in catalog.extra_images:
+            if item.path is None:
+                raise ValueError("Catalog image is unavailable for saving.")
+            digest = _hash(item.path)
+            if digest != Path(item.member).stem:
+                raise ValueError("A catalog image changed after import.")
+            manifest["catalog_images"].append({"name": item.name, "member": item.member})
+            manifest["sha256"][item.member] = digest
+            image_payloads[item.member] = item.path
     for document in documents:
         member = (
             "sources/scene.json" if document.id == "source" else f"sources/json/{document.id}.json"
@@ -280,9 +724,24 @@ def save_project(
         manifest["json_documents"].append(
             {"id": document.id, "name": document.name, "kind": document.kind, "member": member}
         )
+        if document.image_path is not None:
+            digest = _hash(document.image_path)
+            image_member = (
+                "sources/map.image"
+                if digest == manifest["sha256"].get("sources/map.image")
+                else f"sources/images/{digest}.image"
+            )
+            manifest["json_documents"][-1].update(
+                image_member=image_member,
+                image_name=document.image_name or document.image_path.name,
+            )
+            manifest["sha256"][image_member] = digest
+            if image_member != "sources/map.image":
+                image_payloads[image_member] = document.image_path
+        elif document.image_member is not None:
+            raise ValueError("A catalog image is unavailable for saving.")
         manifest["sha256"][member] = hashlib.sha256(document.data).hexdigest()
-        if document.id != "source":
-            payloads[member] = document.data
+        payloads[member] = document.data
     temporary = None
     try:
         fd, name = tempfile.mkstemp(prefix=".dale-project-", suffix=".tmp", dir=destination.parent)
@@ -291,22 +750,40 @@ def save_project(
             with zipfile.ZipFile(stream, "w", allowZip64=True) as archive:
                 archive.writestr("manifest.json", _json_bytes(manifest), zipfile.ZIP_DEFLATED)
                 archive.writestr("history.json", history_bytes, zipfile.ZIP_DEFLATED)
-                archive.writestr("templates.json", template_bytes, zipfile.ZIP_DEFLATED)
-                for member, path in zip(
-                    ("sources/map.jpg", "sources/scene.json"), sources, strict=True
-                ):
+                if view_bytes is not None:
+                    archive.writestr(
+                        "datasets.json"
+                        if getattr(catalog, "managed", False)
+                        else "catalog-views.json",
+                        view_bytes,
+                        zipfile.ZIP_DEFLATED,
+                    )
+                image_members = (
+                    (("sources/map.image", session.source.image_path),)
+                    if (session.source.image_path)
+                    else ()
+                )
+                for member, path in image_members:
                     if path.stat().st_size > LIMITS[member]:
                         raise ValueError(f"Source exceeds the project limit for {member}.")
-                    compression = (
-                        zipfile.ZIP_STORED if member.endswith(".jpg") else zipfile.ZIP_DEFLATED
-                    )
-                    archive.write(path, member, compress_type=compression)
+                    archive.write(path, member, compress_type=zipfile.ZIP_STORED)
                 for member, data in payloads.items():
                     archive.writestr(member, data, zipfile.ZIP_DEFLATED)
+                for member, image_path in image_payloads.items():
+                    if image_path.stat().st_size > LIMITS["sources/map.image"]:
+                        raise ValueError("Catalog image exceeds the project limit.")
+                    archive.write(image_path, member, compress_type=zipfile.ZIP_STORED)
             stream.flush()
             os.fsync(stream.fileno())
         with zipfile.ZipFile(temporary) as verification:
             _archive_manifest(verification)
+            for entry in verification.infolist():
+                if entry.filename == "manifest.json":
+                    continue
+                with verification.open(entry) as payload:
+                    digest = hashlib.file_digest(payload, "sha256").hexdigest()
+                if digest != manifest["sha256"].get(entry.filename):
+                    raise ValueError("A source asset changed while saving the project.")
         os.replace(temporary, destination)
         temporary = None
     finally:
@@ -319,7 +796,7 @@ class LoadedProject:
     session: Session
     ui_state: dict
     workspace: tempfile.TemporaryDirectory
-    templates: SceneTemplates
+    catalog: object = None
 
     def close(self):
         self.workspace.cleanup()
@@ -334,19 +811,36 @@ class LoadedProject:
 def _load_ui(value):
     if not isinstance(value, dict):
         raise ValueError("Invalid project UI settings.")
-    placement = Placement(value.get("foundry_major", 14), value.get("elevation_ft", 5))
     mode = value.get("mode", "Pan")
     tool_set = value.get("tool_set", "geometry")
     language = value.get("language", "ru")
+    safe_repair = value.get("safe_json_repair", False)
+    source_layer = value.get("source_layer", "all")
+    if not isinstance(source_layer, str) or not 1 <= len(source_layer) <= 256:
+        raise ValueError("Invalid source height layer.")
+    if type(safe_repair) is not bool:
+        raise ValueError("Invalid source JSON repair preference.")
     raster_erase = number(value.get("raster_erase_diameter", 40), "Raster eraser diameter")
     raster_restore = number(value.get("raster_restore_diameter", 40), "Restore brush diameter")
     line_diameter = number(value.get("line_eraser_diameter", 24), "Line eraser diameter")
     vertex_diameter = number(value.get("vertex_eraser_diameter", 24), "Vertex eraser diameter")
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
+    alignment_distances = {
+        key: number(value.get(key, 14), "Alignment distance")
+        for key in ("right_angle_distance_px", "contour_alignment_distance_px")
+    }
+    if any(
+        distance != int(distance) or not 1 <= distance <= 9999
+        for distance in alignment_distances.values()
+    ):
+        raise ValueError("Invalid project alignment distance.")
     auto_distance = number(value.get("auto_close_distance_px", 14), "Auto-close distance")
     global_distance = number(
         value.get("global_close_distance_px", 14), "Whole-scene close distance"
     )
+    artwork_offset = number(value.get("artwork_offset_px", 0), "Artwork offset")
+    if artwork_offset != int(artwork_offset) or not -4096 <= artwork_offset <= 4096:
+        raise ValueError("Invalid artwork offset.")
     zoom = number(value.get("zoom", 1), "Viewport zoom")
     if mode not in (
         "Pan",
@@ -356,11 +850,16 @@ def _load_ui(value):
         "Restore",
         "New line",
         "New circle",
+        "New rectangle",
         "Erase lines",
         "Erase vertices",
         "Select regions",
+        "Select raster regions",
         "Move regions",
         "Rotate regions",
+        "Select figures",
+        "Move figures",
+        "Rotate figures",
     ):
         raise ValueError("Invalid project editing mode.")
     if (
@@ -370,7 +869,7 @@ def _load_ui(value):
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
-    if tool_set not in ("geometry", "pixels", "regions"):
+    if tool_set not in ("geometry", "pixels", "regions", "figures"):
         raise ValueError("Invalid project tool set.")
     if (
         any(
@@ -399,10 +898,65 @@ def _load_ui(value):
         raise ValueError("Invalid project related-line preference.")
     if type(snap_enabled) is not bool:
         raise ValueError("Invalid project snapping preference.")
+    alignment = {
+        key: value.get(key, False) for key in ("right_angle_alignment", "contour_alignment")
+    }
+    alignment.update(
+        {
+            f"{section}_{kind}_alignment": value.get(f"{section}_{kind}_alignment", kind == "point")
+            for section in ("figure", "region")
+            for kind in ("point", "guide")
+        }
+    )
+    if any(type(enabled) is not bool for enabled in alignment.values()):
+        raise ValueError("Invalid project alignment preference.")
+    detached = value.get("detached_region_selection")
+    figure_lines = value.get("figure_lines", [])
+    figure_pivot = value.get("figure_pivot")
+    if (
+        not isinstance(figure_lines, list)
+        or len(figure_lines) > 100_000
+        or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in figure_lines)
+        or len(set(figure_lines)) != len(figure_lines)
+    ):
+        raise ValueError("Invalid figure line selection.")
+    if figure_pivot is not None:
+        _point(figure_pivot)
+    if detached is not None:
+        from shapely import from_wkb
+
+        if not isinstance(detached, dict) or set(detached) != {"lines", "polygons", "pivot"}:
+            raise ValueError("Invalid detached region selection.")
+        lines, polygons = detached["lines"], detached["polygons"]
+        if (
+            not isinstance(lines, list)
+            or not 1 <= len(lines) <= 100_000
+            or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in lines)
+            or not isinstance(polygons, list)
+            or not 1 <= len(polygons) <= 100_000
+        ):
+            raise ValueError("Invalid detached region selection.")
+        for encoded in polygons:
+            if not isinstance(encoded, str) or len(encoded) > 32 * 1024 * 1024:
+                raise ValueError("Invalid detached region polygon.")
+            try:
+                polygon = from_wkb(bytes.fromhex(encoded))
+            except Exception as exc:
+                raise ValueError("Invalid detached region polygon.") from exc
+            if (
+                polygon.geom_type != "Polygon"
+                or polygon.is_empty
+                or not polygon.is_valid
+                or any(not -1e9 <= v <= 1e9 for v in polygon.bounds)
+            ):
+                raise ValueError("Invalid detached region polygon.")
+        _point(detached["pivot"])
     return {
-        "foundry_major": placement.foundry_major,
-        "elevation_ft": placement.elevation_ft,
         "mode": mode,
+        "figure_lines": figure_lines,
+        "figure_pivot": figure_pivot,
+        "safe_json_repair": safe_repair,
+        "source_layer": source_layer,
         "tool_set": tool_set,
         "language": language,
         "raster_erase_diameter": int(raster_erase),
@@ -411,14 +965,138 @@ def _load_ui(value):
         "line_eraser_diameter": int(line_diameter),
         "vertex_eraser_diameter": int(vertex_diameter),
         "snap_distance_px": int(snap_distance),
+        **{key: int(distance) for key, distance in alignment_distances.items()},
+        "artwork_offset_px": int(artwork_offset),
         "auto_close_distance_px": int(auto_distance),
         "global_close_distance_px": int(global_distance),
         "snap_enabled": snap_enabled,
+        **alignment,
         "move_related_lines": move_related,
         "show_walls": bool(value.get("show_walls", True)),
         "zoom": zoom,
         "center": _point(value.get("center", [0, 0])),
+        "detached_region_selection": detached,
     }
+
+
+def _restore_session(source, documents, manifest, history, *, provenance_documents=()):
+    source = replace(
+        source,
+        image_name=manifest.get("image_name", source.image_name),
+        json_name=manifest.get("scene_name", source.json_name),
+    )
+    operations, redo = history["operations"], history["redo"]
+    if (
+        not isinstance(operations, list)
+        or not isinstance(redo, list)
+        or len(operations) + len(redo) > 100_000
+    ):
+        raise ValueError("Invalid or excessive project history.")
+    gap = number(history.get("gap_tolerance", 0), "Gap tolerance")
+    offset = number(history.get("contour_offset", 0), "Contour offset")
+    if not 0 <= gap <= 4096 or not -4096 <= offset <= 4096:
+        raise ValueError("Project contour settings exceed supported limits.")
+    session = Session(
+        source,
+        origin=_point(history.get("origin", [0, 0])),
+        operations=[_decode(op) for op in operations],
+        future=[_decode(op) for op in redo],
+        gap_tolerance=gap,
+        contour_offset=offset,
+        json_documents=tuple(
+            d for d in documents if d.id not in ("source", manifest.get("current_contours_id"))
+        ),
+    )
+    references = {reference.id: reference for reference in session.source.wall_sources}
+    needed = {
+        ref.json_sha256
+        for operation in (*session.operations, *session.future)
+        if isinstance(operation, (Closure, GeometryEdit))
+        for record in (
+            *operation.lineage,
+            *(operation.ancestry if isinstance(operation, GeometryEdit) else ()),
+        )
+        for ref in record.sources
+        if ref.id not in references
+    }
+    for document in (*documents, *provenance_documents):
+        if hashlib.sha256(document.data).hexdigest() in needed:
+            external = scene_from_json(document.data, source.size)
+            references.update((ref.id, ref) for ref in external.wall_sources)
+    catalog = {}
+    for operation in (*session.operations, *session.future):
+        if isinstance(operation, (Closure, GeometryEdit)):
+            records = (
+                *operation.lineage,
+                *(operation.ancestry if isinstance(operation, GeometryEdit) else ()),
+            )
+            for record in records:
+                if record.id in catalog and catalog[record.id] != record:
+                    raise ValueError("Conflicting line provenance identities.")
+                catalog[record.id] = record
+                if any(references.get(ref.id) != ref for ref in record.sources):
+                    raise ValueError("Line provenance does not match the embedded source JSON.")
+            if isinstance(operation, GeometryEdit):
+                owner_ids = {r.id for r in records}
+                for owner, styles in operation.wall_styles:
+                    if owner not in owner_ids or any(
+                        isinstance(style, SourceWall) and references.get(style.id) != style
+                        for style in styles
+                    ):
+                        raise ValueError("Wall properties do not match their declared provenance.")
+    known_ids = set(catalog) | set(references)
+    if any(parent not in known_ids for record in catalog.values() for parent in record.parents):
+        raise ValueError("Line provenance contains an unknown parent.")
+    from dale.layer_repair import canonical_geometry
+
+    imported = {
+        hashlib.sha256(d.data).hexdigest(): json.loads(d.data)
+        for d in (*documents, *provenance_documents)
+    }
+    if source.json_bytes is not None:
+        imported[hashlib.sha256(source.json_bytes).hexdigest()] = source.raw
+    for operation in (*session.operations, *session.future):
+        if isinstance(operation, SourceRepairEdit):
+            canonical_geometry(session.source, operation)
+            for addition in operation.additions:
+                if addition.source_ref is not None:
+                    ref = addition.source_ref
+                    raw = imported[ref.json_sha256]["walls"][ref.wall_index]
+                    expected = {k: v for k, v in raw.items() if k not in ("_id", "id", "c")}
+                    if _json_bytes(expected) != addition.properties_json:
+                        raise ValueError(
+                            "Imported contour properties do not match their exact source."
+                        )
+    from dale.source_editing import source_layers
+
+    ui = _load_ui(history.get("ui", {}))
+    detached = ui["detached_region_selection"]
+    if detached and not set(detached["lines"]).issubset({r.id for r in session.geometry().lineage}):
+        raise ValueError("Detached selection references missing lines.")
+    if session.source.json_bytes is not None and ui["source_layer"] not in {
+        layer.key
+        for layer in source_layers(
+            session.source, session.geometry(), (*documents, *provenance_documents)
+        )
+    }:
+        raise ValueError("Invalid source height layer.")
+    stored = next((d for d in documents if d.id == manifest.get("current_contours_id")), None)
+    if stored is not None:
+        current = _session_json_documents(session)
+        if not current or current[-1].id != stored.id or current[-1].data != stored.data:
+            raise ValueError("Current contours JSON does not match project history.")
+    return session, ui
+
+
+def _empty_size(manifest):
+    size = manifest.get("empty_size")
+    if (
+        not isinstance(size, (list, tuple))
+        or len(size) != 2
+        or any(type(n) is not int or not 1 <= n <= 100_000 for n in size)
+    ):
+        raise ValueError("Invalid empty workspace dimensions.")
+    return tuple(size)
 
 
 def load_project(path: Path) -> LoadedProject:
@@ -428,52 +1106,90 @@ def load_project(path: Path) -> LoadedProject:
         with zipfile.ZipFile(path) as archive:
             manifest = _archive_manifest(archive)
             documents = _read_json_documents(archive, manifest)
-            templates = _read_templates(archive, manifest)
-            for member in ("sources/map.jpg", "sources/scene.json", "history.json"):
+            members_to_extract = ["history.json"]
+            if manifest["source_kind"] == "image":
+                members_to_extract.append("sources/map.image")
+            members_to_extract.extend(
+                sorted(
+                    {
+                        d.image_member
+                        for d in documents
+                        if d.image_member and d.image_member != "sources/map.image"
+                    }
+                )
+            )
+            members_to_extract.extend(
+                item["member"]
+                for item in manifest.get("catalog_images", [])
+                if item["member"] not in members_to_extract
+            )
+            if manifest.get("catalog_views"):
+                members_to_extract.append("catalog-views.json")
+            if manifest.get("datasets"):
+                members_to_extract.append("datasets.json")
+            for member in members_to_extract:
                 destination = root / Path(member).name
                 with archive.open(member) as source, destination.open("wb") as target:
                     shutil.copyfileobj(source, target, length=1024 * 1024)
                 if _hash(destination) != manifest.get("sha256", {}).get(member):
                     raise ValueError(f"Project checksum mismatch: {member}.")
-        history = json.loads((root / "history.json").read_text(encoding="utf-8"))
-        operations, redo = history["operations"], history["redo"]
-        if (
-            not isinstance(operations, list)
-            or not isinstance(redo, list)
-            or len(operations) + len(redo) > 100_000
-        ):
-            raise ValueError("Invalid or excessive project history.")
-        gap = number(history.get("gap_tolerance", 0), "Gap tolerance")
-        offset = number(history.get("contour_offset", 0), "Contour offset")
-        if not 0 <= gap <= 4096 or not -4096 <= offset <= 4096:
-            raise ValueError("Project contour settings exceed supported limits.")
-        session = Session(
-            load_pair(root / "map.jpg", root / "scene.json"),
-            origin=_point(history.get("origin", [0, 0])),
-            operations=[_decode(op) for op in operations],
-            future=[_decode(op) for op in redo],
-            gap_tolerance=gap,
-            contour_offset=offset,
-            json_documents=tuple(document for document in documents if document.id != "source"),
+        documents = tuple(
+            replace(d, image_path=root / Path(d.image_member).name) if d.image_member else d
+            for d in documents
         )
-        references = {reference.id: reference for reference in session.source.wall_sources}
-        catalog = {}
-        for operation in (*session.operations, *session.future):
-            if isinstance(operation, (Closure, GeometryEdit)):
-                records = (
-                    *operation.lineage,
-                    *(operation.ancestry if isinstance(operation, GeometryEdit) else ()),
+        history = json.loads((root / "history.json").read_text(encoding="utf-8"))
+        source_document = next(
+            (document for document in documents if document.id == "source"), None
+        )
+        json_path = root / "scene.json" if source_document else None
+        if json_path:
+            json_path.write_bytes(source_document.data)
+        session, ui = _restore_session(
+            (
+                SceneInput(
+                    None, None, _empty_size(manifest), {}, (), _empty_size(manifest), (0, 0), ()
                 )
-                for record in records:
-                    if record.id in catalog and catalog[record.id] != record:
-                        raise ValueError("Conflicting line provenance identities.")
-                    catalog[record.id] = record
-                    if any(references.get(ref.id) != ref for ref in record.sources):
-                        raise ValueError("Line provenance does not match the embedded source JSON.")
-        known_ids = set(catalog) | set(references)
-        if any(parent not in known_ids for record in catalog.values() for parent in record.parents):
-            raise ValueError("Line provenance contains an unknown parent.")
-        return LoadedProject(session, _load_ui(history.get("ui", {})), workspace, templates)
+                if manifest["source_kind"] == "empty"
+                else load_pair(
+                    root / "map.image" if manifest["source_kind"] == "image" else None, json_path
+                )
+            ),
+            documents,
+            manifest,
+            history,
+        )
+        from dale.catalog import CatalogImage, SceneCatalog
+
+        extra_images = []
+        for item in manifest.get("catalog_images", []):
+            image_path = root / Path(item["member"]).name
+            with open_source(image_path) as image:
+                size = image.size
+            extra_images.append(CatalogImage(item["name"], item["member"], image_path, size))
+        catalog = SceneCatalog(session, ui, extra_images=extra_images)
+        if manifest.get("catalog_views"):
+            catalog.restore(json.loads((root / "catalog-views.json").read_bytes()))
+        if manifest.get("datasets"):
+            from dale.datasets import DatasetCatalog
+
+            image_inputs = list(extra_images)
+            if manifest["source_kind"] == "image":
+                image_inputs.append(
+                    CatalogImage(
+                        manifest["image_name"],
+                        "sources/map.image",
+                        root / "map.image",
+                        session.source.size,
+                    )
+                )
+            catalog = DatasetCatalog.restore(
+                session,
+                ui,
+                documents,
+                image_inputs,
+                json.loads((root / "datasets.json").read_bytes()),
+            )
+        return LoadedProject(catalog.current.session, catalog.current.ui, workspace, catalog)
     except Exception:
         workspace.cleanup()
         raise

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from itertools import pairwise
 
 from shapely import STRtree
@@ -40,6 +41,48 @@ class RegionAnalysis:
     unresolved: tuple[Segment, ...]
     joins: tuple[Segment, ...] = ()
     cells: tuple = ()
+
+
+@dataclass(frozen=True)
+class ContourComponent:
+    line_ids: tuple[str, ...]
+    edges: tuple
+    area: object
+
+
+@lru_cache(maxsize=8)
+def contour_components(edges, line_ids, groups=()):
+    """Group current lines only by shared stored vertices, without geometric noding."""
+    parents = list(range(len(edges)))
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    vertices = {}
+    for i, edge in enumerate(edges):
+        for point in edge:
+            key = point, groups[i] if groups else None
+            if key in vertices:
+                parents[root(i)] = root(vertices[key])
+            else:
+                vertices[key] = i
+    groups = {}
+    for i in range(len(edges)):
+        groups.setdefault(root(i), []).append(i)
+    result = []
+    for indices in groups.values():
+        lines = tuple(edges[i] for i in indices)
+        result.append(
+            ContourComponent(
+                tuple(line_ids[i] for i in indices),
+                lines,
+                unary_union(structural_regions(lines)),
+            )
+        )
+    return tuple(result)
 
 
 def open_contour_count(segments: tuple[Segment, ...]) -> int:
@@ -128,6 +171,60 @@ def offset_region(area, offset: float):
     if result.is_empty:
         raise ValueError("No enclosed area remains. Reduce the inward offset or close a boundary.")
     return result
+
+
+def invert_regions_in_box(polygons, selected, bounds):
+    """Toggle intersected cells against one frozen selection, never cumulatively per move."""
+    x0, y0, x1, y1 = bounds
+    hits = (
+        {i for i, polygon in enumerate(polygons) if polygon.intersects(box(x0, y0, x1, y1))}
+        if x1 > x0 and y1 > y0
+        else set()
+    )
+    return tuple(sorted(set(selected).symmetric_difference(hits)))
+
+
+@lru_cache(maxsize=8)
+def structural_regions(walls, closures=(), joins=()):
+    """Closed editing figures, connected at authored vertices rather than crossings.
+
+    Polygonization for masks/export remains global in analyze_regions. Here an
+    unrelated crossing or nested contour must not cut a figure into extraction
+    cells. A vertex lying on another edge is an actual T contact and does connect.
+    Derive choices from current geometry without changing edges or provenance.
+    """
+    edges = tuple(
+        edge
+        for edge in (*walls, *(e for path in closures for e in pairwise(path)), *joins)
+        if edge[0] != edge[1]
+    )
+    if not edges:
+        return ()
+    lines = [LineString(edge) for edge in edges]
+    tree = STRtree(lines)
+    parents = list(range(len(edges)))
+
+    def root(index):
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    for index, edge in enumerate(edges):
+        for endpoint in edge:
+            point = Point(endpoint)
+            for hit in tree.query(point.buffer(1e-7)):
+                other = int(hit)
+                if other != index and lines[other].distance(point) <= 1e-7:
+                    parents[root(index)] = root(other)
+    groups = {}
+    for index, line in enumerate(lines):
+        groups.setdefault(root(index), []).append(line)
+    polygons = []
+    for group in groups.values():
+        cells, _, _, _ = polygonize_full(unary_union(group))
+        polygons.extend(cells.geoms)
+    return tuple(sorted(polygons, key=lambda p: (p.bounds[1], p.bounds[0], p.area, p.wkb)))
 
 
 def analyze_regions(

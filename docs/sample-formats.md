@@ -4,6 +4,8 @@ Inspected on 2026-10-16. Scope: six private JPG + JSON pairs supplied under `exa
 
 ## Raster and common canvas
 
+Owner clarification2026-10-17: these six pairs are the Dungeon Alchemist source materials to convert/assemble into the target Foundry scene. The separately named fvtt-Scene-test probes are exports from the owner's Foundry installation, used as target examples for native walls/heights, Tiles and working portals. New full-scene conversion and level composition are required by ADR-011..ADR-013; the initial PNG-only boundaries below describe the verified prototype, not the final requested outcome. Legacy-style Dungeon Alchemist source data remains supported independently of the prohibition on old .dale project schemas.
+
 All six JPGs are baseline RGB JPEGs at **13,500 × 16,200 pixels**, with 4:2:0 chroma subsampling and a 300 × 300 DPI header. No EXIF orientation transform or embedded ICC profile was found. File sizes range from 31,878,530 to 50,156,185 bytes. The DPI header is print metadata; actual alignment uses pixel dimensions and the JSON grid.
 
 Each JSON declares the exact same image dimensions, a **300-pixel grid**, a distance of **5 ft** per grid space, zero padding, and zero `shiftX`/`shiftY`. The canvas is therefore **45 × 54 grid cells**, or **225 × 270 ft**. DALE's scene-to-image transform is identity for these inputs. All wall and light coordinates are within their image canvas. Representative wall overlays were visually inspected on ground, upper, and roof-like daytime variants at overview resolution. Pixel-edge extraction precision and placement in a live Foundry scene are separate checks.

@@ -4,20 +4,19 @@ import json
 import os
 import threading
 import time
-from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QTransform, QWheelEvent
+from PySide6.QtGui import QAction, QKeySequence, QTransform, QWheelEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QListWidget, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QDialogButtonBox, QMessageBox
 from shapely.affinity import rotate
 
 from dale.canvas import GEOMETRY_TOOLS, HANDLE_DIAMETER, REGION_TOOLS, MapView
-from dale.editing import circle_points, vertices
-from dale.project_io import JsonDocument, load_project, save_project
+from dale.editing import add_line, circle_points, vertices
+from dale.project_io import load_project, save_project
 from dale.raster import load_preview
 from dale.session import Session, Stroke
 from dale.ui import MainWindow
@@ -124,6 +123,73 @@ def test_auto_close_hover_click_and_undo_extend_existing_lines(app, pair_factory
     view.refresh()
     assert view.session.geometry() == original
     view.close()
+
+
+@pytest.mark.parametrize("zoom", [2, 5])
+@pytest.mark.parametrize("safe", [False, True])
+def test_close_all_trims_overshoot_with_screen_tolerance_and_one_undo(
+    app, pair_factory, zoom, safe, monkeypatch
+):
+    from dale.json_repair import repaired_json_bytes
+
+    walls = [{"c": [20, 60, 124, 60]}, {"c": [120, 20, 120, 64]}]
+    if safe:
+        for wall in walls:
+            wall["flags"] = {"wall-height": {"bottom": 0, "top": 10}}
+    source = pair_factory(size=(300, 200), walls=walls)
+    window = MainWindow()
+    window.show()
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(100, 60)
+    window.global_close_control.setValue(4 * zoom)
+    original = view.session.geometry()
+    seen = []
+
+    def approve():
+        dialog = app.activeModalWidget()
+        seen.append(dialog.text())
+        assert "Укорочений концов: 2" in dialog.text()
+        assert not view.auto_join_path.isEmpty()
+        dialog.button(QMessageBox.StandardButton.Yes).click()
+
+    QTimer.singleShot(0, approve)
+    window.close_all_contours()
+    assert seen and view.safe_json_repair is safe
+    assert len(view.session.operations) == 1
+    expected = (((20, 60), (120, 60)), ((120, 20), (120, 60)))
+    assert view.session.walls == expected
+    if safe:
+        assert repaired_json_bytes(view.session)[1] == (0, 1)
+    window.history(False)
+    assert view.session.geometry() == original
+    window.history(True)
+    assert view.session.walls == expected
+    monkeypatch.setattr(window, "can_discard", lambda: True)
+    window.close()
+
+
+def test_cancelled_global_trim_keeps_source_and_history(app, pair_factory):
+    source = pair_factory(
+        size=(300, 200), walls=[{"c": [20, 60, 124, 60]}, {"c": [120, 20, 120, 64]}]
+    )
+    window = MainWindow()
+    window.show()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.view.resetTransform()
+    window.global_close_control.setValue(4)
+    original = window.view.session.geometry()
+
+    def cancel():
+        dialog = app.activeModalWidget()
+        assert "Укорочений концов: 2" in dialog.text()
+        dialog.button(QMessageBox.StandardButton.Cancel).click()
+
+    QTimer.singleShot(0, cancel)
+    window.close_all_contours()
+    assert window.view.session.geometry() == original and not window.view.session.operations
+    window.close()
 
 
 def test_retired_closure_mode_is_not_migrated(pair_factory, tmp_path):
@@ -237,19 +303,28 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         ]
 
     assert keys(window.file_menu) == [
-        "Open scene",
-        "JSON",
+        "Dataset manager…",
         "Open project",
         "Recent projects",
         "Save project",
         "Save project as…",
         "Export PNGs",
-        "Close scene",
+        "Export JSON…",
+        "Close project",
         "Exit",
     ]
-    assert keys(window.edit_menu) == ["Undo", "Redo", "Clear selection"]
+    assert keys(window.edit_menu) == [
+        "Undo",
+        "Redo",
+        "Select all contour lines",
+        "Clear selection",
+        "Copy region contours",
+        "Paste region contours",
+        "Delete region",
+        "Delete contours",
+    ]
     assert window.clear_selection_action in window.basic_toolbar.actions()
-    assert len(window.toolbars) == 6
+    assert len(window.toolbars) == 7
     assert window.toolbars[0] == window.tool_set_toolbar
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
@@ -283,118 +358,75 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
     window.close()
 
 
-@pytest.mark.parametrize("aliased_workspace", [False, True])
-def test_json_command_replaces_walls_without_choosing_jpg_and_keeps_archive_image_alive(
-    app, pair_factory, tmp_path, monkeypatch, aliased_workspace
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("save_only", [False, True])
+def test_current_contours_can_be_imported_or_saved_without_losing_original(
+    app, pair_factory, tmp_path, monkeypatch, language, save_only
 ):
     source = pair_factory()
-    project = tmp_path / "source.dale"
-    save_project(Session(source), project)
-    json_dir = tmp_path / "json-input"
-    json_dir.mkdir()
-    alternative = json_dir / "alternate.json"
-    raw = dict(source.raw, walls=[{"_id": "alternate", "c": [1, 2, 30, 40]}])
-    alternative.write_text(json.dumps(raw), encoding="utf-8")
+    session = Session(source)
+    session.add(add_line(session.geometry(), (2, 3), (4, 5)))
+    project = tmp_path / "edits.dale"
+    save_project(session, project)
+    before = project.read_bytes()
+    original = source.json_path.read_bytes()
+    destination = tmp_path / "selected.json"
     window = MainWindow()
-    assert window.load_project_file(project)
-    workspace = window.loaded_project.workspace
-    canonical_root = Path(workspace.name).resolve()
-    if aliased_workspace:
-        workspace.name = str(
-            canonical_root.parent / ".." / canonical_root.parent.name / canonical_root.name
-        )
-        assert Path(workspace.name).resolve() == canonical_root
-    image = window.view.session.source.image_path
-    opened = []
-
-    def choose(*args):
-        opened.append(args)
-        return str(alternative), ""
-
-    monkeypatch.setattr("dale.ui.QFileDialog.getOpenFileName", choose)
-    window.open_json()
-    assert len(opened) == 1
-    assert window.view.session.source.image_path == image and image.is_file()
-    assert window.view.session.walls == (((1, 2), (30, 40)),)
-    assert window.view.session.geometry().lineage[0].sources[0].foundry_id == "alternate"
-    assert window.input_directory == json_dir
-    output = tmp_path / "output"
-    output.mkdir()
-    window.project_path = output / "changed.dale"
-    assert window.save_project_file()
-    second = MainWindow()
-    assert second.input_directory == json_dir and second.output_directory == output
-    assert second.load_project_file(window.project_path)
-    assert second.view.session.source.image_path.is_file()
-    second.close()
-    workspace.name = str(canonical_root)
-    window.close()
-    assert not image.exists()
-
-
-@pytest.mark.parametrize("accept", [False, True])
-def test_json_import_from_dale_shows_all_documents_and_uses_chosen_one(
-    app, pair_factory, tmp_path, monkeypatch, accept
-):
-    source = pair_factory()
-    updated = json.dumps(dict(source.raw, walls=[{"_id": "updated", "c": [5, 6, 70, 80]}])).encode()
-    archive = tmp_path / "versions.dale"
-    save_project(
-        Session(
-            source,
-            json_documents=(JsonDocument("edit-1", "Updated contours.json", "updated", updated),),
-        ),
-        archive,
-    )
-    window = MainWindow()
+    window.set_language(language, persist=False)
     window.load_sources(source.image_path, source.json_path)
-    original = window.view.session
-    release = window.release_json_workspaces
+    current = window.view.session
+    from dale.dataset_manager import DatasetManager
 
-    def release_with_alias(keep_current=False):
-        for workspace in window.json_workspaces:
-            root = Path(workspace.name).resolve()
-            workspace.name = str(root.parent / ".." / root.parent.name / root.name)
-            assert Path(workspace.name).resolve() == root
-        release(keep_current)
+    manager = DatasetManager(window)
+    monkeypatch.setattr(
+        "dale.dataset_manager.QFileDialog.getOpenFileName", lambda *args: (str(project), "")
+    )
+    monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", lambda *args: (str(destination), ""))
 
-    monkeypatch.setattr(window, "release_json_workspaces", release_with_alias)
-    monkeypatch.setattr("dale.ui.QFileDialog.getOpenFileName", lambda *args: (str(archive), ""))
-
-    def choose():
+    def choose_document():
         dialog = app.activeModalWidget()
-        assert dialog.objectName() == "jsonDocumentSelection"
-        listing = dialog.findChild(QListWidget)
-        assert listing.count() == 2
-        assert "Исходный" in listing.item(0).text()
-        assert "Обновлённый" in listing.item(1).text()
-        listing.setCurrentRow(1)
+        listing = dialog.findChild(QComboBox)
+        assert listing.count() == 2 and listing.currentIndex() == 1
+        expected = "Исправленные контуры" if language == "ru" else "Current contours"
+        assert expected in listing.currentText()
         buttons = dialog.findChild(QDialogButtonBox)
-        button = buttons.button(
-            QDialogButtonBox.StandardButton.Ok if accept else QDialogButtonBox.StandardButton.Cancel
+        if save_only:
+            button = next(b for b in buttons.buttons() if b.objectName() == "saveSelectedJson")
+            assert button.toolTip()
+            QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+            assert dialog.isVisible() and destination.is_file()
+        button = (
+            buttons.button(QDialogButtonBox.StandardButton.Cancel)
+            if save_only
+            else next(b for b in buttons.buttons() if b.objectName() == "importSelectedJson")
         )
-        assert button.toolTip()
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
 
+    errors = []
+
+    def choose():
+        try:
+            choose_document()
+        except Exception as exc:
+            errors.append(exc)
+            app.activeModalWidget().reject()
+
     QTimer.singleShot(0, choose)
-    window.open_json()
-    assert window.view.session.source.image_path == source.image_path
-    assert window.input_directory == archive.parent
-    if accept:
-        assert window.view.session.walls == (((5, 6), (70, 80)),)
-        assert window.view.session.source.json_path.is_file()
-        window.project_path = tmp_path / "imported.dale"
-        assert window.save_project_file()
-        with load_project(window.project_path) as loaded:
-            assert loaded.session.source.json_path.read_bytes() == updated
+    manager.import_component("json")
+    assert not errors, errors
+    if save_only:
+        assert window.view.session is current
+        assert len(json.loads(destination.read_bytes())["walls"]) == len(session.walls)
     else:
-        assert window.view.session is original
+        manager.apply(False)
+        assert window.view.session.walls == session.walls
+    manager.close()
+    assert project.read_bytes() == before and source.json_path.read_bytes() == original
+    monkeypatch.setattr(window, "can_discard", lambda: True)
     window.close()
 
 
-def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
-    app, pair_factory, tmp_path
-):
+def test_region_move_isolated_geometry_gestures_and_project_selection(app, pair_factory, tmp_path):
     source = pair_factory(
         size=(500, 400),
         walls=[
@@ -413,21 +445,10 @@ def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
     original = window.view.session.geometry()
     original_pixels = window.view.item.pixmap().toImage()
 
-    def choose(yes, remember, rotation=False):
-        dialog = app.activeModalWidget()
-        assert dialog.objectName() == "regionMoveConfiguration"
-        assert "Правый клик" in dialog.informativeText()
-        assert ("Вращать" if rotation else "Перемещать") in dialog.text()
-        dialog.checkBox().setChecked(remember)
-        assert dialog.checkBox().toolTip()
-        QTest.mouseClick(
-            dialog.button(QMessageBox.StandardButton.Yes if yes else QMessageBox.StandardButton.No),
-            Qt.MouseButton.LeftButton,
-        )
-
-    QTimer.singleShot(0, lambda: choose(False, True))
+    window.remembered_move_related = True
+    window.view.move_related = True
     window.activate_mode("Move regions")
-    assert window.view.mode == "Move regions" and not window.view.move_related
+    assert window.view.mode == "Move regions"
     view = window.view
     app.processEvents()
     start = view.mapFromScene(QPointF(130, 130))
@@ -466,13 +487,9 @@ def test_region_move_dialog_remember_right_click_and_geometry_only_gestures(
         assert view.region_pivot == pivot
     assert len(view.session.operations) == 3
     assert view.item.pixmap().toImage() == original_pixels
-    QTimer.singleShot(0, lambda: choose(True, True, rotation=True))
-    window.rotate_button.customContextMenuRequested.emit(QPoint(20, 20))
-    assert view.move_related and window.remembered_move_related
     window.project_path = tmp_path / "moving.dale"
     assert window.save_project_file()
     second = MainWindow()
-    assert second.remembered_move_related is True
     assert second.load_project_file(window.project_path)  # No question during restoration.
     assert second.view.mode == "Rotate regions" and second.view.move_related
     assert len(second.selected_regions) == 1
@@ -703,7 +720,7 @@ def test_rotate_button_uses_plain_wheel_without_zoom_and_keeps_move_alt_free(
         assert view.region_polygons[0].area == pytest.approx(original_shape.area)
         expected = rotate(original_shape, 0.1 if delta > 0 else 0, origin="center")
         assert view.region_polygons[0].hausdorff_distance(expected) < 1e-7
-    assert len(view.session.operations) == 2
+    assert len(view.session.operations) == 1
     assert view.region_polygons[0].hausdorff_distance(original_shape) < 1e-8
     assert view.item.pixmap().toImage() == image
     window.project_path = tmp_path / "rotate-mode.dale"
@@ -725,8 +742,7 @@ def test_rotate_button_uses_plain_wheel_without_zoom_and_keeps_move_alt_free(
         False,
     )
     app.sendEvent(view.viewport(), wheel)
-    assert view.session.geometry() == before and len(view.session.operations) == 2
-    window.history(False)
+    assert view.session.geometry() == before and len(view.session.operations) == 1
     window.history(False)
     assert view.session.geometry() == original
     window.saved_state = window.document_state()
@@ -760,11 +776,11 @@ def test_auto_close_without_possible_changes_has_only_close(app, pair_factory):
 @pytest.mark.parametrize(
     "start,end,cursor,constrained",
     [
-        ((50, 100), (150, 100), (170, 130), (170, 100)),
-        ((50, 50), (150, 100), (170, 140), (182, 116)),
+        ((50, 100), (150, 100), (190, 120), (190, 120)),
+        ((50, 50), (150, 100), (170, 140), (170, 140)),
     ],
 )
-def test_alt_point_drag_projects_to_line_and_can_toggle_mid_gesture(
+def test_alt_does_not_force_map_axes_without_adjacent_angle(
     app, pair_factory, start, end, cursor, constrained
 ):
     source = pair_factory(size=(250, 200), walls=[{"c": [*start, *end]}])
@@ -775,6 +791,7 @@ def test_alt_point_drag_projects_to_line_and_can_toggle_mid_gesture(
     view.setTransform(QTransform.fromScale(2, 2))
     view.centerOn(125, 100)
     view.snap_enabled = False
+    view.right_angle_alignment = True
     view.set_mode("Edit points")
     app.processEvents()
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*end))
@@ -796,6 +813,132 @@ def test_alt_point_drag_projects_to_line_and_can_toggle_mid_gesture(
     assert view.session.walls[0][0] == start
     assert len(view.session.operations) == 1
     view.close()
+
+
+@pytest.mark.parametrize("zoom", [1, 3])
+def test_alt_drag_aligns_corner_on_two_guides_with_one_undo_and_escape(app, pair_factory, zoom):
+    source = pair_factory(
+        size=(300, 220),
+        walls=[
+            {"c": [40, 40, 140, 120]},
+            {"c": [140, 120, 160, 160]},
+            {"c": [157, 43, 157, 90]},
+        ],
+    )
+    view = MapView()
+    view.resize(900, 750)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(140, 100)
+    view.set_mode("Edit points")
+    view.snap_distance = 5 * zoom
+    view.right_angle_distance_px = 5 * zoom
+    view.contour_alignment_distance_px = 5 * zoom
+    view.right_angle_alignment = True
+    view.contour_alignment = True
+    app.processEvents()
+    original = view.session.geometry()
+    for cancel in (True, False):
+        QTest.mousePress(
+            view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 120)
+        )
+        QTest.mouseMove(view.viewport(), view.mapFromScene(157, 43))
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+        assert view.edit_preview.walls[:2] == (((40, 40), (160, 40)), ((160, 40), (160, 160)))
+        assert len(view.alignment_guides) == 2
+        assert view.angle_joint[1] == (160, 40)
+        assert {view.angle_joint[0], view.angle_joint[2]} == {(40, 40), (160, 160)}
+        assert view.edit_preview.walls[2] == original.walls[2]
+        if cancel:
+            QTest.keyClick(view, Qt.Key.Key_Escape)
+            assert view.session.geometry() == original and not view.alignment_guides
+        QTest.mouseRelease(
+            view.viewport(),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier,
+            view.mapFromScene(157, 43),
+        )
+        QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert len(view.session.operations) == 1
+    assert not view.alignment_guides
+    view.session.undo()
+    assert view.session.geometry() == original
+    view.session.redo()
+    assert view.session.walls[0][1] == (160, 40)
+    view.close()
+
+
+def test_safe_alt_drag_never_uses_hidden_floor_alignment_points(app, native_json_source):
+    from dale.editing import alignment_points
+
+    window = MainWindow()
+    window.load_sources(None, native_json_source)
+    index = next(
+        i
+        for i in range(window.layer_control.count())
+        if window.layer_control.itemData(i) == "band:0.0:10.0"
+    )
+    window.layer_control.setCurrentIndex(index)
+    view = window.view
+    assert (12, 5) not in alignment_points(view.editing_geometry(), (10, 0))
+    window.close()
+
+
+@pytest.mark.parametrize(
+    "right_angles,contour", [(False, False), (True, False), (False, True), (True, True)]
+)
+@pytest.mark.parametrize("alt", [False, True])
+def test_alignment_buttons_are_independent_and_require_alt(
+    app, pair_factory, right_angles, contour, alt
+):
+    source = pair_factory(
+        size=(320, 220),
+        walls=[
+            {"c": [40, 40, 140, 120]},
+            {"c": [140, 120, 160, 160]},
+            {"c": [160, 160, 210, 80]},
+        ],
+    )
+    window = MainWindow()
+    window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(140, 100)
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(False)
+    window.snap_distance.setValue(10)
+    assert not view.right_angle_alignment and not view.contour_alignment
+    for key, enabled in (("right_angle_alignment", right_angles), ("contour_alignment", contour)):
+        action = window.alignment_actions[key]
+        assert not action.icon().isNull() and action.toolTip()
+        if enabled:
+            action.trigger()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 120))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(208, 70))
+    if alt:
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+    expected = (210, 70) if alt and contour else (208, 70)
+    assert view.edit_preview.walls[0][1] == expected
+    assert bool(view.alignment_guides) == bool(alt and contour)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert not view.session.operations
+    window.close()
+
+
+def test_alignment_switches_roundtrip_with_project_ui(app, pair_factory, tmp_path):
+    window = MainWindow()
+    window.load_sources(pair_factory().image_path, None)
+    window.alignment_actions["contour_alignment"].trigger()
+    window.project_path = tmp_path / "alignment.dale"
+    assert window.save_project_file()
+    second = MainWindow()
+    assert second.load_project_file(window.project_path)
+    assert second.view.contour_alignment and not second.view.right_angle_alignment
+    assert second.alignment_actions["contour_alignment"].isChecked()
+    second.close()
+    window.close()
 
 
 def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists(
@@ -844,7 +987,7 @@ def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists
     assert restored.current_tool_set == "regions"
     assert restored.contour_offset.value() == 500
     assert restored.view.raster_diameters == {"Erase": 31, "Restore": 79}
-    assert restored.tool_set_actions["geometry"].text() == "Контуры"
+    assert restored.tool_set_actions["geometry"].text() == "Вершины"
     assert restored.tool_set_actions["regions"].text() == "Области"
     assert restored.tool_set_actions["pixels"].text() == "Растр"
     restored.select_tool_set("pixels")
@@ -871,21 +1014,6 @@ def test_brush_drag_is_one_undo_step(app, pair_factory):
     view.session.undo()
     assert not view.session.operations
     view.close()
-
-
-def test_version_and_integer_elevation_controls(app):
-    window = MainWindow()
-    assert [window.elevation.itemText(i) for i in range(4)] == ["-20", "-15", "-10", "-5"]
-    window.elevation.setCurrentText("17")
-    window.version.setCurrentIndex(1)
-    assert window.placement().foundry_major == 13
-    assert window.placement().elevation_ft == 17
-    window.version.setCurrentIndex(0)
-    assert window.placement().foundry_major == 14
-    window.elevation.setCurrentText("1.5")
-    with pytest.raises(ValueError, match="whole"):
-        window.placement()
-    window.close()
 
 
 def test_contour_controls_update_topology_and_offset_preview_at_any_zoom(app, pair_factory):
@@ -999,14 +1127,12 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     first.load_sources(source.image_path, source.json_path)
     first.gap_tolerance.setValue(3)
     first.contour_offset.setValue(2)
-    first.elevation.setCurrentText("17")
     first.set_language("en")
     first.geometry_brush_control.setValue(37)
     first.vertex_brush_control.setValue(61)
     first.snap_distance.setValue(21)
     first.snap_action.setChecked(False)
     first.set_snapping(False)
-    first.version.setCurrentIndex(1)
     first.view.session.add(Stroke(((20, 30), (30, 40)), 3))
     first.auto_close_control.setValue(31)
     first.activate_mode("Auto-close")
@@ -1018,8 +1144,6 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     assert second.view.session.operations == first.view.session.operations
     assert second.gap_tolerance.value() == 3
     assert second.contour_offset.value() == 2
-    assert second.placement().elevation_ft == 17
-    assert second.placement().foundry_major == 13
     assert second.view.mode == "Auto-close"
     assert second.view.auto_close_distance == 31
     assert second.language == "en"
@@ -1035,27 +1159,459 @@ def test_project_save_and_load_through_window_preserves_editing_state(app, pair_
     second.close()
 
 
+def test_image_only_png_project_opens_saves_and_reopens_without_semantic_pages(app, tmp_path):
+    from PIL import Image
+
+    image_path = tmp_path / "artwork.png"
+    Image.new("RGBA", (80, 60), (40, 80, 120, 128)).save(image_path)
+    first = MainWindow()
+    assert first.load_sources(image_path, None)
+    assert set(first.sidebar_pages) == {"project", "settings"}
+    assert set(first.tool_set_actions) == {"geometry", "figures", "regions", "pixels"}
+    assert not {"Select walls", "Paint wall properties", "Reset wall properties"}.intersection(
+        first.mode_actions
+    )
+    assert first.view.session.source.size == (80, 60)
+    first.project_path = tmp_path / "image-only.dale"
+    assert first.save_project_file()
+    second = MainWindow()
+    assert second.load_project_file(first.project_path)
+    assert second.view.session.source.json_path is None
+    assert second.view.session.source.size == (80, 60)
+    first.close()
+    second.close()
+
+
+@pytest.fixture
+def native_json_source(tmp_path):
+    path = tmp_path / "native.json"
+    path.write_text(
+        json.dumps(
+            {
+                "name": "Native repair",
+                "width": 100,
+                "height": 80,
+                "walls": [
+                    {
+                        "_id": "shared",
+                        "c": [0, 0, 10, 0],
+                        "flags": {"wall-height": {"bottom": 0, "top": 20}},
+                    },
+                    {
+                        "_id": "lower",
+                        "c": [12, -5, 12, 5],
+                        "flags": {"wall-height": {"bottom": 0, "top": 10}},
+                    },
+                    {
+                        "_id": "upper",
+                        "c": [12, -5, 12, 5],
+                        "flags": {"wall-height": {"bottom": 10, "top": 20}},
+                    },
+                ],
+                "regions": [{"behaviors": [{"system": {"destination": "Scene.A.Region.B"}}]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_json_opens_without_image_and_safe_close_export_keeps_native_records(
+    app, native_json_source, tmp_path, monkeypatch
+):
+    from dale.session import SourceRepairEdit
+
+    window = MainWindow()
+    window.show()
+    original = native_json_source.read_bytes()
+    monkeypatch.setattr(
+        "dale.ui.QFileDialog.getOpenFileName", lambda *_: (str(native_json_source), "")
+    )
+    assert window.load_sources(None, native_json_source)
+    app.processEvents()
+    assert window.view.session.source.image_path is None
+    assert window.view.safe_json_repair and window.json_repair_control.isVisible()
+    assert window.export_json_action.isEnabled() and not window.export_action.isEnabled()
+    assert window.mode_actions["New line"].isEnabled()
+    assert window.mode_actions["Edit points"].isEnabled()
+    window.view.resetTransform()
+    window.global_close_control.setValue(5)
+
+    def approve():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.objectName() == "autoCloseConfirmation"
+        dialog.button(QMessageBox.StandardButton.Yes).click()
+
+    QTimer.singleShot(0, approve)
+    window.close_all_contours()
+    assert len(window.view.session.operations) == 1
+    assert isinstance(window.view.session.operations[0], SourceRepairEdit)
+    assert len(window.view.session.walls) == 3
+    destination = tmp_path / "repaired.json"
+    monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", lambda *_: (str(destination), ""))
+    messages = []
+    monkeypatch.setattr(window, "information", lambda *args: messages.append(args))
+    window.export_json_action.trigger()
+    assert messages[0][0] == "JSON exported"
+    updated = json.loads(destination.read_text(encoding="utf-8"))
+    assert updated["walls"][0]["c"] == [0, 0, 12, 0]
+    assert [wall["_id"] for wall in updated["walls"]] == ["shared", "lower", "upper"]
+    from dale.json_repair import export_repaired_json
+
+    native_destination = tmp_path / "native-repaired.json"
+    export_repaired_json(window.view.session, native_destination)
+    assert destination.read_bytes() == native_destination.read_bytes()
+    assert native_json_source.read_bytes() == original
+    window.project_path = tmp_path / "repair.dale"
+    assert window.save_project_file()
+    second = MainWindow()
+    assert second.load_project_file(window.project_path)
+    assert second.view.safe_json_repair and second.view.session.source.image_path is None
+    second.history(False)
+    assert second.view.session.walls[0][1] == (10, 0)
+    second.history(True)
+    assert second.view.session.walls[0][1] == (12, 0)
+    assert second.can_discard()
+    window.close()
+    second.close()
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_safe_json_controls_and_shortcuts_are_localized(app, native_json_source, language):
+    window = MainWindow()
+    assert window.load_sources(None, native_json_source)
+    window.set_language(language, persist=False)
+    assert window.json_repair_control.text() == window.t("Edit contours by height layers")
+    assert "Ctrl+Shift+J" in window.mode_help.text()
+    assert window.export_json_action.text() == window.t("Export JSON…")
+    window.json_repair_control.setChecked(False)
+    assert window.mode_actions["New line"].isEnabled()
+    window.json_repair_control.setChecked(True)
+    assert window.view.safe_json_repair and window.mode_actions["New line"].isEnabled()
+    assert window.view.mode in ("Pan", "Auto-close", "Edit points", "New line")
+    window.close()
+
+
+def test_native_erasers_remain_enabled_with_collapsed_panel(app, native_json_source, pair_factory):
+    window = MainWindow()
+    source = pair_factory(size=(400, 400))
+    assert window.load_sources(source.image_path, native_json_source)
+    assert window.view.safe_json_repair
+    window.set_sidebar_visible(False, persist=False)
+    original = window.view.session.source.json_bytes
+    for language in ("ru", "en", "ru"):
+        window.set_language(language, persist=False)
+        for mode in ("Erase lines", "Erase vertices"):
+            action = window.mode_actions[mode]
+            tile = window.geometry_eraser_tiles[mode]
+            assert action.isEnabled() and tile.isEnabled()
+            assert window.t("Preserve JSON when joining contours") not in tile.toolTip()
+            assert tile.toolTip().count("Escape") == 1
+        assert not window.right_panel_visible
+    window.show_sidebar("project")
+    window.json_repair_control.setChecked(False)
+    assert not window.view.safe_json_repair
+    assert all(window.mode_actions[mode].isEnabled() for mode in ("Erase lines", "Erase vertices"))
+    assert "стрелкой" not in window.geometry_eraser_tiles["Erase lines"].toolTip()
+    window.json_repair_control.setChecked(True)
+    assert window.view.safe_json_repair
+    assert window.view.session.source.json_bytes == original
+    window.close()
+
+
+def test_conflicting_layer_repair_reports_without_creating_history(
+    app, native_json_source, monkeypatch
+):
+    raw = json.loads(native_json_source.read_text())
+    raw["walls"][2]["c"] = [14, -5, 14, 5]
+    native_json_source.write_text(json.dumps(raw), encoding="utf-8")
+    window = MainWindow()
+    assert window.load_sources(None, native_json_source)
+    window.view.resetTransform()
+    window.global_close_control.setValue(5)
+    before = window.view.session.geometry()
+
+    def close_report():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.objectName() == "autoCloseInformation"
+        assert (
+            window.t(
+                "Height bands: {layers}. Conflict groups left unchanged: {conflicts}.",
+                layers=2,
+                conflicts=1,
+            )
+            in dialog.text()
+        )
+        dialog.button(QMessageBox.StandardButton.Close).click()
+
+    QTimer.singleShot(0, close_report)
+    window.close_all_contours()
+    assert window.view.session.geometry() == before and not window.view.session.operations
+    window.close()
+
+
+def choose_height(window, bottom=0, top=10, kind="band"):
+    from dale.source_editing import source_layers
+
+    layer = next(
+        candidate
+        for candidate in source_layers(window.view.session.source, window.view.session.geometry())
+        if candidate.bottom == bottom and candidate.top == top and candidate.kind == kind
+    )
+    window.layer_control.setCurrentIndex(window.layer_control.findData(layer.key))
+    return layer
+
+
+def native_window(app, path):
+    window = MainWindow()
+    window.show()
+    assert window.load_sources(None, path)
+    window.view.setTransform(QTransform.fromScale(8, 8))
+    window.view.centerOn(50, 40)
+    app.processEvents()
+    return window
+
+
+def test_height_dropdown_shares_common_wall_and_exact_range_filters_without_edits(
+    app, native_json_source
+):
+    window = native_window(app, native_json_source)
+    original = window.view.session.geometry()
+    assert window.layer_control.isVisible() and not window.region_control.isVisible()
+    assert len(window.view.walls) == 3
+    choose_height(window)
+    assert window.view.walls == original.walls[:2]
+    choose_height(window, 10, 20)
+    assert window.view.walls == (original.walls[0], original.walls[2])
+    choose_height(window, 0, 20, "range")
+    assert window.view.walls == (original.walls[0],)
+    assert window.view.session.geometry() == original and not window.view.session.operations
+    for language in ("en", "ru", "en"):
+        window.set_language(language, persist=False)
+        assert window.regions_group.title() == window.t("Height layers")
+        assert window.layer_control.currentData() == window.view.source_layer
+        assert window.layer_control.count() == 4
+    window.close()
+
+
+def test_native_point_pointer_drag_moves_only_selected_independent_floor(
+    app, native_json_source, monkeypatch
+):
+    from dale.json_repair import repaired_json_bytes
+
+    raw = json.loads(native_json_source.read_text())
+    raw["walls"] = [raw["walls"][1], raw["walls"][2]]
+    raw["walls"][0]["c"] = raw["walls"][1]["c"] = [0, 0, 10, 0]
+    native_json_source.write_text(json.dumps(raw), encoding="utf-8")
+    window = native_window(app, native_json_source)
+    choose_height(window)
+    window.activate_mode("Edit points")
+    window.view.snap_enabled = False
+    view = window.view
+    start, end = view.mapFromScene(10, 0), view.mapFromScene(12, 3)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+    QTest.mouseMove(view.viewport(), end)
+    assert view.edit_preview.walls[0][1] == (12, 3)
+    assert view.edit_preview.walls[1][1] == (10, 0)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+    assert len(view.session.operations) == 1 and repaired_json_bytes(view.session)[1] == (0,)
+    choose_height(window, 10, 20)
+    assert view.walls == (((0, 0), (10, 0)),)
+    window.history(False)
+    assert view.session.walls[0][1] == (10, 0)
+    window.history(True)
+    assert view.session.walls[0][1] == (12, 3)
+    monkeypatch.setattr(window, "can_discard", lambda: True)
+    window.close()
+
+
+def test_native_manual_line_pointer_export_and_project_restore_layer(
+    app, native_json_source, tmp_path, monkeypatch
+):
+    window = native_window(app, native_json_source)
+    layer = choose_height(window)
+    window.activate_mode("New line")
+    view = window.view
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(30, 30))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(50, 30))
+    assert view.active_gesture and not view.session.operations
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(50, 30))
+    assert len(view.session.operations) == 1 and len(view.session.walls) == 4
+    assert view.session.walls[-1] == ((30, 30), (50, 30))
+    path = tmp_path / "new-wall.json"
+    monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", lambda *_: (str(path), ""))
+    monkeypatch.setattr(window, "information", lambda *_: None)
+    window.export_json_action.trigger()
+    data = json.loads(path.read_text())
+    assert len(data["walls"]) == 4
+    assert data["walls"][-1]["c"] == [30, 30, 50, 30]
+    from dale.json_repair import export_repaired_json
+
+    native_path = tmp_path / "native-new-wall.json"
+    export_repaired_json(view.session, native_path)
+    assert path.read_bytes() == native_path.read_bytes()
+    added = data["walls"][-1]
+    assert added["flags"]["wall-height"] == {"bottom": 0, "top": 10}
+    assert added["move"] == added["sight"] == added["light"] == added["sound"] == 20
+    assert added["door"] == added["ds"] == added["dir"] == 0
+    assert data["walls"][:3] == json.loads(native_json_source.read_text())["walls"]
+    window.project_path = tmp_path / "manual.dale"
+    assert window.save_project_file()
+    second = MainWindow()
+    assert second.load_project_file(window.project_path)
+    assert second.layer_control.currentData() == layer.key
+    assert second.view.mode == "New line" and len(second.view.walls) == 3
+    assert second.view.session.geometry().additions[0].native_id == added["_id"]
+    second.close()
+    window.close()
+
+
+def test_native_layer_switch_cancels_new_line_and_zero_length_is_a_noop(app, native_json_source):
+    window = native_window(app, native_json_source)
+    window.activate_mode("New line")
+    view = window.view
+    messages = []
+    view.message.connect(messages.append)
+    point = view.mapFromScene(30, 30)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert messages == []
+    choose_height(window)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.mouseMove(view.viewport(), view.mapFromScene(50, 30))
+    assert view.active_gesture
+    choose_height(window, 10, 20)
+    assert not view.active_gesture and not view.session.operations
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(50, 30))
+    assert not view.session.operations
+    window.close()
+
+
+def test_native_point_tool_splits_and_deletes_with_scene_preservation(
+    app, native_json_source, monkeypatch
+):
+    from dale.json_repair import repaired_json_bytes
+
+    window = native_window(app, native_json_source)
+    monkeypatch.setattr(window, "can_discard", lambda: True)
+    choose_height(window)
+    window.activate_mode("Edit points")
+    view = window.view
+    original = view.session.geometry()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(5, 0))
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(10, 0))
+    assert view.session.geometry() != original and len(view.session.operations) == 2
+    exported = json.loads(repaired_json_bytes(view.session)[0])
+    assert len(exported["walls"]) == 3
+    assert {k: v for k, v in exported.items() if k != "walls"} == {
+        k: v for k, v in view.session.source.raw.items() if k != "walls"
+    }
+    for language in ("ru", "en", "ru"):
+        window.set_language(language, persist=False)
+        assert window.t(
+            "Click a line: add a point. Drag a point: move it. Double-click: delete it."
+        ) in " ".join(window.mode_actions["Edit points"].toolTip().split())
+        assert window.mode_actions["Edit points"].toolTip().count("Escape") == 1
+    window.close()
+
+
+def test_native_new_line_does_not_snap_to_hidden_floor(app, native_json_source, monkeypatch):
+    raw = json.loads(native_json_source.read_text())
+    raw["walls"][2]["c"] = [50, 31, 60, 31]
+    native_json_source.write_text(json.dumps(raw))
+    window = native_window(app, native_json_source)
+    choose_height(window)
+    window.activate_mode("New line")
+    view = window.view
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(30, 30))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(50, 30))
+    assert view.line_end == (50, 30)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(50, 30))
+    assert view.session.walls[-1] == ((30, 30), (50, 30))
+    monkeypatch.setattr(window, "can_discard", lambda: True)
+    window.close()
+
+
+def test_scoped_native_eraser_after_split_does_not_erase_other_floor(
+    app, pair_factory, monkeypatch
+):
+    from dale.json_repair import repaired_json_bytes
+
+    walls = [
+        {
+            "_id": f"Floor{i:011d}",
+            "c": [20, 80, 220, 80],
+            "door": i,
+            "flags": {"wall-height": {"bottom": i * 10, "top": (i + 1) * 10}},
+        }
+        for i in (0, 1)
+    ]
+    source = pair_factory(size=(400, 400), walls=walls, lights=[{"opaque": [None, 2]}])
+    window = MainWindow()
+    window.show()
+    monkeypatch.setattr(window, "can_discard", lambda: True)
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    choose_height(window)
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(150, 100)
+    app.processEvents()
+    window.activate_mode("Edit points")
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(120, 80))
+    result = json.loads(repaired_json_bytes(view.session)[0])
+    assert len(result["walls"]) == 3 and walls[1] in result["walls"]
+    window.activate_mode("Erase lines")
+    for x in (70, 170):
+        point = view.mapFromScene(x, 80)
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    result = json.loads(repaired_json_bytes(view.session)[0])
+    assert result["walls"] == [walls[1]]
+    assert result["lights"] == source.raw["lights"]
+    assert view.source_layer == "all" and window.layer_control.currentData() == "all"
+    window.history(False)
+    assert len(json.loads(repaired_json_bytes(view.session)[0])["walls"]) == 2
+    window.close()
+
+
+def test_selected_band_diagnostics_ignore_open_graph_on_other_floor(app, native_json_source):
+    raw = json.loads(native_json_source.read_text())
+    shared = {"c": [20, 20, 20, 60], "flags": {"wall-height": {"bottom": 0, "top": 20}}}
+    raw["walls"] = [
+        shared,
+        *[
+            {"c": c, "flags": {"wall-height": {"bottom": 0, "top": 10}}}
+            for c in ([20, 60, 60, 60], [60, 60, 60, 20], [60, 20, 20, 20])
+        ],
+    ]
+    native_json_source.write_text(json.dumps(raw))
+    window = native_window(app, native_json_source)
+    choose_height(window)
+    assert window.view.analysis.faces == 1 and not window.view.analysis.unresolved
+    choose_height(window, 10, 20)
+    assert window.view.analysis.faces == 0
+    assert window.view.analysis.unresolved == (((20, 20), (20, 60)),)
+    window.close()
+
+
 def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_path):
     window = MainWindow(preferences_path=tmp_path / "language.json")
     assert window.language == "ru"
-    assert window.mode_actions["Edit points"].text() == "Точки контура"
+    assert window.mode_actions["Edit points"].text() == "Вершины контура"
     assert "Клик" in window.mode_actions["Edit points"].toolTip()
     assert "Escape" in window.mode_actions["Edit points"].toolTip()
     assert "Ctrl" in window.geometry_eraser_tiles["Erase lines"].toolTip()
     assert "Escape" in window.geometry_eraser_tiles["Erase vertices"].toolTip()
     assert "Ctrl" in window.geometry_eraser_tiles["Erase vertices"].increase_button.toolTip()
     assert "Ctrl+E" in window.export_action.toolTip()
-    assert "Горячие клавиши" in window.export_action.toolTip()
+    assert "Клавиши:" in window.export_action.toolTip()
     window.language_control.setCurrentIndex(0)
-    assert window.mode_actions["Edit points"].text() == "Edit contour points"
+    assert window.mode_actions["Edit points"].text() == "Edit contour vertices"
     assert "Click a line" in window.mode_actions["Edit points"].toolTip()
-    assert "Shortcut: Ctrl+E" in window.export_action.toolTip()
+    assert "- Ctrl+E:" in window.export_action.toolTip()
     window.mode_actions["Edit points"].trigger()
     assert window.view.mode == "Edit points"
     window.language_control.setCurrentIndex(1)
     assert window.view.mode == "Edit points"
-    window.elevation.setCurrentText("17")
-    assert "17 футов" in window.placement_hint.text()
     assert window.menuBar().actions()[0].text() == "Файл"
     window.language_control.setCurrentIndex(0)
     assert window.menuBar().actions()[0].text() == "File"
@@ -1083,6 +1639,8 @@ def test_russian_review_dialog_and_standard_buttons(app, pair_factory, monkeypat
         "question",
         lambda title, text, *options: messages.append(text) or QMessageBox.StandardButton.No,
     )
+    window.activate_mode("Select raster regions")
+    window.toggle_region_at((30, 60))
     window.mask("outside")
     assert "Осталось незамкнутых" in messages[0]
     assert not window.view.session.operations
@@ -1239,10 +1797,62 @@ def test_export_margin_tooltip_has_one_description_and_keeps_wheel_help(app):
         for control in (tile, tile.editor(), tile.editor().lineEdit()):
             lines = control.toolTip().splitlines()
             assert len(lines) == len(set(lines))
-            assert len(lines) == 3  # Name, source-artwork meaning, Ctrl+wheel.
+            assert 5 <= len(lines) <= 10
+            assert lines[0] == tile.defaultAction().text()
+            assert lines[1].startswith("Назначение:" if language == "ru" else "Purpose:")
+            assert control.toolTip().count("Ctrl") == 1
             assert "Ctrl" in lines[-1]
             assert "3 px" not in control.toolTip()
         assert ("изображения сцены" if language == "ru" else "scene image") in tile.toolTip()
+    window.close()
+
+
+def test_tooltip_sections_stay_stable_and_use_actual_shortcuts(app, tmp_path):
+    window = MainWindow(preferences_path=tmp_path / "help.json")
+    original = {}
+    window.export_action.setShortcut("Ctrl+Alt+E")
+    for language in ("ru", "en", "ru", "en", "ru"):
+        window.set_language(language, persist=False)
+        window.update_size_help()
+        controls = [
+            *(
+                a
+                for a in window.findChildren(QAction)
+                if a.property("dale_tool_key") and not a.menu()
+            ),
+            window.manager_button,
+            window.sidebar_toggle,
+        ]
+        for tile in window.sized_tools.values():
+            controls.extend((tile, tile.editor(), tile.editor().lineEdit(), tile.increase_button))
+            assert tile.toolTip().count("Ctrl") == 1
+            assert tile.toolTip().count("Escape") <= 1
+        snapshot = []
+        for control in controls:
+            tip = control.toolTip()
+            assert not tip.startswith("Назначение:" if language == "ru" else "Purpose:")
+            assert tip.splitlines()[1].startswith("Назначение:" if language == "ru" else "Purpose:")
+            assert tip.count("Условие:" if language == "ru" else "Condition:") == 1
+            assert tip.count("Клавиши:" if language == "ru" else "Keys:") == 1
+            lines = tip.splitlines()
+            if isinstance(control, QAction):
+                assert lines[0] == control.text().replace("&", "")
+            assert len(lines) == len(set(lines))
+            assert all(len(line) <= 68 for line in lines)
+            snapshot.append(tip)
+        if language in original:
+            assert snapshot == original[language]
+        else:
+            original[language] = snapshot
+        assert window.export_action.toolTip().count("Ctrl+Alt+E") == 1
+        assert "Ctrl+E" not in window.export_action.toolTip()
+        angle_tip = window.sized_tools["Right-angle alignment"].toolTip()
+        assert angle_tip.count("Alt") == 1
+        assert (
+            "screen pixels" in window.right_angle_distance.toolTip()
+            if language == "en"
+            else "экранных" in window.right_angle_distance.toolTip()
+        )
     window.close()
 
 
@@ -1273,6 +1883,8 @@ def test_global_tool_values_copy_and_restore_every_numeric_button_after_restart(
         "auto_close_distance_px": 29,
         "global_close_distance_px": 61,
         "snap_distance_px": 17,
+        "right_angle_distance_px": 9999,
+        "contour_alignment_distance_px": 4321,
         "artwork_offset_px": -4,
     }
     assert not window.global_tools_control.isChecked()
@@ -1352,7 +1964,9 @@ def test_global_settings_override_project_until_unchecked_and_do_not_overwrite_i
     window.close()
 
 
-def test_clear_selection_follows_hand_and_clears_regions_and_contour_highlights(app, pair_factory):
+def test_main_selection_buttons_follow_hand_and_clear_regions_and_contour_highlights(
+    app, pair_factory
+):
     source = pair_factory()
     window = MainWindow()
     window.load_sources(source.image_path, source.json_path)
@@ -1361,10 +1975,11 @@ def test_clear_selection_follows_hand_and_clears_regions_and_contour_highlights(
     assert window.selected_regions
     # QAction order, independent of localized labels or viewport width.
     actions = window.basic_toolbar.actions()
+    assert actions.index(window.select_all_action) == actions.index(window.mode_actions["Pan"]) + 1
     assert (
-        actions.index(window.clear_selection_action)
-        == actions.index(window.mode_actions["Pan"]) + 1
+        actions.index(window.clear_selection_action) == actions.index(window.select_all_action) + 1
     )
+    assert window.select_all_action not in window.figure_toolbar.actions()
     before = window.view.session.geometry(), tuple(window.view.session.operations)
     window.clear_selection_action.trigger()
     assert window.selected_regions == () and window.view.selected_path.isEmpty()
@@ -1422,7 +2037,7 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
             assert ("Колесо: вращение" if language == "ru" else "Wheel: rotate") in help_text
             assert (
                 "Правый клик по кнопке" if language == "ru" else "Right-click the tool button"
-            ) in help_text
+            ) not in help_text
             assert "Wheel: zoom" not in help_text and "Колесо: масштаб" not in help_text
     window.export_action.setEnabled(False)
     assert "Ctrl+E:" not in window.mode_help.text()
@@ -1432,14 +2047,14 @@ def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(a
 
 
 @pytest.mark.parametrize("language", ["ru", "en"])
-def test_sections_scene_settings_and_shared_information_panels(app, language):
+def test_png_editor_sections_settings_and_shared_information_panels(app, language):
     window = MainWindow()
-    window.resize(1024, 768)
+    window.resize(1224, 768)
     window.set_language(language, persist=False)
     window.show()
     app.processEvents()
-    assert [bar.windowTitle() for bar in window.toolbars[:3]] == (
-        ["Разделы", "Сцена", "Основное"] if language == "ru" else ["Sections", "Scene", "Main"]
+    assert [bar.windowTitle() for bar in window.toolbars[:2]] == (
+        ["Разделы", "Основное"] if language == "ru" else ["Sections", "Main"]
     )
     for action in window.basic_toolbar.actions():
         if action.property("dale_tool_key"):
@@ -1452,21 +2067,15 @@ def test_sections_scene_settings_and_shared_information_panels(app, language):
     assert window.tool_stack.currentWidget().parentWidget() == window.tool_stack
     assert window.tool_stack.currentWidget().orientation() == Qt.Orientation.Vertical
     assert window.project_group.isVisible() and not window.settings_group.isVisible()
-    window.levels_action.trigger()
-    app.processEvents()
-    assert window.scene_group.isVisible() and window.scene_levels_group.isVisible()
-    assert not window.project_group.isVisible() and not window.settings_group.isVisible()
-    assert window.left_panel.isVisible()
-    assert window.view.mode == "Pan"
-    assert window.t("Left-drag: pan the scene image.") in window.mode_help.text()
+    assert set(window.sidebar_pages) == {"project", "settings"}
+    window.activate_mode("Edit points")
     window.settings_action.trigger()
-    assert window.settings_group.isVisible() and not window.scene_group.isVisible()
-    assert not window.project_info_group.isVisible() and not window.regions_group.isVisible()
+    assert window.settings_group.isVisible() and not window.project_group.isVisible()
+    assert window.view.mode == "Edit points" and window.left_panel.isVisible()
     window.settings_action.trigger()
-    assert window.scene_group.isVisible()
+    assert window.project_group.isVisible()
     window.tool_set_actions["regions"].trigger()
-    assert window.project_group.isVisible() and not window.scene_group.isVisible()
-    assert window.left_panel.isVisible() and not window.levels_action.isChecked()
+    assert window.project_group.isVisible() and window.left_panel.isVisible()
     assert len({label.text() for label in window.mode_help_labels.values()}) == 1
     for key, group in window.information_groups.items():
         assert group.parentWidget() == window.sidebar_pages[key]
@@ -1620,11 +2229,6 @@ def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_fac
             *w.findChildren(QComboBox),
             *w.findChildren(QGroupBox),
         ]:
-            # Semantic wall presets are explicitly named walls by the owner.
-            if not isinstance(c, QAction) and (
-                c == w.templates_panel or w.templates_panel.isAncestorOf(c)
-            ):
-                continue
             texts.append(c.toolTip())
             if hasattr(c, "text"):
                 texts.append(c.text())
@@ -1642,10 +2246,10 @@ def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_fac
             )
         ]
         assert not unexpected, (mode, unexpected)
-    command = next(a for a in w.findChildren(QAction) if a.property("dale_tool_key") == "JSON")
-    assert (
-        "Загрузить JSON сцены" if language == "ru" else "Load a scene JSON"
-    ) in command.toolTip()
+    command = next(
+        a for a in w.findChildren(QAction) if a.property("dale_tool_key") == "Dataset manager…"
+    )
+    assert ("Менеджер наборов" if language == "ru" else "Dataset manager") in command.toolTip()
     assert ("Показывать контуры" if language == "ru" else "Show contours") == w.walls_action.text()
     assert (
         "Проверьте совмещение" if language == "ru" else "Verify contour alignment"

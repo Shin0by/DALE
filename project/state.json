@@ -1,43 +1,403 @@
 {
   "schema_version": 1,
-  "updated": "2026-10-16",
-  "phase": "scene_level_and_semantic_wall_template_library",
+  "updated": "2026-10-18",
+  "phase": "independent_alignment_portable_ready",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
-    "Local Python/PySide6/Pillow/Shapely editor; complete root DALE portable package after every update, supplied ICO unchanged.",
-    "Scene image (JPG/JPEG) plus Foundry 13/14 scene JSON; same-stem pairing. Separate JSON command loads a scene JSON directly or selects from all declared scene JSON documents in a DALE project.",
-    "No legacy support: schema 3 only; reject older/unknown archives, no migrations or old UI aliases.",
-    "Every edge has stable ID, parent lineage and exact source JSON SHA256/array pointer/optional Foundry ID. Splits, merges, contacts and transforms preserve ancestry; deleted ancestors and contact markers persist in history/redo.",
-    "File/Edit/About menus own general commands. Top panels: Sections (text Contours/Regions/Raster), Scene (text Levels), Main (36px square icon-only Hand/Clear selection/Fit/Show contours/Settings). One left toolbar in an unframed stack, no nested wrapper. Separate right Project/Scene/Settings pages; every page owns the same240px bottom Information. Levels cancels previews and preserves the visible left toolbar/active editing mode. Scene contains shared Levels and Wall presets; current schema3 stores hashed template definitions without placed semantic assignments.",
-    "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
-    "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
-    "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
-    "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales; a separate Rotate regions button uses plain wheel at 0.1 degree per notch around stable shared pivot; raster and mask snapshots stay fixed.",
-    "The only artwork margin is the left Regions Artwork offset, signed -4096..4096 source pixels. Current offset applies to export outside boundaries; original raster and preview mask snapshots stay fixed. Bicubic 2x alpha smoothing preserves native RGB. Exact crop includes every nonzero byte (even 1/255), clamped to JPG. No mandatory 3px guard or global transparent-padding parameter.",
-    "Portable merged preferences retain language, Foundry version, related-line choice, independent input/output folders shared across file types. Never persist extraction directories.",
-    "Current .dale JSON catalog preserves original and additional updated documents. Generation of updated Foundry JSON remains future work.",
-    "Chat Russian, technical text English, bilingual UI/tooltips with actual shortcuts; no private example uploads.",
-    "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels.",
-    "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines.",
-    "Transform isolation requirement: freeze selected/optional related geometry before move/scale/rotation; do not snap, repair or extend stationary lines toward it. Owner-reported defect is pending NEXT-009, not fixed in this research task.",
-    "Foundry semantic export is research only: distinct v13/v14 serializers, explicit floors/Regions/doors/teleport semantics, ordered endpoints/shapes and ID/UUID remapping. Preserve original/updated catalog separation; no legacy .dale support.",
-    "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded.",
-    "All eight numeric tool values save in projects. Store settings globally defaults off; enabling copies active values to portable config, which loads first and overrides project numbers while enabled. Unchecking restores separate project values. Global-mode saving preserves the project numbers and artwork offset, not global overrides.",
-    "Clear selection follows Hand in the second top row; Ctrl+Shift+A clears selected cells/contour highlights and cancels previews without editing geometry/raster or changing mode. English/Russian action names identify regions, contours, lines/points or raster; internal keys remain stable.",
-    "Right Project contains Regions then File information. Settings is a separate page opened by Main Settings, with target/language/global scope. Scene Levels contains shared level definitions and semantic wall presets. All three Information copies share one current-mode/actual-enabled-shortcut source and top-aligned scrollable text; settings toggles back to the active scene/project page.",
-    "Circular contours are existing editable polygon edges: press center, drag radius, release one undo step without confirmation. Preview changes vertices live in both directions. Diameter in imported grid cells <=0.5:4 vertices, <=1:6, <=2:8; then add two per started 2.5 cells, capped at4096. Missing/invalid grid uses100 source pixels per cell; source scale conversion and zoom-independent density. Ctrl+wheel adjusts active radius, Escape/Clear selection cancels. Exact contacts retain ancestry; source JSON stays unchanged.",
-    "Foundry Regions offer native circle shapes, but DALE circular contours remain working polygon edges suitable for future wall/Region polygon export. Do not infer native circles after point edits or claim semantic scene generation.",
-    "Auto-close and whole-map close show Cancel/Yes only when changes exist; no-op/empty-cursor information has only Close. File/Edit/About menu commands retain shortcuts; About displays the running title/version and localized purpose.",
-    "Application and general workflow terminology is Scene, Scene image, Scene JSON and Contours in both languages. JSON contains a whole Scene, not only geometry. DALE project means .dale archive. Actual native fields/API/module names such as walls remain literal in technical format descriptions. No wire-field rename, alias or archive migration is introduced for UI terminology. Source warnings retranslate on language changes; obsolete UI translation entries are removed.",
-    "Large exact PNG sidebar bounds run in one cancellable worker with immutable Session/polygon snapshots. Keep only the latest pending request, ignore stale results and cache at most16 outcomes. Inline scans are limited to262144 candidate pixels. Show localized pending state; defer ready-result repaint during active gestures. Export uses identical exact nonzero alpha bounds. Contour-only edits reuse unchanged raster preview/Pixmap. Cancel and join worker on application shutdown.",
-    "The added 13.351 scene probe changes only tiles and statistics, adding one locked Tile with screenshot-confirmed placement/texture/occlusion/restrictions. Future extracted floor PNGs will be referenced by Tile assets using resolved scene coordinates, explicit elevation/sort and version-specific Level/occlusion semantics. Tile generation remains future work; preserve originals and separate updated JSON catalog snapshots.",
-    "Every Git push needs a fresh explicit owner request. Default origin/development; origin/release only when explicitly named and separately confirmed for a concrete commit/plan. Use the versioned dale-push skill/helper and local pre-push guard. No automatic push after edits/builds/commits/CI, no automatic failed-attempt retry or hook bypass; configure local Git only. Skill setup is not a push request.",
-    "File > Recent projects is always present. Merge up to10 unique absolute successful .dale open/save paths into portable preferences, newest first. Entry opening respects save/discard/cancel; missing paths stay disabled with help. Clear list preserves files. Never store temporary extraction paths.",
-    "Scene template library is project data, independent of global numeric settings: optional signed whole-foot level bounds (null lower=-infinity, null upper=+infinity; never zero), name/RGB/visibility,16 swatches/full RGB. Cards support double-click edit and group visibility eyes. Semantic wall presets have independent native restrictions/thresholds/door/sound/animation with dynamic controls, no heights/coordinates. Icons depict opening/locked windows, full barred windows and closed/locked/secret doors. Schema3 requires templates.json; standalone template JSON and definition-only .dale import append fresh IDs without loading sources/geometry/history. Template-only changes can save JSON and prompt before discard. Native assignment/export remains future work."
+    "ADR-039 / FR-104: point and guide alignment switches are independent in Vertices, Contours and Regions. Apply active section flags to MapView and persist all inactive flags independently in current schema7 root/dataset UI. Existing snap_enabled/right_angle_alignment/contour_alignment store Vertices state; four optional strictly boolean figure/region point/guide fields default true/false. Numeric tolerances retain existing shared project/global rules. No geometry, source, history, clipboard or Alt-rule change.",
+    "ADR-038 / FR-097: reproduce extra contour selection from the complete native first-click/double-click sequence with1px crossing jitter. Lock the original target ID and apply its component to the pre-click baseline, retaining intentional prior selections. One bounded transient record validates platform interval/distance and session/geometry/scope/transform/selection/pivot, and resets on press/cancel/context changes. No geometry/IDs/raster/history/copy edits occurred in the reproduced9-line cases, including a populated clipboard. No schema change or general claim about every owner scenario.",
+    "ADR-036/037 / FR-097/103: rename visible geometry/Contours to Vertices and figures/Figures to Contours, with matching bilingual tool/clipboard/sidebar/Information names and help. Retain internal IDs/modes/schema7. Del/Edit > Delete contours removes exact selected visible line IDs, retaining all unselected edges/properties/raster and native non-wall bytes, one undo/redo. Right-click settings for both contour connection tools and adjacent-region PNG export show the actual question first and instructions below. No push or live Foundry claim.",
+    "ADR-035 / FR-102: selected-region PNG export asks Yes/No/Cancel before destination selection, independently remembers either answer in portable merge_selected_regions, and reopens/resets via right-click on the left export button. Union exact transitive selected edge/point/overlap contacts before Artwork offset; exclude unselected bridges and keep disconnected groups separate despite margin overlap. Shared geometry drives exact sidebar/export bounds. Geometry/history/source bytes and schema7 stay unchanged.",
+    "ADR-033/034 / FR-099/100/101: intersection-bounded line erasing with lazy128-edge spatial partition cache and frozen stroke; explicit Erase lines/Edit points connection questions, independent remembered answers and tool-button right-click reset. No leaves coincident vertices independent, Yes joins, Cancel aborts. Optional schema7 LineRecord.connection_group and derived GeometryEdit.connection_state retain editing membership/undo/datasets; global Regions/masks/PNG ignore it and native JSON has no editor tags. Consecutive Rotate figures/regions wheel ticks replace one final edit until the next action/save/undo. No push or live Foundry claim.",
+    "FR-098 owner placement correction: Select all is a36px square icon-only Main button between Hand and Clear selection in every section; remove the left Figures duplicate. Keep the same Ctrl+A dispatcher, height scope, localized section subject/help and enabled state. No editing, settings or schema change.",
+    "ADR-032 / FR-097/098: separate Figures between Contours and Regions selects exact line IDs, including open/disconnected contours. Click toggles one segment, double-click adds its shared-stored-vertex component, >10px frozen marquee XOR and Escape restoration. Isolated move/scale/rotate/copy/Alt placement, two shared numeric toggles, schema7 selection/pivot persistence. Regions/Raster keep standard cells and global PNG/mask logic. Ctrl+A works in all sections within height scope; Ctrl+Shift+A clears, text editors retain text selection. No new numeric settings, migration, push or live Foundry claim.",
+    "ADR-031 / FR-095/096: first Raster selection tool, click toggles and strictly over10-screen-pixel marquee inversion from a frozen baseline shared with Regions; Escape/tool switch restores detached/ordinary selection. Empty click clears all highlights. Inside/outside masks require explicit selected polygons, disabled/no-op otherwise. Freeze their union; shared live Artwork offset and2x/bicubic/halo/source-alpha renderer matches native PNG RGBA, bounded display projection for reduced previews. Preserve immutable source/mask/history, exact-bounds worker and contour-only cache. No schema/numeric setting or live Foundry claim.",
+    "ADR-030 owner follow-up: Regions Move/Rotate activation without selection silently selects Select regions, no repeated modal. Native line/rectangle/circle now work in default All with ordinary unbounded walls; explicit chosen bounds honored, ambiguous scope blocked before preview. Tooltips restore localized actual names above Purpose/Condition/Keys, including numeric tools/stepping arrows/manager/dialog buttons and distinct panel-toggle purpose.",
+    "ADR-029 / FR-094: Regions Delete region (Удалить область) is a48x48 eraser-icon command plus Del/Edit. Delete only selected exterior/hole boundary lines, preserving interior lines/raster and other height scopes. Shared boundary pieces are removed; retain partial tails with explicit lineage/styles. Frozen moved/pasted membership protects coincident surroundings. One undo/redo, archive/native export, Qt text-input Delete and active-gesture guards. No new mode/numeric values/schema; owner corrected the button label only.",
+    "ADR-028 supersedes historical native-edit restrictions: full wall editing/export with exact non-wall bytes and explicit property ownership. Height scope never disables geometry tools. Independent whole region transforms/selection persist across overlap/reopen; old related-line expansion removed. Two standard numeric Region toggles share Contours state/tolerances; Alt applies point-first or X/Y guide snapping from the highlighted nearest cursor vertex, frozen per drag and copied as paste anchor. Source files/raster unchanged; no semantic features or live Foundry claim.",
+    "Owner dataset camera: center on the scene frame on dropdown switching, explicit manager Open dataset and project reopening while retaining per-dataset zoom. Apply to the current dataset and rollback retain pan. Disabled erasers are expected in native JSON preservation mode; keep export safety and expose the actual reason/right-panel edge-arrow route in localized disabled-tool help. Existing checkbox restores ordinary editing and DALE contour-only JSON output. No native deletion authorization or NEXT-009 fix claim.",
+    "Owner full button-help audit: Purpose / Condition / Keys sections with explained key lists. Shared formatter wraps68 columns, derives actual QAction shortcuts, keeps stable source parts and separates action/value help. Remove repeated labels, Alt, Ctrl+wheel and Escape from numeric composition. Conditions describe real data/selection/toggle requirements; manager and child buttons use the same format. No gesture/data/schema change; NEXT-009 pending.",
+    "Owner final manager layout: fixed320px left column, no splitter/width preference. Top New/Delete are equal-width text buttons at the same standard height as every other manager button. Import/Export belong to that column and split its width below the tree. Status shares the bottom Cancel/Apply/Open row.",
+    "Owner manager help: one JSON action row below the full-width field, explicit Load/Replace JSON and Merge contours, subject-specific actions and localized descriptive tooltips for every manager button/child chooser. No ellipses on manager buttons. Preserve data behavior and clicked(bool) filtering.",
+    "NFR-009 hard text rule: only ASCII hyphen-minus in authored public UI/translations/docs. Normalize37 occurrences in7 files and enforce87 public text files with raw and decoded Python/JSON/HTML checks in repository validation. Private native inputs/generated evidence excluded; exact source bytes unchanged.",
+    "Owner top Dataset selector alignment: add7px visual gap after the manager button, matching the heading text inset from the panel edge; dropdown230x36 matches button height/top. Existing heading/button spacing, selector width, data and all dataset behavior retained.",
+    "Owner screenshot follow-up confirms JSON-only set + Add image scenario; direct button regression passes with native repair preserved. Remove separate component extension labels; stretch both basename editors to full properties width. Stored format suffix and export naming remain automatic.",
+    "Owner Add scene image error reproduced through real Qt button click: clicked(bool) replaced default-captured image/json key with false, causing load_pair(None,None). Manager button adapter now discards checked; eight actual Add/Replace/Transfer/Delete image/JSON click regressions pass. Preserve native-safe SourceRepairEdit when rebasing pixel coordinates for different image dimensions. Source bytes/properties/ancestry and schema7 remain unchanged.",
+    "Owner sidebar follow-up implemented: Information fills remaining vertical height and scrolls only on overflow. Narrow16x64 left-edge arrow hides/shows right panel, merging right_panel_visible into portable preferences across restarts; Settings reveals it. Discard/&Discard localized as Не сохранять. No geometry/global-project numeric changes.",
+    "ADR-027 owner implementation: one stable-ID named dataset owns optional current JSON/contours and scene image. Dedicated tree manager creates/renames/removes sets/files and atomically applies staged changes; explicit Move/Copy and occupied-target replacement, independent copies. Single top dataset selector with36px manager button on its left. JSON append adds contours, skips exact property/coordinate duplicates, preserves existing history/IDs/raster and foreign native wall properties. Export physical names use set name; every internal native Scene name/path remains unchanged. Move component import/export into manager; quick JSON/PNG and project commands remain. Schema7 optional hashed datasets.json and empty roots; earlier pair-picker UI superseded. No push or NEXT-009 claim.",
+    "ADR-026 owner export clarification: rename File > Export repaired JSON to Export JSON (Ctrl+Shift+J). Always export the active pair including unsaved edits. Ordinary editing uses applied DALE contours (also image-only); Preserve JSON mode keeps strict native byte/property preservation. Alias/original JSON/image naming, no project/root fallback; originals/current project/hardlinks protected.",
+    "Owner Dataset layout correction: remove the112px reserved inline name spacer; retain current names in selectors/heading tooltip. Rename is a36px square icon-only pencil, with localized tooltip/accessibility; dialog/catalog/data unchanged.",
+    "ADR-026 final owner import clarification: File > Import to project and existing Open image/JSON offer Replace/Add/Cancel. Replace first set rebases root and reopening files, removes unused replaced inputs, preserves other datasets/shared assets/exact ancestry. External sources untouched. Independent catalog_images permits image-only sets; imported assets freeze in owned storage.",
+    "ADR-026 owner extension: multiple exact JSON/image sets, append-to-project without activation, independent top Dataset selectors and per-pair Rename/drafts. Creation assets remain default on every reopen. New rectangle below circle; Alt coordinate alignment for both corners and rigid placement. Common region-contour clipboard across sets retains exact declared source provenance; raster unchanged. No restored level semantics or NEXT-009 fix claim.",
+    "Owner placement correction: both Alt-alignment numeric buttons are in the left Contours toolbar. Main retains navigation/visibility/settings. Vertical3px spacing keeps all tools within the minimum1224x768 viewport. Existing gestures, values, persistence and schema7 unchanged. Owner follow-up: alignment maxima9999 and all embedded numeric editors34px wide inside unchanged48x72 tiles.",
+    "ADR-024/025: owner wants current contour-only JSON for DALE, derived from applied schema7 history and available in File > JSON Import/Save JSON. Native-safe Scene export stays separate. Two default-off Alt-only numeric toggles own screen-pixel tolerances: adjacent right angles with highlighted legs/square marker, and contour X/Y with dashed guides. Ten numeric values use project/global precedence.",
+    "ADR-023 implemented: local/global auto-close extends or shortens free ends on their vectors within tolerance, retaining first contacts, positive orientation and every covered-layer joint. Signed corner groups commit atomically; midpoint target ambiguity stays a T. Preview and separate extension/shortening counts, Cancel/Yes, undo/redo and canonical source JSON preservation remain. Schema7 unchanged.",
+    "ADR-022 owner extension implemented: right height dropdown, common canonical walls in every band plus exact-range views; visible-only hit/snap/repair and band diagnostics. Safe manual endpoint movement follows overlapping-height contacts, independent floors remain separate. Explicit ordinary new walls use selected bounds, stable unique IDs and defaults; no source split/delete. Strict schema7 stores additions/history/redo/source_layer. Export changes original c spans and appends only explicit creations, proving all other original bytes unchanged.",
+    "ADR-021 implemented: infer native-height processing bands, retain one canonical source wall/ID across all covered bands, reconcile endpoint proposals and preserve existing contacts. Conflicting groups remain unchanged/reported. JSON-only or image-paired input, safe mode, typed SourceRepairEdit history/redo in strict schema6 and atomic coordinate-token-only JSON copy. Every other byte/setting/ID/order/height is preserved; no Scene regeneration or restored composition/presets.",
+    "Owner scope replacement2026-10-17 (ADR-020): DALE edits one scene image and its optional source contour JSON, repairs/joins/closes contours, cleans alpha and exports separate native RGBA PNGs for all connected closed objects or selected minimum cells. Every PNG filename includes its exact final width and height in pixels. Levels, wall/floor presets, composition, portals, native Scene export and Foundry runtime configuration are cancelled; the owner configures these manually in Foundry. Earlier plans are historical, not a backlog.",
+    "Local Windows PySide6/Pillow/Shapely editor. Russian chat, English code/docs, bilingual UI. Never upload private inputs.",
+    "Preserve exact source bytes, image coordinate frame, original contour IDs/parents/source references, mask/stroke snapshots and shared undo/redo.",
+    "Directional local/whole-map closure and vertex-first snapping stay in the single-scene geometry editor. Do not replicate walls across levels or block geometry merges by removed presets.",
+    "Native RGBA PNGs preserve source RGB/alpha and all nonzero bicubic alpha pixels. Final exact crop determines filenames, sidebar dimensions and coordinate manifest. All connected objects versus selected minimum cells retain existing behavior.",
+    "Strict project schema7 stores one exact static image/optional JSON/catalog or standalone original JSON, immutable mask boundary snapshots, full geometry/ancestry/history/settings. No legacy migration or level/template entities.",
+    "Two top panels Sections/Main, right Project/Settings, eight independent numeric values with project/global precedence, recent projects, language/folders and all geometry/raster tools remain.",
+    "Levels, wall/floor presets, composition, lights, portals and native Foundry Scene/settings export are cancelled. Owner handles all Foundry assembly/configuration manually.",
+    "Every packaging invocation advances revision once; complete portable folder refresh preserves user processes/preferences/projects and supplied ICO bytes. No push without a fresh explicit owner request."
   ],
   "validated": [
+    {
+      "check": "independent_section_alignment_portable_0_3_50",
+      "date": "2026-10-18",
+      "result": "One complete0.3.50 build after600 passing application/core/Qt tests. Six isolated hidden executable launches pass: RU/EN empty, two-profile dataset archive, previous current-schema jitter archive, independent coincident contours and selected-region export. All stored section flags and active effective point/guide/right-angle flags verified. Source fingerprints/startup notes/original ICO PE/Qt/shin0by and UserData pass; owner process98444 preserved. No user process termination, source/project overwrite, push or live Foundry claim.",
+      "details": "artifacts/independent-alignment/portable/validation.json"
+    },
+    {
+      "check": "independent_section_alignment_source",
+      "date": "2026-10-18",
+      "result": "600 application/core/Qt tests pass, including6 new strict boolean/independent real-button/project-reopen cases. Six synthetic RU/EN real-button cases and two distinct dataset profiles pass section/dataset switching and archive reopening; Vertices right angles remain local. Geometry/IDs/source image/JSON bytes/raster/history unchanged. Ruff/format/index/ASCII pass. Unchanged Git policy subprocess checks excluded for the previously recorded Windows launch issue. Portable build pending.",
+      "details": "artifacts/independent-alignment/source-validation.json"
+    },
+    {
+      "check": "paired_contour_double_click_portable_0_3_49",
+      "date": "2026-10-18",
+      "result": "One complete0.3.49 build after594 passing application/core/Qt tests. Five isolated hidden executable launches pass: blank, before/after synthetic jitter snapshots, independent coincident contours and selected-region export archive. Before snapshot retains its stored5 selected IDs, after snapshot retains the intended4; both have9 unchanged lines and0 history edits. Source fingerprints, startup notes, original ICO PE/Qt/shin0by and UserData pass; owner process117532 preserved. Existing point/X-Y guide controls remain visible and the shared Figures/Regions Alt-alignment cases pass in the full suite. No user process termination, source/project overwrite, push or live Foundry claim.",
+      "details": "artifacts/double-click/portable/validation.json"
+    },
+    {
+      "check": "paired_contour_double_click_source",
+      "date": "2026-10-18",
+      "result": "594 application/core/Qt tests pass, including9 new double-click cases and11 focused selection cases. Six initial jitter regressions failed on the previous behavior. Four synthetic before cases select5 of9 lines, four after cases select only the intended4 of9, preserving exact coordinates/IDs/source bytes/raster/history with initially empty or populated clipboard. Full native press/release/double-press/release,1x/2x zoom, preselected/other contours, repeated pairs, expiry, clear and mode cancellation covered. No automatic copy in the reproduced scenario. Ruff/format/index/ASCII pass; unchanged Git policy subprocess checks excluded for the recorded environment issue. Portable build pending.",
+      "details": "artifacts/double-click/after-validation.json"
+    },
+    {
+      "check": "section_names_del_questions_portable_0_3_48",
+      "date": "2026-10-18",
+      "result": "One complete0.3.48 build after585 passing application/core/Qt tests. Seven isolated hidden executable launches pass: RU/EN blank windows, Vertices/Contours current projects, deleted-contour archive, previous independent coincident geometry and selected-export project. New section/command labels, stable internal mode keys/schema7, Del enabled scope and native non-wall preservation verified. Source fingerprints, startup notes and original ICO PE/Qt/shin0by pass. UserData retained without assistant writes; settings.json changed concurrently while owner editor126180 remained active, so no prebuild hash-identity claim. No source/project overwrite, user process termination, push or live Foundry claim.",
+      "details": "artifacts/section-names/portable/validation.json"
+    },
+    {
+      "check": "section_names_del_questions_source",
+      "date": "2026-10-18",
+      "result": "585 application/core/Qt tests pass, including8 new exact-ID/Del cases with open/disconnected/coincident/crossing lines, native height filtering, survivor properties/non-wall bytes/raster, text focus, active paste, empty selection, undo/redo and archive reopening. Existing RU/EN right-click preference regressions now assert primary question and lower instructions. Synthetic source audit verifies12 RU/EN/RU mode/name/help cases,6 actual right-click question windows, Del/undo/redo/archive and unchanged source geometry/history. Ruff/format/index/ASCII pass; unchanged Git policy subprocess tests excluded for previously recorded Windows launch issue. Portable build pending.",
+      "details": "artifacts/section-names/source-validation.json"
+    },
+    {
+      "check": "selected_region_union_portable_0_3_47",
+      "date": "2026-10-17",
+      "result": "One complete0.3.47 build after577 passing application/core/Qt tests. Six isolated hidden executable launches pass: empty Ask/RU/EN, selected Ask/Yes/No, and previous current-schema raster project. Selected18-cell archive shows exact2 merged or18 separate PNG bounds according to independent portable preference; right-click/localized help and old raster preview verified. Source hashes, startup notes, original ICO PE/Qt/shin0by and UserData pass. Owner process135468 remains running; no process termination or source/project overwrite. No push or live Foundry claim.",
+      "details": "artifacts/selected-export/portable/validation.json"
+    },
+    {
+      "check": "selected_region_union_source",
+      "date": "2026-10-17",
+      "result": "577 application/core/Qt tests pass, including13 new union/export/preferences/dialog/real-button/worker cases. Synthetic owner-shaped18-cell scene produces2 merged groups or18 separate PNGs, with RU/EN dialogs/screenshots. Tests verify transitive edge/corner/overlap contacts, holes, unselected bridges, signed offset before alpha, exact sidebar/native alpha/RGB/bounds/dimension filenames, original bytes/history, remember/restart/right-click reset and Cancel before folder selection. Ruff/format/repository/ASCII policy pass. No push or live Foundry claim.",
+      "details": "artifacts/selected-export/source-validation.json"
+    },
+    {
+      "check": "intersection_eraser_connections_rotation_portable_0_3_46",
+      "date": "2026-10-17",
+      "result": "One complete0.3.46 build;564 application/core/Qt tests,6 source CLI cases and9 hidden portable launches pass. Explicit independent/connected cut and coincident-point projects retain editing groups/components and exact native export hashes. No/Yes coincident projects have identical native bytes, proving editor membership does not leak into native JSON; non-wall bytes retained.120 wheel updates persist as one history edit. Previous current-schema projects/raster preview and Main selection buttons verified. New dale.connections module included; source hashes, startup notes, original ICO PE/Qt/shin0by and UserData unchanged. No owner process was running before deployment; no user processes terminated. No push or live Foundry claim.",
+      "details": "artifacts/intersection-connections/portable/validation.json"
+    },
+    {
+      "check": "intersection_eraser_connections_rotation_source",
+      "date": "2026-10-17",
+      "result": "564 application/core/Qt tests pass, plus6 source CLI cases. Synthetic X/T/overlap/closure/fast sweeps, frozen deleted crossings, zoom/hidden contours/height filtering, explicit own-parent styles and native non-wall bytes covered. Yes/No/Cancel, independent coincident point movement, per-tool remember/right-click reset, archive/redo/common geometric calculations and120-tick rotation series verified. RU/EN minimum-size editors/dialogs inspected. Ruff/format/index/ASCII/whitespace pass. Unchanged Git policy subprocess checks excluded for recorded Windows launch issue. Portable build pending.",
+      "details": "artifacts/intersection-connections/source-validation.json"
+    },
+    {
+      "check": "main_select_all_button_portable_0_3_45",
+      "date": "2026-10-17",
+      "result": "One complete0.3.45 build.13 focused Qt tests and5 hidden portable cases pass: empty plus all4 sections. Main36px icon-only Select all is immediately left of Clear selection, visible throughout, removed from Figures toolbar, localized by section with Ctrl+A. Native export hashes unchanged across section fixtures. Build source hashes, startup notes, original ICO PE/Qt/shin0by and UserData verified. Owner process131876 preserved; it retains0.3.44 until restart. No push.",
+      "details": "artifacts/select-all-main/portable/validation.json"
+    },
+    {
+      "check": "main_select_all_button_source",
+      "date": "2026-10-17",
+      "result": "13 existing focused Qt regressions pass, including actual Main-button clicks in all4 sections, both height scopes, English/Russian help and Ctrl+A/text focus. Eight bilingual1224x768 source screenshots/toolbar bounds checked; RU Contours/EN Figures visually inspected. Ruff/format/index/ASCII/whitespace passed. Geometry logic unchanged; preceding full531-test evidence retained. Owner DALE process131876 is running and must remain alive during update. Portable rebuild pending.",
+      "details": "artifacts/select-all-main/source-validation.json"
+    },
+    {
+      "check": "figures_and_section_selection_portable_0_3_44",
+      "date": "2026-10-17",
+      "result": "One complete0.3.44 build;531 application/core/Qt tests,3 source CLI cases and23 hidden portable launches pass. Closed overlap and disconnected open figure IDs/edges/pivot round-trip exactly; native export hashes equal source evidence, non-wall bytes retained. Standard Regions/Raster selection, Ctrl+A section subject/enablement, Alt controls, prior datasets/delete/raster paths verified. Original ICO PE/Qt/shin0by, all build source hashes, startup notes and UserData unchanged. No owner DALE process was running before build; no processes terminated for deployment. No push or live Foundry claim.",
+      "details": "artifacts/figures-portable/validation.json"
+    },
+    {
+      "check": "figures_and_section_selection_source",
+      "date": "2026-10-17",
+      "result": "531 application/core/Qt tests and3 source CLI smoke launches pass. Synthetic closed overlap/disconnected open selection, click/double/frame/cancel, rigid transforms/Alt alignment, shared clipboard, height scopes, Ctrl+A in all sections and text editors, native non-wall preservation, standard Regions/Raster/PNG/archive covered. RU/EN minimum1224x768 inspected. Ruff/format/index/ASCII/whitespace passed. Unchanged Git policy subprocess tests excluded for recorded Windows launch issue. Portable rebuild pending.",
+      "details": "artifacts/figures/source-validation.json"
+    },
+    {
+      "check": "region_delete_creation_help_and_raster_selection_portable_0_3_43",
+      "date": "2026-10-17",
+      "result": "509 application/core/Qt tests,3 source CLI smoke cases and19 hidden portable launches pass. Native preview hashes match source for both mask directions/selected/empty states; masks disabled without explicit selection. Del, All-layer rectangle/circle, bilingual actual tooltip names, manager heights, source hashes, original ICO PE/Qt/shin0by and UserData verified. Owner process128176 retained. Initial0.3.42 diagnostic empty-scene report defect fixed and rebuilt once as0.3.43, without manual revision changes. No push or live Foundry claim.",
+      "details": "artifacts/delete-region-portable/validation.json"
+    },
+    {
+      "check": "region_delete_creation_help_and_raster_selection_source",
+      "date": "2026-10-17",
+      "result": "509 application/core/Qt tests passed;3 source CLI checks verify empty/image/Raster archive reports after the final diagnostic guard. Synthetic native/file/visual evidence covers Del boundary-only deletion, All-layer creation, nonmodal Regions, named bilingual help, frozen marquee inversion/threshold/cancel/empty click, selected-only masks, shared PNG edge alpha/live offset/source alpha/archive. Source assets unchanged. Unchanged Git-policy subprocess tests excluded for the previously recorded Windows launch issue. Portable build pending; no live Foundry claim.",
+      "details": "artifacts/raster-selection/source-validation.json"
+    },
+    {
+      "check": "native_wall_editing_and_region_alignment_portable_0_3_41",
+      "date": "2026-10-17",
+      "result": "One complete0.3.41 build;461 application/core/Qt tests and11 hidden executable launches pass. Packaged edited native export hash equals source evidence, all non-wall bytes retained; whole overlapping selection reopens at11025px2. Region point/guide controls are48x72 with localized Alt/value help. Source hashes, original ICO PE/Qt/shin0by and UserData unchanged. Owner process132872 preserved. No push or live Foundry claim. NEXT-009 resolved by explicit regression evidence.",
+      "details": "artifacts/native-wall-editing-portable/validation.json"
+    },
+    {
+      "check": "native_wall_editing_and_region_alignment_source",
+      "date": "2026-10-17",
+      "result": "461 application/core/Qt tests and synthetic RU/EN visual/file checks cover full native wall split/move/erase/add with distinct property owners, non-wall byte preservation, height scope, archive/redo, isolated whole overlap/transforms/PNG/reopen and two Alt-only Region alignment controls. Nearest vertex is highlighted before press and frozen per drag/copy; point priority, guide-only/point-only/off, screen tolerance, modifier release and Escape verified. No live Foundry claim. Portable0.3.41 verified in11 isolated executable cases.",
+      "details": "artifacts/native-wall-editing/source-validation.json"
+    },
+    {
+      "check": "dataset_camera_and_eraser_help_portable_0_3_40",
+      "date": "2026-10-17",
+      "result": "One complete0.3.40 build. Nine isolated hidden executable cases pass, including saved off-center dataset at2.5 zoom and native JSON with collapsed sidebar. Scene-frame centering and stored zoom verified; normal frames within2 Manhattan screen pixels, empty1x1 placeholder within4 due to integer scrollbars. Native erasers remain disabled with localized mode/panel explanation. Source442 tests, original ICO PE/Qt/shin0by/source hashes/UserData pass. Running owner processes and project/source bytes preserved; no push or NEXT-009 fix claim.",
+      "details": "artifacts/dataset-camera-portable/validation.json"
+    },
+    {
+      "check": "dataset_camera_and_eraser_help_source",
+      "date": "2026-10-17",
+      "result": "442 application/core/Qt tests pass, including4 new image/JSON-only dataset-switch/manager/project camera and collapsed native-mode eraser help regressions. Synthetic source smoke opens off-center archive at stored2.5 zoom with1-screen-pixel centering error. Actual QHelpEvent on disabled eraser shows localized mode/panel guidance with the sidebar collapsed. Sources/archive bytes and native repair restrictions unchanged; Ruff/format/index/87-file ASCII policy pass.",
+      "details": "artifacts/dataset-camera/source-validation.json"
+    },
+    {
+      "check": "structured_tooltips_portable_0_3_39",
+      "date": "2026-10-17",
+      "result": "Final complete0.3.39 build verified in7 isolated hidden executable launches: blank, named sets, empty sets, native JSON, image-only, collapsed sidebar and current optional-catalog schema7. Structured RU action/numeric/manager help and single Alt/Ctrl occurrence, actual Ctrl+E, standard manager button heights and fixed320px tree pass. Source438 application/core/Qt tests and RU/EN visual audit pass; original ICO PE/Qt/shin0by, source hashes and UserData unchanged. No user process termination, push, geometry/schema or NEXT-009 fix claim.",
+      "details": "artifacts/structured-tooltips-portable/validation.json"
+    },
+    {
+      "check": "structured_tooltips_source",
+      "date": "2026-10-17",
+      "result": "438 application/core/Qt tests pass.31 focused manager/help cases pass;9 synthetic blank/loaded/native RU/EN/RU states audit41 actions and14 manager buttons across all3 toolbars.12 manager layout cases pass with fixed320px left column and equal24px buttons. Actual shortcut and repeated-language stability regression passes. Source smoke/Ruff/format/index and87-file ASCII policy pass. No geometry/archive behavior change or live Foundry claim.",
+      "details": "artifacts/structured-tooltips/source-validation.json"
+    },
+    {
+      "check": "manager_help_text_intermediate_portable_0_3_38",
+      "date": "2026-10-17",
+      "result": "One complete0.3.38 build before the owner expanded the tooltip audit. Seven isolated hidden executable launches pass; original ICO PE/Qt/shin0by/source hashes/UserData verified. Fixed320px left column and equal standard-height top buttons verified. Superseded as final delivery by the structured-help follow-up.",
+      "details": "artifacts/manager-help-text-portable/validation.json"
+    },
+    {
+      "check": "manager_help_text_source",
+      "date": "2026-10-17",
+      "result": "437 application/core/Qt tests pass, followed by42 focused manager/text-policy cases after final height adjustment. Twelve synthetic RU/EN empty/loaded layout cases at840/980/1180px pass; every manager button uses the same24px standard height, fixed320px tree and aligned footer/left rows. Ruff/format/index pass. All87 authored text files satisfy ASCII hyphen policy. Unchanged Git push-policy tests excluded for recorded environment issue; NEXT-009 pending.",
+      "details": "artifacts/manager-help-text/validation.json"
+    },
+    {
+      "check": "dataset_selector_layout_portable_0_3_37",
+      "date": "2026-10-17",
+      "result": "One complete0.3.37 build. Three existing focused tests and RU/EN empty/loaded1224x768 visual checks pass. Seven isolated hidden executable launches confirm230x36 dropdown and7px button gap equal to heading inset. Source hashes, original ICO PE/Qt/shin0by assets and UserData unchanged. Running owner editor preserved; no geometry/archive changes or push.",
+      "details": "artifacts/dataset-selector-layout-portable/validation.json"
+    },
+    {
+      "check": "dataset_selector_layout_source",
+      "date": "2026-10-17",
+      "result": "Three existing focused layout/manager tests pass. Empty and loaded synthetic1224x768 windows inspected in RU/EN: selector230x36, same top/height as manager button, gap7 equals heading text inset7, controls fit. Ruff/format pass; no geometry/archive changes.",
+      "details": "artifacts/dataset-selector-layout/validation.json"
+    },
+    {
+      "check": "image_component_button_portable_0_3_36",
+      "date": "2026-10-17",
+      "result": "Qt component-button bug reproduced and fixed.422 application/core/Qt tests pass; final45 manager/core cases include the owner screenshot scenario (JSON-only + actual Add image click), replacement/move/copy/delete and native-safe frame snapshots. Removed separate extension labels; both basename fields fill properties width, visually verified. Complete0.3.35 hotfix built/verified before owner field-layout follow-up; final complete0.3.36 build passes7 isolated hidden executable launches. Source hashes, original ICO PE/Qt payloads/shin0by and UserData preserved. Unchanged Git policy subprocess tests excluded for recorded environment issue; no user processes terminated, push or NEXT-009 claim.",
+      "details": "artifacts/image-import-button-portable/validation.json"
+    },
+    {
+      "check": "image_component_button_source",
+      "date": "2026-10-17",
+      "result": "422 application/core/Qt tests pass, including8 new real Add/Replace/Transfer/Delete image/JSON click cases. Synthetic old callback reproduces exact owner error; fixed callback loads image and applies it. Native-safe typed geometry snapshots preserve pixels/properties/ancestry with different image frames and archive roundtrip. Ruff/format/index pass. Git push-policy subprocess tests unchanged/excluded for the previously recorded Windows launch issue.",
+      "details": "artifacts/image-import-button-fix/validation.json"
+    },
+    {
+      "check": "dataset_manager_portable_0_3_34",
+      "date": "2026-10-17",
+      "result": "One complete0.3.34 portable build after414 passing application/core/Qt tests. Seven isolated hidden offscreen DALE.exe launches pass: blank,3 named sets,2 empty sets,native JSON,image-only,collapsed sidebar,current optional-catalog schema7. Single set picker/manager placement, persisted panel state, JSON export enablement/version and source hashes verified. Original ICO PE/Qt payloads and shin0by.png unchanged; UserData unchanged. No user process terminated, push, live Foundry or NEXT-009 fix claim.",
+      "details": "artifacts/dataset-manager-portable/validation.json"
+    },
+    {
+      "check": "dataset_manager_source",
+      "date": "2026-10-17",
+      "result": "414 application/core/Qt tests pass; Ruff/format/index pass. Synthetic RU/EN manager, sidebar, native/ordinary JSON merge, exact RGBA export names, source/ID/property preservation, staged changes, move/copy/cancel, archive/history/redo and global numeric isolation validated. Unchanged Git push-policy subprocess tests excluded for recorded Windows launch issue. No live Foundry/NEXT-009 claim.",
+      "details": "artifacts/dataset-manager-final/validation.json"
+    },
+    {
+      "check": "active_set_json_export_portable_0_3_33",
+      "date": "2026-10-17",
+      "result": "One complete0.3.33 build. Packaged empty/multi-set/image-only/native-json hidden offscreen launches confirm localized Export JSON label, Ctrl+Shift+J and enablement; Source388 application/core/Qt tests plus11 final export/native-preservation cases and exact active draft reimport pass. Git-policy subprocess tests unchanged/excluded for the recorded Windows launch issue. Original icons/artwork, source hashes and UserData preserved; no user process terminated or push. Ordinary output is DALE contours; Preserve JSON retains native bytes/settings.",
+      "details": "artifacts/active-set-json-portable/validation.json"
+    },
+    {
+      "check": "active_set_json_export_source",
+      "date": "2026-10-17",
+      "result": "388 application/core/Qt tests passed, followed by11 final export cases after retaining safe native output. Active non-root unsaved draft/alias/undo-redo, image-only export, cancellation and all-catalog/project/hardlink guards pass. Native output equals strict byte-preserving backend. Synthetic12-edge reimport and RU/EN menu/shortcut inspection pass. Ruff/format/index pass; Git-policy tests unchanged/excluded for recorded Windows launch issue. No private inputs changed or uploaded.",
+      "details": "artifacts/active-set-json/validation.json"
+    },
+    {
+      "check": "dataset_toolbar_compact_portable_0_3_32",
+      "date": "2026-10-17",
+      "result": "One complete0.3.32 build; empty and multi-set packaged launches pass with isolated hidden/offscreen preferences/PATH. Compact heading and square pencil inspected in RU/EN1224x768 empty/loaded views,1px heading/JSON gap,36x36 Rename;3 existing rename/layout tests pass. Original ICO/PE/Qt/artwork, source hashes and UserData unchanged. No user processes terminated or Git push.",
+      "details": "artifacts/dataset-toolbar-portable/validation.json"
+    },
+    {
+      "check": "dataset_toolbar_compact_source",
+      "date": "2026-10-17",
+      "result": "Three existing layout/rename tests pass. Empty and loaded synthetic project at1224x768 inspected in RU/EN/RU: heading-to-JSON gap1px, Rename36x36 icon-only pencil, localized accessible name/help, all controls fit. No geometry/archive changes.",
+      "details": "artifacts/dataset-toolbar/validation.json"
+    },
+    {
+      "check": "asset_catalog_clipboard_portable_0_3_31",
+      "date": "2026-10-17",
+      "result": "Complete0.3.31 package verified in five isolated hidden/offscreen launches: independent multi-set drafts defaulting to first assets, replaced first set without unused inputs, native repair, alignment settings and image-only.381 application/core/Qt tests plus4 final alias/layout checks; original ICO/PE/Qt/artwork, source hashes and current UserData unchanged. No user process terminated or push. NEXT-009 and live Foundry claims remain excluded.",
+      "details": "artifacts/dataset-catalog-portable/validation.json"
+    },
+    {
+      "check": "asset_catalog_clipboard_source",
+      "date": "2026-10-17",
+      "result": "381 application/core/Qt tests pass, plus4 final alias/minimum-layout checks and synthetic RU/EN1224x768 rectangle/paste inspection. Separate exact RGBA output dimensions pass. Ruff/index60 paths97 IDs pass. Git-policy tests unchanged/excluded for recorded Windows launch issue. No live Foundry or NEXT-009 fix claim.",
+      "details": "artifacts/dataset-catalog/validation.json"
+    },
+    {
+      "check": "left_four_digit_portable_0_3_30",
+      "date": "2026-10-17",
+      "result": "Final0.3.30 build includes left-toolbar placement and four-digit follow-up after intermediate0.3.29. Packaged project with both toggles and9999/4321 values, plus image-only, pass offscreen with isolated preferences/PATH. Source hashes, original ICO/Qt/PE payloads, artwork match; latest observed UserData preserved.152 UI/archive/preference tests and RU/EN minimum1224x768 field/placement inspection pass. No owner process terminated or push.",
+      "details": "artifacts/left-four-digit-portable/validation.json"
+    },
+    {
+      "check": "left_alignment_four_digit_fields",
+      "date": "2026-10-17",
+      "result": "152 UI/archive/preference tests pass. Both alignment tolerances accept1..9999, project/global persistence passes with9999/4321;0/10000/nonintegers reject. RU/EN1224x768 inspected: both controls in left Contours, tile48x72, editor34px, four digits fit with margin. Arrow clicks and signed Artwork offset checked. Ruff/format/index pass.",
+      "details": "artifacts/left-alignment/four-digit-validation.json"
+    },
+    {
+      "check": "left_contour_alignment_layout",
+      "date": "2026-10-17",
+      "result": "20 existing Qt layout/alignment/persistence/help tests pass; RU/EN1224x768 screenshots inspected. Both48x72 controls are inside left Contours, absent from Main, checked states/tolerances9/21 preserved. All tools including Close all contours fully fit:685px in685px. Section changes hide/show tools normally; no algorithm/schema changes. Ruff/format/index passed.",
+      "details": "artifacts/left-alignment/validation.json"
+    },
+    {
+      "check": "contour_catalog_alignment_portable_0_3_28",
+      "date": "2026-10-17",
+      "result": "One complete build0.3.27 to0.3.28. Four packaged hidden/offscreen launches pass:245 edited contours, schema7 alignment project with both toggles and independent9/21 tolerances, manual native repair and image-only. Ten numeric values, original ICO/Qt/PE payloads, artwork, source hashes and UserData verified. Owner archive unchanged; no user process terminated, upload or push. No live Foundry test.",
+      "details": "artifacts/catalog-alignment-portable/validation.json"
+    },
+    {
+      "check": "current_contour_catalog_and_alt_alignment",
+      "date": "2026-10-17",
+      "result": "351 application/core/Qt tests passed, Ruff/check/format and index57 paths/92 IDs pass. Private owner archive hash unchanged; exact245-segment snapshot reimport and83-operation resave passed. RU/EN catalog and minimum1224x768 angle/axis previews inspected offscreen. Git-policy tests unchanged/excluded for recorded Windows launch issue. No live Foundry test.",
+      "command": "python -m pytest -q --ignore=tests/test_git_push_policy.py; python artifacts/verify_catalog_alignment.py; ruff/index/diff checks",
+      "details": "artifacts/json-catalog-alignment/validation.json"
+    },
+    {
+      "check": "vector_auto_close_portable_0_3_27",
+      "date": "2026-10-17",
+      "result": "One complete build advanced0.3.26 to0.3.27. Packaged standalone updated JSON, schema7 manual repair project trimmed four-wall project and image-only launches pass offscreen with isolated preferences/PATH. New modules present, cancelled semantic modules absent. Source hashes, original ICO/PE/Qt payloads, shin0by.png and UserData match. No owner process terminated or Git push performed. Live Foundry not tested.",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1; python artifacts/verify_vector_portable.py",
+      "details": "artifacts/vector-trim-portable/validation.json"
+    },
+    {
+      "check": "signed_vector_auto_close",
+      "date": "2026-10-17",
+      "result": "315 application/core/Qt tests pass; ruff/format/whitespace pass. Both private JSONs retain original hashes, native wall IDs/count/order/properties and all other original bytes; archive undo/redo pass. Synthetic four-wall square loses8 overshooting4px tails with0 new/deleted walls and0 unresolved lines. RU/EN/minimum-window and translated confirmation inspected. Git-policy tests unchanged/excluded because of previously recorded Windows child-process failures. No live Foundry test.",
+      "command": "python -m pytest -q --ignore=tests/test_git_push_policy.py; python artifacts/verify_vector_trim.py; ruff/index/diff checks",
+      "details": "artifacts/vector-trim/validation.json"
+    },
+    {
+      "check": "manual_source_repair_portable_0_3_26",
+      "date": "2026-10-17",
+      "result": "One complete build advanced0.3.25 to0.3.26. Packaged standalone updated JSON, schema7 manual repair project and image-only launches pass offscreen with isolated preferences/PATH. New modules present, cancelled semantic modules absent. Source hashes, original ICO/PE/Qt payloads, shin0by.png and UserData match. No owner process terminated or Git push performed. Live Foundry not tested.",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1; python artifacts/verify_manual_portable.py",
+      "details": "artifacts/manual-source-portable/validation.json"
+    },
+    {
+      "check": "manual_source_editing_and_height_filter",
+      "date": "2026-10-17",
+      "result": "296 application/core/Qt tests passed;38 source repair cases and99 Qt cases. Ruff/index/format/whitespace passed. Updated private input retains original SHA256; isolated manual test keeps378 original IDs/order/properties, adds1 explicit common0..20 wall and round-trips applied/redo/undo. RU/EN/minimum1224x768 views inspected. Live Foundry not tested. Git policy unchanged; excluded due previously recorded intermittent Windows process launches.",
+      "command": "python -m pytest -q --ignore=tests/test_git_push_policy.py",
+      "details": "artifacts/manual-source-repair/validation.json"
+    },
+    {
+      "check": "source_json_repair_portable_0_3_25",
+      "date": "2026-10-17",
+      "result": "One complete build advanced0.3.24 to0.3.25. Packaged standalone updated JSON, schema6 repair project and image-only launches pass offscreen with isolated preferences/PATH. New modules present, cancelled semantic modules absent. Source hashes, original ICO/PE/Qt payloads, shin0by.png and UserData match. No owner process terminated or Git push performed. Live Foundry not tested.",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1; python artifacts/verify_source_repair_portable.py",
+      "details": "artifacts/source-repair-portable/validation.json"
+    },
+    {
+      "check": "height_aware_original_json_repair",
+      "date": "2026-10-17",
+      "result": "272 application/core/Qt tests passed; Ruff/index/format/whitespace and both private regressions passed; minimum1224x768 RU/EN inspected. Git-policy subprocess checks were intermittent in Windows (CreateProcessW/error launching git); unchanged policy tests had previously passed in the287-test run.",
+      "command": "python -m pytest -q --ignore=tests/test_git_push_policy.py; python artifacts/validate_source_repair.py; python artifacts/preview_source_repair.py; ruff/index/diff checks",
+      "details": "exports/village-json-repair-2026-10-17/validation.json"
+    },
+    {
+      "check": "read_only_inferred_height_layer_membership",
+      "date": "2026-10-17",
+      "result": "Real source hash a7df7f10ea07e0d80e69f8d4fcf6762b32ce7728ba3fc732a8c2a1363135631d unchanged. Standalone membership prototype derives finite0/10/20/30 boundaries, keeps368 canonical wall records and adds0 walls. All6 source walls0..20 are the same object in0..10 and10..20 bands;319 fully unbounded walls share references. Upper door /walls/47 and lower wall /walls/366 are separated by band membership. Classification/reference assertions only; coordinated repair, JSON exporter/UI/history and live Foundry not implemented/tested. Documentation/index checks are separate from application tests.",
+      "command": "python artifacts/infer_village_layers.py",
+      "details": "artifacts/village-contour-audit/layers.json"
+    },
+    {
+      "check": "png_only_portable_0_3_24",
+      "date": "2026-10-17",
+      "result": "One authorized Windows build advanced0.3.23 to0.3.24. Packaged schema5 project and image-only launches passed offscreen. All build source hashes matched; cancelled semantic modules absent from PYZ. Original ICO resources match all PE/Qt payloads; shin0by.png unchanged. Portable UserData hashes unchanged and startup notes match. No user process terminated or Git push performed.",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1; DALE.exe <project.dale>/--image <image> --smoke-report; python artifacts/verify_png_only_portable.py",
+      "details": "artifacts/png-only-portable-validation.json"
+    },
+    {
+      "check": "single_scene_png_only_scope",
+      "date": "2026-10-17",
+      "result": "262 tests pass. Removed semantic level/preset/composition dependencies. Exact final PNG dimensions in names verified for all/selected exports with erasing, offsets, clipping and original PNG alpha. Static image-only archive/redo/manual-line/mask-boundary round-trips and rejection of unsupported schemas pass.88 focused Qt tests pass after final text changes. RU/EN/minimum-window views inspected offscreen.512px stripe smoke passes. No geometry algorithm changes or NEXT-009 fix claim.",
+      "command": "python -m pytest -q; python -m pytest -q tests/test_ui.py; python -m ruff check .; python -m ruff format --check .; python tools/check_repository.py; python tools/preview_demo.py; python tools/verify_large_map.py --size512",
+      "details": "docs/architecture.md ADR-020"
+    },
+    {
+      "check": "corrected_three_native_tiles_fixture",
+      "date": "2026-10-17",
+      "result": "Both synthetic variants have exactly3 native floor Tiles at requested heights,0 Regions, empty root background,33 walls and1 token. Native-size asset placement, unique IDs, asset paths/hashes and ZIP integrity pass; PNG bytes unchanged from prior delivered fixture. No scripts/automatic portals. Live Foundry behavior remains owner-test pending; application code not resumed.",
+      "command": "python artifacts/foundry13-probe/generate_three_tiles_probe.py; independent ZIP/manifest checks",
+      "details": "exports/DALE-Foundry13-ThreeTiles-2026-10-17/validation.json"
+    },
+    {
+      "check": "synthetic_manual_portals_floor_package",
+      "date": "2026-10-17",
+      "result": "Two manually specified synthetic Foundry13 scenes plus3 floor PNGs/1 token PNG, guide and preview produced.33 walls/2 Tiles/3 floor Regions/1 token per scene,0 portal Regions/behaviors. Exact and fractional heights, asset-path closure, PNG alpha/dimensions, SHA256 and ZIP integrity checked; preview visually inspected. No private examples included. No live Foundry/native behavior tests or DALE application implementation/build.",
+      "command": "python artifacts/foundry13-probe/generate_probe.py; python artifacts/foundry13-probe/generate_manual_portals_probe.py; independent ZIP/manifest/PNG checks",
+      "details": "exports/DALE-Foundry13-ManualPortals-2026-10-17/validation.json"
+    },
+    {
+      "check": "exact_hundredth_foot_height_plan_validation",
+      "date": "2026-10-17",
+      "result": "ADR-016 / FR-075 and all active level-height references updated to exact0.01ft precision, with owner-confirmed exact level authority for all objects and no offsets/integer snap. Repository index passes63 paths/83 unique requirement IDs and planning diff whitespace check passes. No application implementation/tests/build or revision change. Fractional portal activation/arrival and native floor behavior remain actual runtime checks.",
+      "command": "python tools/check_repository.py; git diff --check -- planning-document-paths",
+      "details": "docs/architecture.md ADR-016"
+    },
+    {
+      "check": "resolved_floor_portal_choices_plan_validation",
+      "date": "2026-10-17",
+      "result": "All seven tracked product choices answered; ADR-015 and FR-072..074 add floor presets, standard-route placed-floor editing and desired token-height visibility. Repository index passes63 paths/82 unique requirement IDs; planning-document git diff --check passes. No application implementation/tests/build or version change. Native13 profile capability/asset/UUID/height checks remain technical evidence gates.",
+      "command": "python tools/check_repository.py; git diff --check -- planning-document-paths",
+      "details": "docs/architecture.md ADR-014/015"
+    },
+    {
+      "check": "expanded_composition_export_portal_plan_documentation",
+      "date": "2026-10-17",
+      "result": "Documentation/index validation only:63 indexed paths and77 unique requirement IDs; git diff --check on changed planning/evidence documents passes. Native source probes rechecked read-only: both recorded SHA-256 hashes match and Regions are identical; owner confirms source portals worked. No application implementation/tests/build or revision change during this owner-stopped design turn. Six product questions remain asked/pending.",
+      "command": "python tools/check_repository.py; git diff --check -- planning-document-paths",
+      "details": "docs/architecture.md ADR-011..014"
+    },
+    {
+      "check": "per_level_wall_properties_templates_and_scene_tint",
+      "result": "296 tests pass; latest32 focused Qt/archive cases additionally pass after active-level/scope/preset restoration. Ruff check/format and index pass:62 paths,59 requirement IDs. Tests cover automatic independent walls on every level, separate preset assignment/colors, click/rectangle/Select-all, inherited splits and stable source/manual-root identities, conflicting merge protection, undo/redo/project round-trip, independent persistent reset/paint radii and cancel/swept strokes without geometry/raster edits. Pixel tests verify whole-JPG alpha64 tint above lower graphics but below current-floor assets, hidden upper assets and unchanged cyan wall centers. Templates renamed in RU/EN, min1224x768, door sound removed/None, File-only DALE template import and atomic template-only project saving. Synthetic RU/EN/RU screenshots and dialog help inspected. Native Foundry generation remains future work.",
+      "command": "python -m pytest -q; python -m pytest -q tests/test_wall_assignments_ui.py tests/test_scene_templates_ui.py tests/test_project_io.py; python -m ruff check .; python -m ruff format --check .; python tools/check_repository.py; python artifacts/verify_wall_ui.py",
+      "details": "docs/wall-assignments.md"
+    },
     {
       "check": "scene_level_and_wall_preset_templates",
       "result": "285 tests pass; ruff check/format and repository index pass. New pure/Qt cases verify nullable whole-foot bounds including0/1/2/10/100, rejected fractions, finite-bound normalization,16 swatches/full RGB selection, independent sensory/door/animation values and dynamic visibility without hidden-value loss. Cards add/edit/delete through actual dialogs; eye hides child groups while source image and unrelated groups stay visible. Scene retains left toolbar and active mode during editing. Schema3 archives round-trip hashed definitions; corrupt/older archives reject. Project-template import reads only manifest/templates, appends fresh IDs and leaves geometry intact. Atomic standalone export protects source files; unsaved template-only work prompts and can save JSON. RU/EN/RU dialog/control-help audit and minimum1024x768 screenshots inspected, including full RGB picker. Foundry v13/v14 schemas/guide/config registries linked in docs/scene-templates.md. Native semantic assignment/generation remains future work.",
@@ -288,46 +648,33 @@
     {
       "id": "NEXT-005",
       "result": "Built the complete Windows x64 portable directory bundle at DALE/DALE.exe; native real-map and isolated-PATH packaged startup checks passed."
+    },
+    {
+      "id": "NEXT-016",
+      "result": "ADR-021 implemented: shared canonical source walls, all-band validation/conflict retention, typed repair history/redo, standalone Scene JSON input and byte-preserving coordinate-only atomic export. Updated378-wall and earlier368-wall private regressions pass; no live Foundry import claim."
     }
   ],
-  "pending": [
-    {
-      "id": "NEXT-002",
-      "task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."
-    },
-    {
-      "id": "NEXT-007",
-      "task": "Design reusable boundaries across aligned floors. Manual free outlines are now possible with New line; do not infer heights from filenames."
-    },
-    {
-      "id": "NEXT-008",
-      "task": "Build placed semantic wall/Region/floor instances and assignments on the shared template library, then validate v13/v14 serializers, split/merge/orientation rules and ID/UUID remapping. Original/updated JSON catalog remains separate. Templates exist; live native generation remains future work. See docs/foundry-export-feasibility.md and docs/scene-templates.md."
-    },
-    {
-      "id": "NEXT-009",
-      "task": "Investigate owner-reported unwanted line extensions during region movement/rotation. Freeze selected/optional related membership before transforms; disable snapping/repair/auto-extension toward stationary geometry during move/scale/rotation. No new connectors or growing group; preserve raster, stationary boundaries, lineage and undo. Recorded only; fix remains pending."
-    },
-    {
-      "id": "NEXT-010",
-      "task": "Expand Foundry semantic evidence with an equivalent v14 native Tile/Level/portal export, occlusion code conversion and coordinate origin checks, exact v13 module builds, runtime padded dimensions, missing door/animation/shape/link combinations and live asset/UUID/arrival-height validation. Follow docs/foundry-export-feasibility.md and docs/foundry-tile-format.md before generation."
-    }
-  ],
+  "pending": [],
   "limitations": [
-    "No semantic terrain/object segmentation.",
-    "No live Foundry connection, scene generation or verified floor placement; coordinate manifests require manual placement.",
-    "Six owner Dungeon Alchemist JPG/JSON pairs and two exports of one independent Foundry 13.351 semantic probe are present locally. The semantic probes have no scene image; padded-canvas alignment and runtime behavior remain unverified. Export-margin regressions use synthetic data.",
-    "Missing roof boundaries require manual tracing; automatic boundary reuse across floors remains future work.",
-    "Geometry transforms leave raster and prior mask snapshots fixed; moved regions can lie outside JPG, where export bounds may be unavailable.",
-    "Old .dale formats are intentionally unsupported. Updated JSON generation is not implemented; declared additional documents already round-trip and import.",
-    "Low-level third-party errors may remain English technical detail.",
-    "Owner-reported transform snapping/extension defect is pending NEXT-009; documenting isolation is not a fix. No semantic exporter or height normalization implementation was added during research."
+    "No levels, presets, lights, portals or native Foundry Scene/settings generation. The owner assembles/configures assets manually in Foundry.",
+    "Current .dale schema7 only; older/unknown schemas rejected without migration.",
+    "NEXT-009 resolved under ADR-028; exact independent overlap/PNG/archive regression evidence recorded.",
+    "Prior synthetic Foundry fixtures remain historical evidence; no live Foundry behavior is claimed.",
+    "Source-coordinate repair is deliberately conservative: conflicting/ambiguous groups remain unchanged. Complete snapshot import retains original absolute Scene UUIDs and does not merge later world edits. No live Foundry import tested.",
+    "Editing connection groups persist in .dale; plain native JSON and global Regions/masks/PNG use physical coordinates and do not carry DALE independence tags."
   ],
   "ui_languages": [
     "en",
     "ru"
   ],
   "portable_entrypoint": "DALE/DALE.exe",
-  "current_version": "0.3.22",
+  "level_composition_plan": {
+    "status": "cancelled_by_owner",
+    "date": "2026-10-17",
+    "decision": "ADR-020",
+    "resumption_authorized": false
+  },
+  "current_version": "0.3.50",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -348,7 +695,7 @@
     "artwork_sha256": "16483efa485a007c86a1fc6cffc872a48e190223cce05d59ae6e31f2df416446",
     "owner_supplied": true
   },
-  "project_schema_version": 3,
+  "project_schema_version": 7,
   "legacy_support": false,
   "git_policy": {
     "skill": "skills/dale-push/SKILL.md",
@@ -363,5 +710,985 @@
     "automatic_retry": false,
     "global_git_changes": false
   },
-  "validation_history_note": "Older records describe historical released versions and superseded controls/guards. Current behavior is defined by decisions and requirements, with no legacy support."
+  "validation_history_note": "Older records describe historical product scopes/versions; current active scope is ADR-020. Historical test counts do not validate the simplified editor; see latest validation/build records.",
+  "decisions_scope": "ADR-021 is the planned narrow coordinate-repair exception to ADR-020. Current portable0.3.24 remains the PNG editor; full level/preset/Scene-generation features remain cancelled.",
+  "cancelled": [
+    {
+      "id": "NEXT-013",
+      "date": "2026-10-17",
+      "reason": "Owner explicitly cancelled portal functionality in DALE; manual creation/linking in Foundry after import.",
+      "former_task": "Implement separate colored portal authoring under ADR-013 / FR-064..069 after implementation resumes: Scene Portals after Walls, polygon closure/name dialog, shared16-swatch/RGB selector, right list/edit dialog, one outgoing destination or None, per-source token-owner confirmation and directed/reciprocal arrow overlays. Persist stable IDs/level/polygon/color/links/history with atomic deletion cleanup. Export native Regions/teleportToken behaviors; use owner-confirmed working13.351 examples. Verify newly generated Scene UUID remapping, target-height/choice/retrigger behavior. Planning only; not implemented."
+    },
+    {
+      "id": "NEXT-011",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Complete ADR-011 / FR-052..057 after a fresh implementation request. Additive static images/optional JSON, first-image bounds editable in Settings, independent explicit floor/wall instances, Main-first level selection, exact append/duplicate rules, required finite level bottoms and schema5/template3. An owner-authorized attempt began then was explicitly stopped on2026-10-17; partial unvalidated application changes remain. Reconcile them with ADR-012..014 before resuming. No further application edits or build during planning. Latest owner decision preserves supported source wall settings; double-click wall configuration is required by FR-070. Portal functionality explicitly cancelled under ADR-018."
+    },
+    {
+      "id": "NEXT-012",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Implement ADR-012 as amended by ADR-018: native Scene JSON, named floor PNGs, background, walls/lights/native floor Tiles and assets with exact0.01ft heights; no portals/teleport behaviors/custom importer. Owner creates/links portals manually after import. First target13 + Wall Height; native floor visibility remains a capability test. Use manual synthetic fixture feedback before implementation. Application remains stopped. ADR-019: no automatic native floor Regions; internal floor-area names map to PNG/Tile metadata."
+    },
+    {
+      "id": "NEXT-014",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Implement ADR-015 / FR-072..074 after a fresh resumption: separate typed shared floor presets and selected-floor assignment; isolated existing-tool floor edits with explicit Apply to floor, immutable base/derived alpha, footprint cuts, stable IDs/placement and atomic history; desired token-base-height automatic player floor visibility with lower content through holes. Integrate schema5/template3 before release. Verify native13 + Wall Height visibility for multiple players/tokens and basement/background cases; no additional module is accepted. Product choices resolved; application implementation/tests remain pending."
+    },
+    {
+      "id": "NEXT-015",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Implement ADR-016 / FR-075 with the composition refactor after a fresh resumption: exact signed0.01ft level bounds, mandatory finite bottom/null top only, centi-ft value type and schema5/template3 bottom_centi_ft/top_centi_ft fields, two-decimal localized editors/validation, derived floor/wall/light values and exact target-unit serialization. Preserve source JSON bytes/numbers. All objects follow entered level height; no floor-only offset, whole-foot rounding. Verify negative/near-whole bounds, history/import/duplicate equality and native fractional floor/wall/light values. Planning only. Portal scope cancelled under ADR-018."
+    },
+    {
+      "id": "NEXT-002",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Validate floor placement on Foundry 13 and 14, confirm exact builds/modules and scene units, then design version-specific scene/tile export adapters if needed."
+    },
+    {
+      "id": "NEXT-007",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Design reusable boundaries across aligned floors. Manual free outlines are now possible with New line; do not infer heights from filenames."
+    },
+    {
+      "id": "NEXT-008",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Native wall/floor Region/Tile/light serializers, source setting/orientation/height conversion and live placement checks remain under NEXT-012. Portal/teleport authoring and generated behavior links are cancelled. Preserve original/updated catalog separation and source wall properties."
+    },
+    {
+      "id": "NEXT-010",
+      "date": "2026-10-17",
+      "reason": "Owner replaced composition/native export scope with single-scene PNG editor under ADR-020.",
+      "former_task": "Expand target-native floor/Tile/Level/occlusion/coordinate/unit evidence and exact core/Wall Height builds. Portal authoring and generated teleport links are outside DALE scope after ADR-018. Use synthetic manual-portals fixture feedback before claiming floor visibility."
+    }
+  ],
+  "synthetic_foundry_test_package": {
+    "date": "2026-10-17",
+    "folder": "exports/DALE-Foundry13-ThreeTiles-2026-10-17",
+    "archive": "exports/DALE-Foundry13-ThreeTiles-2026-10-17.zip",
+    "sha256": "43edf94ee9502b0fe1ad8ee3361d75aaa6bb16bc7728ace1b00571b1064d8b3c",
+    "synthetic": true,
+    "uses_private_assets": false,
+    "variants_ft": [
+      [
+        0,
+        10,
+        20
+      ],
+      [
+        0,
+        9.99,
+        19.99
+      ]
+    ],
+    "per_scene": {
+      "walls": 33,
+      "floor_tiles": 3,
+      "floor_regions": 0,
+      "tokens": 1,
+      "portals": 0,
+      "behaviors": 0
+    },
+    "asset_prefix": "dale-test/three-floors",
+    "manual_portal_guide": true,
+    "custom_importer": false,
+    "local_validation": "passed:3 native Tiles/0 Regions/empty background, exact native image dimensions/placement, unchanged asset hashes, manifest hashes and ZIP integrity",
+    "live_foundry_validation": "Owner supplied the older scene Tile list: height10 uses assets/scenes/test/floor-02.png; height20 still uses dale-test/three-floors/floor-03.png; height0 incorrectly uses assets/scenes/test/floor-03.png. Recommend correcting height0 to floor-01.png and height20 to the uploaded floor-03.png path. Path availability, disappearance of the hazard placeholder and automatic visibility remain unverified; latest fixture not runtime-confirmed.",
+    "production_exporter_implemented": false,
+    "superseded_archive": "exports/DALE-Foundry13-ManualPortals-2026-10-17.zip",
+    "background_src": null,
+    "owner_feedback": {
+      "date": "2026-10-17",
+      "observed": "Ground floor artwork and height-labeled walls render; a large white hazard placeholder covers upper-floor Tile bounds.",
+      "inference": "Upper Tile texture failed to load; exact path/loading cause remains unconfirmed.",
+      "local_checks": "All4 PNG files decode with expected dimensions/alpha; asset hashes match manifest and ZIP integrity passes; JSON paths are dale-test/three-floors/floor-01.png..floor-03.png and test-token.png.",
+      "requested_owner_evidence": "Actual image path in the Foundry20ft Tile configuration; presence of floor-02.png and floor-03.png in that directory.",
+      "automatic_visibility_result": "not established while textures fail to load"
+    },
+    "owner_feedback_history": [
+      {
+        "date": "2026-10-17",
+        "owner_clarification": "Second screenshot is an older scene after manually reselecting images, not confirmed to be the latest three-Tile JSON.",
+        "observed": "Blue floor2 artwork now visible; a large white hazard placeholder remains over the scene.",
+        "root_cause": "Not confirmed. Cannot identify the failing object or current asset paths from this screenshot alone.",
+        "next_evidence": "Read-only list of current Scene Tile IDs, elevations and texture.src paths requested.",
+        "latest_fixture_validation": "No runtime conclusion yet about the latest three-Tile fixture or automatic visibility."
+      },
+      {
+        "date": "2026-10-17",
+        "evidence": "Read-only console Tile list supplied by owner.",
+        "tiles": [
+          {
+            "id": "e9e034ff94118ad0",
+            "elevation_ft": 10,
+            "texture_src": "assets/scenes/test/floor-02.png"
+          },
+          {
+            "id": "f9a0aad15a45e251",
+            "elevation_ft": 20,
+            "texture_src": "dale-test/three-floors/floor-03.png"
+          },
+          {
+            "id": "Oz1ThPVqTDeOA6lg",
+            "elevation_ft": 0,
+            "texture_src": "assets/scenes/test/floor-03.png"
+          }
+        ],
+        "confirmed_inconsistency": "Ground Tile references floor-03 rather than floor-01; upper Tile retains a different asset prefix from the manually reselected images.",
+        "inference": "Upper Tile likely references an unavailable old path, consistent with the hazard placeholder. Server file existence/loading was not tested.",
+        "recommended_next_step": "Use existing uploaded PNGs: height0 floor-01, height10 floor-02, height20 floor-03, with actual File Picker paths. Confirm the placeholder disappears before testing player elevation visibility.",
+        "runtime_result": "pending"
+      }
+    ],
+    "status": "historical_owner_probe; no longer an active product export deliverable"
+  },
+  "historical_decisions_before_png_only": [
+    "Local Python/PySide6/Pillow/Shapely editor; complete root DALE portable package after every update, supplied ICO unchanged.",
+    "Scene image (JPG/JPEG) plus Foundry 13/14 scene JSON; same-stem pairing. Separate JSON command loads a scene JSON directly or selects from all declared scene JSON documents in a DALE project.",
+    "No legacy support: schema 4 only; reject older/unknown archives, no migrations or old UI aliases.",
+    "Every edge has stable ID, parent lineage and exact source JSON SHA256/array pointer/optional Foundry ID. Splits, merges, contacts and transforms preserve ancestry; deleted ancestors and contact markers persist in history/redo.",
+    "File/Edit/About menus own general commands. Top panels: Sections (text Contours/Regions/Raster), Scene (text Templates/Walls), Main (36px square icon-only Hand/Clear selection/Fit/Show contours/Settings). One left toolbar in an unframed stack, no nested wrapper. Separate right Project/Templates/Walls/Settings pages; every page owns the same240px bottom Information. Templates cancels previews and preserves the visible left toolbar/active editing mode. Scene contains shared Levels and Wall presets; current schema4 stores hashed template definitions and per-level wall property history.",
+    "Local and whole-map directional auto-close have independent screen tolerances, white preview, Cancel/Yes before mutation, one undo step; no standalone connectors. Materialize T/shared contacts and tiny gaps.",
+    "Fixed-size point handles, Alt vector-constrained drag, vertex-first snapping. Geometry erasers preview white affected points/lines.",
+    "Select minimum cell under cursor; toggle/add/remove multiple selection, translucent cyan. Explicit selection exports individual cells; All regions exports connected objects.",
+    "Move regions changes geometry only. Optional remembered related-line choice with right-click configuration. Drag translates, Ctrl-wheel scales; a separate Rotate regions button uses plain wheel at 0.1 degree per notch around stable shared pivot; raster and mask snapshots stay fixed.",
+    "The only artwork margin is the left Regions Artwork offset, signed -4096..4096 source pixels. Current offset applies to export outside boundaries; original raster and preview mask snapshots stay fixed. Bicubic 2x alpha smoothing preserves native RGB. Exact crop includes every nonzero byte (even 1/255), clamped to JPG. No mandatory 3px guard or global transparent-padding parameter.",
+    "Portable merged preferences retain language, Foundry version, related-line choice, independent input/output folders shared across file types. Never persist extraction directories.",
+    "Current .dale JSON catalog preserves original and additional updated documents. Generation of updated Foundry JSON remains future work.",
+    "Chat Russian, technical text English, bilingual UI/tooltips with actual shortcuts; no private example uploads.",
+    "Build revision increments once per invocation; major/minor only owner instruction. PNG/manifest do not create Foundry levels.",
+    "Walls off hides all inactive lines, offsets and handles in every tool. Retain selected cells in region tools and only highlighted/current gesture geometry elsewhere; white hover rendering must not redraw base centerlines.",
+    "Transform isolation requirement: freeze selected/optional related geometry before move/scale/rotation; do not snap, repair or extend stationary lines toward it. Owner-reported defect is pending NEXT-009, not fixed in this research task.",
+    "Foundry semantic export is research only: distinct v13/v14 serializers, explicit floors/Regions/doors/teleport semantics, ordered endpoints/shapes and ID/UUID remapping. Preserve original/updated catalog separation; no legacy .dale support.",
+    "Accept Foundry-permitted setting combinations. Preserve original bytes/values; finite inverted wall-height bounds may be normalized in working/generated records with an auditable difference; null remains unbounded.",
+    "All ten numeric tool values save in projects. Store settings globally defaults off; enabling copies active values to portable config, which loads first and overrides project numbers while enabled. Unchecking restores separate project values. Global-mode saving preserves the project numbers and artwork offset, not global overrides.",
+    "Clear selection follows Hand in the second top row; Ctrl+Shift+A clears selected cells/contour highlights and cancels previews without editing geometry/raster or changing mode. English/Russian action names identify regions, contours, lines/points or raster; internal keys remain stable.",
+    "Right Project contains Regions then File information. Settings is a separate page opened by Main Settings, with target/language/global scope. Scene Templates contains shared level definitions and semantic wall presets. All four Information copies share one current-mode/actual-enabled-shortcut source and top-aligned scrollable text; settings toggles back to the active scene/project page.",
+    "Circular contours are existing editable polygon edges: press center, drag radius, release one undo step without confirmation. Preview changes vertices live in both directions. Diameter in imported grid cells <=0.5:4 vertices, <=1:6, <=2:8; then add two per started 2.5 cells, capped at4096. Missing/invalid grid uses100 source pixels per cell; source scale conversion and zoom-independent density. Ctrl+wheel adjusts active radius, Escape/Clear selection cancels. Exact contacts retain ancestry; source JSON stays unchanged.",
+    "Foundry Regions offer native circle shapes, but DALE circular contours remain working polygon edges suitable for future wall/Region polygon export. Do not infer native circles after point edits or claim semantic scene generation.",
+    "Auto-close and whole-map close show Cancel/Yes only when changes exist; no-op/empty-cursor information has only Close. File/Edit/About menu commands retain shortcuts; About displays the running title/version and localized purpose.",
+    "Application and general workflow terminology is Scene, Scene image, Scene JSON and Contours in both languages. JSON contains a whole Scene, not only geometry. DALE project means .dale archive. Actual native fields/API/module names such as walls remain literal in technical format descriptions. No wire-field rename, alias or archive migration is introduced for UI terminology. Source warnings retranslate on language changes; obsolete UI translation entries are removed.",
+    "Large exact PNG sidebar bounds run in one cancellable worker with immutable Session/polygon snapshots. Keep only the latest pending request, ignore stale results and cache at most16 outcomes. Inline scans are limited to262144 candidate pixels. Show localized pending state; defer ready-result repaint during active gestures. Export uses identical exact nonzero alpha bounds. Contour-only edits reuse unchanged raster preview/Pixmap. Cancel and join worker on application shutdown.",
+    "The added 13.351 scene probe changes only tiles and statistics, adding one locked Tile with screenshot-confirmed placement/texture/occlusion/restrictions. Future extracted floor PNGs will be referenced by Tile assets using resolved scene coordinates, explicit elevation/sort and version-specific Level/occlusion semantics. Tile generation remains future work; preserve originals and separate updated JSON catalog snapshots.",
+    "Every Git push needs a fresh explicit owner request. Default origin/development; origin/release only when explicitly named and separately confirmed for a concrete commit/plan. Use the versioned dale-push skill/helper and local pre-push guard. No automatic push after edits/builds/commits/CI, no automatic failed-attempt retry or hook bypass; configure local Git only. Skill setup is not a push request.",
+    "File > Recent projects is always present. Merge up to10 unique absolute successful .dale open/save paths into portable preferences, newest first. Entry opening respects save/discard/cancel; missing paths stay disabled with help. Clear list preserves files. Never store temporary extraction paths.",
+    "Scene template library is independent of global numeric settings: nullable whole-foot level bounds, name/RGB/visibility and16 swatches/full RGB. Wall presets have independent restrictions/thresholds/door/animation, name/icon/own RGB, no heights/coordinates. Door sound always None; sensory sound restriction independent. File > Import templates accepts only current .dale definitions, append fresh IDs without scene/history extraction; no standalone export. Save supports template-only .dale including numeric preferences. Current schema4 requires hashed templates.json schema2; no legacy support.",
+    "Scene navigation uses Templates and Walls. Minimum1224x768. Every edited edge exists independently on every level with ordinary defaults; level checkboxes choose property scope, current row chooses displayed preset colors. Left Select walls, Select all walls/Ctrl+A, Reset wall properties and Paint wall properties; two independent1-512 screen-pixel radii persist in projects/global config and support Ctrl+wheel. White target previews, swept strokes, one undo per stroke, Escape cancel. Reset only current visible level; paint chosen preset on checked visible levels. New unique wall IDs allowed: derived instances preserve base-edge/parent/source links; completely new roots have no fabricated parent/source. Splits inherit properties per level, moves preserve them, contacts do not copy presets; refuse merges destroying differing preset boundaries. Hidden-only segments excluded. Native Foundry JSON generation remains future work. See docs/wall-assignments.md.",
+    "Foundry wall colors are renderer-derived rather than a standard JSON property: both supplied12-wall probes lack color; official v13 BaseWall/v14 WallData and Wall._getWallColor checked2026-10-17. DALE preset RGB is editor metadata; no invented native wall color field. See docs/scene-templates.md.",
+    "Whole-JPG current-level tint: separate alpha64/255 RGB overlay above background/lower asset groups and below current level assets; wall strokes keep their preset colors. Sort bottom/top heights, null infinities, stable creation ties; hide upper groups and display/select only current-level walls. Honor eyes. Simple cached rectangle; no contour clipping, raster mutation or PNG color changes. Layer-order pixel tests use synthetic placed rectangles; actual floor-PNG generation remains future work.",
+    "Owner scope2026-10-17: additive Dungeon Alchemist source materials, finite mandatory level bottoms(default0/top+infinity), independent appended floors/walls and full native Foundry export are required. Foundry13 + Wall Height is selected; owner will add Wall Height, Levels is not accepted. Add separate Portals after Walls with named polygons, standard16-swatch/full-RGB color, optional directed destination, per-source confirmation, right all-portal list and one-/two-way arrows. The owner confirms the two native13.351 source-scene portals worked. Native sample wall-height flags and Tile elevation20 are proven fields. Detailed implementation handoff is ADR-014; open product questions are recorded, not silently resolved.",
+    "Owner follow-up2026-10-17: preserve source door/window/restriction settings when copying. Wall double-click opens the standard prefilled linked-preset editor or permits creating a corrected preset from the segment settings; portal double-click opens its own prefilled dialog. Include source lights on the initial default level. FR-070/071 and ADR-011..014 record save scopes, atomic history, light ownership/conversion and exact-duplicate handling. Implementation remains stopped.",
+    "Owner follow-up2026-10-17 resolves floor/portal choices: separate shared floor presets; portals only on owning level bottom plane; placed-floor image editing accepted via the standard Contours/Regions/Raster route with an explicit isolated Apply to floor command, preserving Copy append behavior. Desired automatic player visibility uses token-base height and holes/alpha to lower content, if supported by the chosen13 + Wall Height profile. No extra module dependency accepted. ADR-015 / FR-072..074 define persistence, native mapping and regression gates. All tracked product questions are answered; implementation remains stopped.",
+    "Latest owner clarification2026-10-17: support exact0.01ft authored heights, superseding whole-foot-only bounds. Fractional value belongs to the level itself and every owned object follows that exact entered value.10 means10,9.99 means9.99; no hidden floor offset or integer portal snapping. Keep mandatory finite bottom/default0.00 and unbounded top. ADR-016 / FR-075 / NEXT-015 record exact centi-ft state and target-unit conversion; source numbers remain unchanged. All tracked questions answered; application implementation remains stopped.",
+    "Cumulative specification audit2026-10-17 (ADR-017):16 manual counterexample/operation-order scenarios reviewed. Clarified placed-floor Raster Restore versus explicit Region-cut masks and rejection of empty image/footprint edits; moved minimal native capability experiments early. Glossary synchronized. No application/live Foundry tests were run; three external capability gates remain open. Implementation stays stopped.",
+    "Owner override2026-10-17: cancel the entire DALE portal section/feature. Owner will create Regions and link native portals manually in Foundry at the heights provided. No portal model/UI/history/archive/generation or custom importer. FR-064..069 withdrawn, NEXT-013 cancelled, FR-070 wall-only. ADR-018 supersedes previous portal plans. Isolated synthetic JSON/PNG test artifacts authorized now; interrupted application implementation remains stopped.",
+    "Owner correction2026-10-17(ADR-019): floor artwork must be Tiles. Correct fixture now contains all3 floor images as native Tiles at0/10/20 or0/9.99/19.99, no Regions, root background src=null. Internal named DALE floor areas remain for crop/edit state but automatic native floor-Region generation is removed; use Tile/PNG/manifest names instead. Portals remain manual. Production main background remains a separate optional asset."
+  ],
+  "png_only_scope": {
+    "date": "2026-10-17",
+    "owner_authorized_implementation": true,
+    "decision": "docs/architecture.md ADR-020",
+    "filename": "<stem>-part-<index:03d>-<width>x<height>px.png",
+    "geometry_algorithms_changed": false,
+    "new_project_schema": 5,
+    "validation": "passed:262 full tests,88 focused Qt tests after final UI text changes; ruff/index/format and512px synthetic PNG smoke; RU/EN/minimum-window screenshots inspected",
+    "portable_build": "0.3.24 complete; packaged project/image-only smoke checks passed; removed modules absent, icon payloads and UserData hashes unchanged",
+    "portable_entrypoint": "DALE/DALE.exe"
+  },
+  "historical_level_composition_plan": {
+    "status": "cancelled_by_owner",
+    "recorded": "2026-10-17",
+    "intended_continuation": "2026-10-18, only after a fresh implementation instruction; no automation",
+    "implementation_started": true,
+    "document": "docs/architecture.md",
+    "section": "ADR-011: level composition implementation plan",
+    "requirements": [
+      "FR-052",
+      "FR-053",
+      "FR-054",
+      "FR-055",
+      "FR-056",
+      "FR-057",
+      "FR-058",
+      "FR-059",
+      "FR-060",
+      "FR-061",
+      "FR-062",
+      "FR-063",
+      "FR-070",
+      "FR-071",
+      "FR-072",
+      "FR-073",
+      "FR-074",
+      "FR-075"
+    ],
+    "pending_id": "NEXT-011",
+    "critical_owner_clarification": "Copying contours appends without overwriting/deleting prior contents/presets. Only exact same-level geometry, all properties and preset binding may skip; distinct preset IDs with equal current values are not equivalent. No approximate/partial-overlap suppression. Preserve IDs/ancestry; independent differing coincident walls coexist. Undo only new additions, never level bounds; all-duplicate contour copy is a no-op. Skipped boundaries still allow a new region floor.",
+    "implementation_default": "Every level has mandatory finite signed bottom at exact0.01ft precision; only top may be null(+infinity). Default Level1 bottom0.00/top=null. All derived floors, wall lower bounds, lights follow exactly the entered bottom; walls use exact top. No implicit subtraction, separate floor offset or integer snap. Exact centi-ft domain and bottom_centi_ft/top_centi_ft schema5/template3 fields; preserve source JSON precision/bytes.",
+    "logic_review": {
+      "date": "2026-10-17",
+      "scope": "Document-level counterexample review only; no implementation tests or application changes.",
+      "resolved": [
+        "Preset binding participates in duplicate equality to preserve future independent definition edits.",
+        "Instance-ID multigraph retains walls with equal coordinates and different properties; copying does not split earlier walls.",
+        "Cross-level preset scopes require explicit unambiguous copy-source correspondence; missing instances are never fabricated.",
+        "First-image import undo restores initialization; later deletion and project reopen preserve recorded bounds.",
+        "Image association creates a new layer rather than reinterpreting edited JSON-only coordinates/history.",
+        "Source alpha participates in Restore, exact bounds, cache identity and export.",
+        "One project command timeline and revision-checked staged copies prevent partial/stale publication.",
+        "Floor pixels have no baked level/placement metadata; current export manifest reflects edited heights.",
+        "Latest owner requirement: finite bottom is mandatory for every level, including empty/wall-only levels; only top may be unbounded. Default Level1 bottom0/top+infinity. This supersedes the earlier copying-time height prompt."
+      ],
+      "unresolved_product_questions": []
+    },
+    "logic_review_second_pass": {
+      "date": "2026-10-17",
+      "scope": "Further document-level review after mandatory level-bottom requirement; application remains unchanged.",
+      "resolved": [
+        "Level intervals may overlap, including default0..+infinity; adding another level never truncates earlier walls. Stable render order and ownership are separate from interval containment.",
+        "Floor draw order is persisted and editable; content-addressed byte sharing never merges placed instances or changes alpha compositing.",
+        "Imports freeze owned immutable bytes before commit; malformed optional matching JSON offers explicit image-only import or cancellation.",
+        "Material/level/preset deletion has explicit ownership and undo behavior. Live preset references reset atomically; historical definitions remain resolvable.",
+        "Prepared masks retain material/layer ownership and frozen boundary input. Switching JSON layers never retargets earlier raster operations; numeric tool scope remains project/global.",
+        "Project activation and committed-history generations invalidate obsolete copy publications, including undoing a source import or reopening the same project.",
+        "Saving during a job saves committed state only; a later copy makes the project dirty. Workers retain old assets until cancellation/release.",
+        "Selections use material/layer/revision or level/context IDs; undo follows actual command ownership without changing the current copy target."
+      ],
+      "implementation_evidence": false
+    },
+    "current_project_schema": 4,
+    "planned_project_schema": 5,
+    "planned_template_schema": 3,
+    "scheduled_automation_created": false,
+    "validation_note": "Prior tests and portable0.3.23 precede the interrupted composition changes. Source is incomplete/unvalidated and is not a ready replacement build. This turn updates design/evidence only, without application tests/build/revision change. NEXT-009 remains open until actual regression evidence.",
+    "implementation_stopped_by_owner": true,
+    "implementation_validated": false,
+    "sections": [
+      "ADR-011: level composition implementation plan",
+      "ADR-012: full Foundry scene package",
+      "ADR-013: authored portals and directed connections",
+      "ADR-014: implementation handoff and acceptance checklist",
+      "ADR-015: floor presets and token-height visibility",
+      "ADR-016: exact hundredth-foot authored heights",
+      "ADR-017: cumulative specification logic audit",
+      "ADR-018: portals removed; manual Foundry workflow and synthetic floor probe",
+      "ADR-019: floor artwork is native Tile content"
+    ],
+    "pending_ids": [
+      "NEXT-011",
+      "NEXT-012",
+      "NEXT-014",
+      "NEXT-015"
+    ],
+    "partial_code": [],
+    "full_export_profile": {
+      "primary_core_major": 13,
+      "sample_core_version": "13.351",
+      "sample_system": "dnd5e5.3.3",
+      "sample_is_current_installation_confirmation": false,
+      "wall_height_installation": "owner_planned",
+      "wall_height_exact_version": null,
+      "levels_dependency_accepted": false,
+      "secondary_core_major": 14,
+      "primary_runtime_gates": [
+        "Native13 + Wall Height automatic player floor visibility through holes, multiple token elevations and background/basement cases",
+        "Generated floor/wall/light heights at exact0.01ft and native asset/grid/coordinate alignment"
+      ],
+      "owner_confirmed_sample_portals_worked": true,
+      "desired_player_floor_visibility": "Hide floors above token-base elevation; compose eligible floors in stable height/order with holes/alpha revealing lower content, opaque pixels occluding it.",
+      "extra_floor_module_authorized": false
+    },
+    "open_design_questions": [
+      {
+        "id": "PLAN-Q01",
+        "question": "Source door/window/restriction preservation versus ordinary copied walls",
+        "status": "resolved_by_owner",
+        "answer": "Preserve supported source wall settings. Assigned preset overrides them; manual lines/reset use ordinary defaults. Double-click opens the standard linked/new preset editor prefilled from effective properties."
+      },
+      {
+        "id": "PLAN-Q02",
+        "question": "Include Dungeon Alchemist lights in the first full export",
+        "status": "resolved_by_owner",
+        "answer": "Include source lights on the stable initial default level, not the current target; full export includes them."
+      },
+      {
+        "id": "PLAN-Q03",
+        "question": "Automatic player floor visibility versus manual GM switching",
+        "status": "resolved_by_owner",
+        "answer": "Desired automatic view, if supported: token on/above a floor sees that floor and lower content through alpha/holes; hide upper floors. Token-base height, not body height; native13 + Wall Height capability remains a runtime gate, no extra dependency accepted."
+      },
+      {
+        "id": "PLAN-Q04",
+        "question": "Direct cutting of placed floors versus prepare/new independent copy",
+        "status": "resolved_by_owner",
+        "answer": "Owner accepts editing a placed floor through the existing image/Regions route. Use isolated Contours/Regions/Raster editing and explicit Apply to floor, retaining identity/placement/preset and other copies. Copy remains append-only."
+      },
+      {
+        "id": "PLAN-Q05",
+        "question": "Editable portal activation interval versus owning-level bottom plane",
+        "status": "superseded_by_feature_cancellation",
+        "answer": "Only owning-level bottom plane, no independent portal height-range control; update with level bottom.",
+        "current_scope": "No DALE portal authoring or generated behavior; owner configures manually in Foundry."
+      },
+      {
+        "id": "PLAN-Q06",
+        "question": "Wall presets only versus additional floor presets",
+        "status": "resolved_by_owner",
+        "answer": "Separate floor rendering presets are required."
+      },
+      {
+        "id": "PLAN-Q07",
+        "question": "13-first batch versus both13/14 full exporters in one batch",
+        "status": "13_first_selected_14_separate"
+      },
+      {
+        "id": "PLAN-Q08",
+        "question": "Fractional level bottom itself versus separate floor-only offset",
+        "status": "resolved_by_owner",
+        "answer": "The actual level bottom may be9.99ft; all derived objects follow it exactly."
+      },
+      {
+        "id": "PLAN-Q09",
+        "question": "Round portal activation/arrival to integer token heights",
+        "status": "superseded_by_feature_cancellation",
+        "answer": "Use exactly the entered level height:10 means10,9.99 means9.99. No implicit rounding or widened activation band; fractional portal behavior is a runtime test.",
+        "current_scope": "No DALE portal authoring or generated behavior; owner configures manually in Foundry."
+      }
+    ],
+    "owner_decisions_2026_10_17_followup": {
+      "source_wall_properties": "preserve_supported_source_settings",
+      "wall_double_click": "standard_prefilled_linked_preset_or_save_new_and_assign_clicked_segment",
+      "portal_double_click": "withdrawn; no portal feature",
+      "source_lights": "import_to_stable_initial_default_level",
+      "remaining_asked_questions": [],
+      "floor_presets": "separate_shared_type_required",
+      "placed_floor_editing": "reuse_standard_contours_regions_raster_route_with_explicit_apply_to_floor",
+      "portal_height": "manual Foundry authoring only; fixture guide gives exact heights",
+      "desired_player_floor_visibility": "floors_at_or_below_token_base_elevation_with_alpha_revealing_lower_content; conditional_on_runtime_support",
+      "height_precision": "exact0.01ft; bottom_centi_ft/top_centi_ft",
+      "level_height_authority": "all_objects_follow_exact_entered_level_height",
+      "automatic_floor_offset": false,
+      "automatic_portal_integer_snap": false
+    },
+    "remaining_unanswered_product_questions": [],
+    "runtime_gate_note": "Portal UUID/activation/arrival gates withdrawn with portal feature. Native floor visibility and exact floor/wall/light heights remain unverified. Synthetic manually specified fixtures were generated; no live Foundry access or production exporter implementation occurred.",
+    "product_decisions_complete": true,
+    "height_precision": {
+      "unit": "ft",
+      "step_centi_ft": 1,
+      "max_abs_centi_ft": 100000000,
+      "storage": "explicit signed integer bottom_centi_ft/top_centi_ft; null top only",
+      "default_bottom_centi_ft": 0,
+      "default_top_centi_ft": null,
+      "source_numbers_unchanged": true,
+      "native_export": "numeric target scene units, never raw scaled integers",
+      "token_integer_elevation": "common owner workflow, not an authorized automatic arrival quantization"
+    },
+    "latest_logic_audit": {
+      "date": "2026-10-17",
+      "method": "manual counterexample and operation-order review of the cumulative specification",
+      "document": "docs/architecture.md ADR-017",
+      "scenarios": 16,
+      "internal_design_result": "consistent_after_explicit_floor_edit_refinements",
+      "refinements": [
+        "Raster Restore is capped by explicit geometric Region-cut masks in placed-floor context.",
+        "Applying zero final alpha or an empty logical cut footprint rejects without deleting the floor.",
+        "Run minimal native capability experiments early in resumed implementation, before dependent full UI/export completion.",
+        "Synchronize glossary vocabulary with fractional heights, explicit ownership, floor presets, edits and project coordinates."
+      ],
+      "application_tests_run": false,
+      "live_foundry_tests_run": false,
+      "source_implementation_validated": false,
+      "external_capability_gates": [
+        "Native13 + Wall Height per-player automatic floor visibility",
+        "Generated new-scene UUID and asset-path resolution",
+        "Native exact-height portal activation/arrival, choice and retrigger behavior"
+      ],
+      "evidence_limit": "Manual specification review and documentation structure checks are not executable application or runtime tests."
+    },
+    "withdrawn_requirements": [
+      "FR-064",
+      "FR-065",
+      "FR-066",
+      "FR-067",
+      "FR-068",
+      "FR-069"
+    ],
+    "portal_scope": {
+      "status": "cancelled_by_owner",
+      "date": "2026-10-17",
+      "authoring": "manual in Foundry after scene import",
+      "application_ui": false,
+      "archive_entities": false,
+      "native_generation": false,
+      "custom_importer": false,
+      "preserve_original_json_bytes": true
+    },
+    "floor_artwork_carrier": {
+      "native_document": "Tile",
+      "automatic_native_floor_regions": false,
+      "internal_floor_footprints_retained": true,
+      "optional_main_background_separate": true,
+      "naming": "PNG stem + Tile/manifest metadata; v14 native name when supported"
+    },
+    "resumption_authorized": false,
+    "current_scope": "Withdrawn by ADR-020; semantic code removed. No planned schema5/template3 composition work remains."
+  },
+  "source_json_repair_plan": {
+    "date": "2026-10-17",
+    "status": "full_wall_editing_portable_ready",
+    "decision": "docs/architecture.md ADR-021",
+    "requirements": [
+      "FR-076",
+      "FR-077",
+      "FR-078",
+      "FR-079",
+      "FR-080",
+      "FR-081",
+      "FR-082"
+    ],
+    "canonical_source_walls": true,
+    "duplicate_spanning_walls": false,
+    "all_layer_validation": true,
+    "conflict_policy": "retain complete dependent group and report; no arbitrary layer priority",
+    "export_policy": "all applied walls; coordinate-token fast path or walls-only replacement, exact non-wall bytes/property ownership, atomic new copy",
+    "read_only_evidence": "artifacts/village-contour-audit/layers.json",
+    "project_schema": 7,
+    "updated_source": "fvtt-Scene-derevnya_-port-QLgmxECitbuD3VpE (1).json",
+    "updated_source_sha256": "db61cdbce90e88c5d35e68e99f555fbaeb8056d53e4cfadce154ebd0739e285e",
+    "real_regression_evidence": "exports/village-json-repair-2026-10-17/validation.json",
+    "source_history_type": "SourceRepairEdit for canonical repairs; GeometryEdit with wall_styles for general edits",
+    "live_foundry_tested": false,
+    "validation": "272 application/core/Qt tests passed; Ruff/index/format/whitespace and both private regressions passed; minimum1224x768 RU/EN inspected. Git-policy subprocess checks were intermittent in Windows (CreateProcessW/error launching git); unchanged policy tests had previously passed in the287-test run.",
+    "portable_build": "0.3.41",
+    "manual_decision": "docs/architecture.md ADR-022",
+    "manual_point_moves": true,
+    "explicit_new_walls": "ordinary defaults; chosen band/range bounds or unbounded in All; unique native ID",
+    "layer_dropdown": "all/bands/exact spanning ranges/ambiguous",
+    "manual_validation": "296 application/core/Qt tests passed;38 source repair cases and99 Qt cases. Ruff/index/format/whitespace passed. Updated private input retains original SHA256; isolated manual test keeps378 original IDs/order/properties, adds1 explicit common0..20 wall and round-trips applied/redo/undo. RU/EN/minimum1224x768 views inspected. Live Foundry not tested.",
+    "manual_regression_evidence": "artifacts/manual-source-repair/validation.json",
+    "automatic_shortening": true,
+    "shortening_decision": "docs/architecture.md ADR-023",
+    "shortening_evidence": "artifacts/vector-trim/validation.json",
+    "earlier_extension_only_result": {
+      "walls_before": 378,
+      "walls_after": 378,
+      "extensions": 34,
+      "changed_walls": 32,
+      "conflict_groups_unchanged": 1,
+      "native_tolerance_pixels": 14
+    },
+    "updated_result": {
+      "source": "fvtt-Scene-derevnya_-port-QLgmxECitbuD3VpE (1).json",
+      "sha256": "db61cdbce90e88c5d35e68e99f555fbaeb8056d53e4cfadce154ebd0739e285e",
+      "native_tolerance": 14,
+      "walls_before": 378,
+      "walls_after": 378,
+      "extensions": 32,
+      "shortenings": 40,
+      "conflict_groups_retained": 4,
+      "changed_walls": 61,
+      "other_original_bytes_preserved": true,
+      "source_unchanged": true,
+      "undo_redo_archive": "passed"
+    },
+    "superseded_by": "ADR-028; general wall editing/native preservation now supported, historical evidence retained"
+  },
+  "vector_auto_close": {
+    "status": "implemented_portable_ready",
+    "schema": 7,
+    "requirements": [
+      "FR-005",
+      "FR-016",
+      "FR-077",
+      "FR-082"
+    ],
+    "evidence": "artifacts/vector-trim/validation.json",
+    "tests": 315,
+    "portable_build": "0.3.27"
+  },
+  "contour_catalog_alt_alignment": {
+    "status": "implemented_portable_ready",
+    "schema": 7,
+    "requirements": [
+      "FR-034",
+      "FR-019",
+      "FR-083",
+      "FR-084"
+    ],
+    "owner_example": "village-port-2lvl.dale",
+    "source_sha256": "758599afd557374630403e14ff91c6938628f260c1b350468197f3d950f188b6",
+    "source_segments": 222,
+    "applied_segments": 245,
+    "operations": 83,
+    "evidence": "artifacts/json-catalog-alignment/validation.json",
+    "json_purpose": "DALE reimport only, not a full Foundry Scene",
+    "portable_build": "0.3.28",
+    "tests": 351
+  },
+  "alignment_left_toolbar": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-023",
+      "FR-084"
+    ],
+    "placement": "left Contours toolbar",
+    "schema": 7,
+    "portable_build": "0.3.30",
+    "evidence": "artifacts/left-alignment/validation.json",
+    "alignment_maximum": 9999,
+    "editor_width": 34,
+    "button_size": [
+      48,
+      72
+    ],
+    "intermediate_build": "0.3.29",
+    "validation": "152 UI/archive/preference tests; bilingual min-size four-digit check",
+    "four_digit_evidence": "artifacts/left-alignment/four-digit-validation.json"
+  },
+  "asset_catalog_clipboard": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-085",
+      "FR-086",
+      "FR-087",
+      "FR-088",
+      "FR-089"
+    ],
+    "schema": 7,
+    "decision": "docs/architecture.md ADR-026",
+    "evidence": "artifacts/dataset-catalog/validation.json",
+    "common_clipboard": "contours only, across source/project/set changes",
+    "creation_pair_default": true,
+    "first_set_replacement": "rebase reopening defaults and remove unreferenced old inputs",
+    "tests": 381,
+    "source_evidence": "artifacts/dataset-catalog/validation.json",
+    "portable_build": "0.3.32",
+    "portable_evidence": "artifacts/dataset-catalog-portable/validation.json"
+  },
+  "dataset_toolbar_layout": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-086"
+    ],
+    "heading_json_gap_px": 1,
+    "rename_size": [
+      36,
+      36
+    ],
+    "source_evidence": "artifacts/dataset-toolbar/validation.json",
+    "tests": "3 existing focused layout/rename cases pass; RU/EN empty/loaded1224x768 inspected. No new geometry/history/archive behavior.",
+    "portable_build": "0.3.32",
+    "portable_evidence": "artifacts/dataset-toolbar-portable/validation.json"
+  },
+  "active_set_json_export": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-083",
+      "FR-086"
+    ],
+    "schema": 7,
+    "decision": "docs/architecture.md ADR-026 export clarification",
+    "purpose": "Current active set; ordinary DALE contour snapshot or byte-preserving native output in Preserve JSON mode",
+    "shortcut": "Ctrl+Shift+J",
+    "tests": 388,
+    "final_focused_tests": 11,
+    "source_evidence": "artifacts/active-set-json/validation.json",
+    "portable_build": "0.3.33",
+    "portable_evidence": "artifacts/active-set-json-portable/validation.json"
+  },
+  "dataset_manager": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-039",
+      "FR-090",
+      "FR-091",
+      "FR-092",
+      "FR-093"
+    ],
+    "schema": 7,
+    "accepted_design": "dark Qt tree manager; imagegen sketch with Add JSON",
+    "json_add": "append current contours, one output JSON",
+    "safe_export": "physical filenames use dataset name; native Scene names/paths unchanged",
+    "tests": 414,
+    "source_evidence": "artifacts/dataset-manager-final/validation.json",
+    "portable_build": "0.3.39",
+    "portable_evidence": "artifacts/structured-tooltips-portable/validation.json"
+  },
+  "right_panel_layout": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-039",
+    "information": "fills remaining height, scroll only on overflow",
+    "toggle": [
+      16,
+      64
+    ],
+    "preference": "right_panel_visible",
+    "evidence": "artifacts/dataset-manager-final/layout.json",
+    "portable_build": "0.3.36",
+    "portable_evidence": "artifacts/image-import-button-portable/validation.json"
+  },
+  "image_component_button_fix": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-090",
+      "FR-091"
+    ],
+    "tests": 422,
+    "focused_tests": 88,
+    "source_evidence": "artifacts/image-import-button-fix/validation.json",
+    "failure": "Open a scene image or scene JSON",
+    "cause": "Qt clicked(bool) overwrote default-captured component key",
+    "final_focused_tests": 45,
+    "json_only_case": "passed",
+    "field_layout": "full-width basename editors without separate extension labels",
+    "portable_build": "0.3.36",
+    "portable_evidence": "artifacts/image-import-button-portable/validation.json"
+  },
+  "dataset_selector_layout": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-090",
+    "height": 36,
+    "button_gap": 7,
+    "heading_text_inset": 7,
+    "source_evidence": "artifacts/dataset-selector-layout/validation.json",
+    "existing_tests": 3,
+    "portable_build": "0.3.37",
+    "portable_evidence": "artifacts/dataset-selector-layout-portable/validation.json"
+  },
+  "manager_help_text": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-090",
+      "FR-091",
+      "FR-092",
+      "NFR-009"
+    ],
+    "source_evidence": "artifacts/manager-help-text/validation.json",
+    "tests": 437,
+    "final_focused_tests": 42,
+    "layout": {
+      "left_fixed_width": 320,
+      "header_buttons": "equal-width text, standard manager height",
+      "project_actions": "inside left column, equal-width",
+      "status": "shared footer row"
+    },
+    "text_policy": {
+      "authored_files": 87,
+      "normalized_occurrences": 37,
+      "automatic_gate": "tools/check_repository.py"
+    },
+    "portable_build": "0.3.39",
+    "portable_evidence": "artifacts/structured-tooltips-portable/validation.json"
+  },
+  "structured_tooltips": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-022",
+      "FR-023",
+      "FR-090",
+      "NFR-009"
+    ],
+    "tests": 438,
+    "focused_tests": 31,
+    "source_evidence": "artifacts/structured-tooltips/source-validation.json",
+    "width": 68,
+    "sections": [
+      "Purpose",
+      "Condition",
+      "Keys"
+    ],
+    "numeric_help": "action and value separated; no accumulated duplicate modifiers",
+    "portable_build": "0.3.39",
+    "portable_evidence": "artifacts/structured-tooltips-portable/validation.json"
+  },
+  "dataset_camera": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-022",
+      "FR-078",
+      "FR-086",
+      "FR-090"
+    ],
+    "tests": 442,
+    "new_regressions": 4,
+    "source_evidence": "artifacts/dataset-camera/source-validation.json",
+    "camera": "scene-frame center, stored zoom retained; Apply-current preserves pan",
+    "eraser_policy": "Superseded by ADR-028: all geometry tools available with height filtering; native preservation always applies when source JSON exists.",
+    "schema": 7,
+    "portable_build": "0.3.40",
+    "portable_evidence": "artifacts/dataset-camera-portable/validation.json"
+  },
+  "native_wall_editing": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-028",
+    "schema": 7,
+    "requirements": [
+      "FR-032",
+      "FR-078",
+      "FR-080",
+      "FR-081",
+      "FR-083",
+      "FR-088"
+    ],
+    "source_evidence": "artifacts/native-wall-editing/source-validation.json",
+    "native_export": "all applied walls; exact bytes outside walls; original input immutable",
+    "region_placement": "two Alt-only numeric toggles, nearest-cursor vertex frozen for drag and copy",
+    "tests": 461,
+    "portable_build": "0.3.41",
+    "portable_evidence": "artifacts/native-wall-editing-portable/validation.json",
+    "transform_isolation": "NEXT-009 resolved: whole overlap/transforms/PNG/archive/undo regression evidence; Alt only changes rigid translation"
+  },
+  "region_deletion": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-094",
+    "decision": "ADR-029",
+    "source_evidence": "artifacts/delete-region/source-validation.json",
+    "tests": 509,
+    "focused_tests": 67,
+    "label_ru": "Удалить область",
+    "shortcut": "Del",
+    "effect": "selected boundary pieces only; interior lines and raster retained",
+    "schema": 7,
+    "portable_build": "0.3.43",
+    "portable_evidence": "artifacts/delete-region-portable/validation.json"
+  },
+  "creation_and_help_fixes": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-030",
+    "requirements": [
+      "FR-022",
+      "FR-023",
+      "FR-081",
+      "FR-087"
+    ],
+    "source_evidence": "artifacts/delete-region/source-validation.json",
+    "creation_button_cases": 12,
+    "tab_without_selection_cases": 2,
+    "manager_named_help_cases": 4,
+    "default_creation_bounds": [
+      null,
+      null
+    ],
+    "tooltip_format": [
+      "Title",
+      "Purpose",
+      "Condition",
+      "Keys"
+    ],
+    "tests": 509,
+    "portable_build": "0.3.43",
+    "portable_evidence": "artifacts/delete-region-portable/validation.json"
+  },
+  "raster_selection": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-031",
+    "requirements": [
+      "FR-017",
+      "FR-095",
+      "FR-096"
+    ],
+    "schema": 7,
+    "tests": 509,
+    "focused_tests_after_final_help_change": 81,
+    "source_evidence": "artifacts/raster-selection/source-validation.json",
+    "marquee_threshold_screen_px": 10,
+    "mask_scope": "explicit selected polygon union only",
+    "alpha_evidence": "Native RGBA preview equals PNG for both mask directions, signed live offset, holes, fractional boundaries, source alpha and ordered brushes. Reduced preview is bounded display projection.",
+    "original_inputs_unchanged": true,
+    "live_foundry_tested": false,
+    "source_cli_smoke_cases": 3,
+    "portable_build": "0.3.43",
+    "portable_evidence": "artifacts/delete-region-portable/validation.json",
+    "source_cli_checks": 3,
+    "initial_empty_image_guard": "passed"
+  },
+  "figure_editing": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-097",
+      "FR-098"
+    ],
+    "decision": "ADR-032",
+    "schema": 7,
+    "source_evidence": "artifacts/figures/source-validation.json",
+    "tests": 531,
+    "section_order": [
+      "geometry",
+      "figures",
+      "regions",
+      "pixels"
+    ],
+    "selection": "exact live line IDs; shared stored vertices and matching editing connection groups for connected double-click",
+    "marquee_threshold_screen_px": 10,
+    "transform_scope": "frozen selected IDs; stationary geometry and raster unchanged",
+    "alignment": "two Alt-only point/guide buttons share existing numeric values/global-project precedence",
+    "ctrl_a": "all visible current-section lines/cells; text editing unaffected",
+    "live_foundry_tested": false,
+    "portable_build": "0.3.44",
+    "portable_evidence": "artifacts/figures-portable/validation.json",
+    "source_cli_smoke_cases": 3,
+    "portable_smoke_cases": 23
+  },
+  "main_select_all_button": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-098",
+    "main_order": [
+      "Pan",
+      "Select all contour lines",
+      "Clear selection"
+    ],
+    "button_size": [
+      36,
+      36
+    ],
+    "section_subject": "line IDs in Contours/Figures; cells in Regions/Raster, visible height scope",
+    "focused_tests": 13,
+    "source_evidence": "artifacts/select-all-main/source-validation.json",
+    "owner_process_before_build": 131876,
+    "portable_build": "0.3.45",
+    "portable_evidence": "artifacts/select-all-main/portable/validation.json",
+    "portable_cases": 5,
+    "owner_process_preserved": 131876
+  },
+  "contour_double_click": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-097",
+    "decision": "ADR-038",
+    "tests": 594,
+    "new_tests": 9,
+    "focused_tests": 11,
+    "source_before": "artifacts/double-click/before-validation.json",
+    "source_after": "artifacts/double-click/after-validation.json",
+    "test_log": "artifacts/double-click/tests.log",
+    "source_before_cases": 4,
+    "source_after_cases": 4,
+    "before_selected_lines": 5,
+    "after_selected_lines": 4,
+    "original_line_count": 9,
+    "geometry_ids_raster_history_unchanged": true,
+    "no_auto_copy_in_reproduced_case": true,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "portable_build": "0.3.49",
+    "portable_cases": 5,
+    "portable_evidence": "artifacts/double-click/portable/validation.json",
+    "owner_process_preserved": 117532
+  },
+  "section_names_del_questions": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-097",
+      "FR-100",
+      "FR-102",
+      "FR-103"
+    ],
+    "decisions": [
+      "ADR-036",
+      "ADR-037"
+    ],
+    "tests": 585,
+    "new_delete_tests": 8,
+    "source_name_cases": 12,
+    "source_right_click_cases": 6,
+    "source_evidence": "artifacts/section-names/source-validation.json",
+    "schema": 7,
+    "display_order": [
+      "Vertices",
+      "Contours",
+      "Regions",
+      "Raster"
+    ],
+    "internal_sections": [
+      "geometry",
+      "figures",
+      "regions",
+      "pixels"
+    ],
+    "del_scope": "exact selected visible line IDs in Contours, independent of Regions Del",
+    "question_order": "actual question first; remembering/reset instructions below",
+    "live_foundry_tested": false,
+    "portable_build": "0.3.48",
+    "portable_cases": 7,
+    "portable_evidence": "artifacts/section-names/portable/validation.json",
+    "owner_process_preserved": 126180,
+    "UserData_preserved": true,
+    "concurrent_user_settings_change_detected": true
+  },
+  "selected_region_export": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-102",
+    "decision": "ADR-035",
+    "tests": 577,
+    "focused_tests": 13,
+    "source_evidence": "artifacts/selected-export/source-validation.json",
+    "grouping": "exact transitive selected edge/point/area contacts; union before signed artwork offset",
+    "preferences": "independent portable tri-state merge_selected_regions; right-click left export button resets",
+    "synthetic_selected_cells": 18,
+    "synthetic_merged_pngs": 2,
+    "synthetic_separate_pngs": 18,
+    "originals_geometry_history_unchanged": true,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "portable_build": "0.3.47",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/selected-export/portable/validation.json",
+    "owner_process_preserved": 135468
+  },
+  "intersection_eraser_connections_rotation": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-099",
+      "FR-100",
+      "FR-101"
+    ],
+    "schema": 7,
+    "source_evidence": "artifacts/intersection-connections/source-validation.json",
+    "tests": 564,
+    "source_cli_cases": 6,
+    "partition_cache_edges": 128,
+    "remembered_answers": "separate Erase lines/Edit points portable tri-state preferences",
+    "independence": "Figures and point editing only; global Regions/masks/PNG unchanged",
+    "rotation": "one final history edit per consecutive wheel series",
+    "live_foundry_tested": false,
+    "portable_build": "0.3.46",
+    "portable_cases": 9,
+    "portable_evidence": "artifacts/intersection-connections/portable/validation.json"
+  },
+  "section_alignment": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-104",
+    "decision": "ADR-039",
+    "schema": 7,
+    "tests": 600,
+    "new_tests": 6,
+    "focused_tests": 34,
+    "test_log": "artifacts/independent-alignment-tests.log",
+    "source_evidence": "artifacts/independent-alignment/source-validation.json",
+    "source_button_cases": 6,
+    "dataset_profiles": 2,
+    "optional_strict_boolean_fields": [
+      "figure_point_alignment",
+      "figure_guide_alignment",
+      "region_point_alignment",
+      "region_guide_alignment"
+    ],
+    "point_default": true,
+    "guide_default": false,
+    "vertices_fields_preserve_own_state": true,
+    "numeric_tolerances_shared": true,
+    "project_and_dataset_roundtrip": true,
+    "source_geometry_raster_history_unchanged": true,
+    "live_foundry_tested": false,
+    "portable_build": "0.3.50",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/independent-alignment/portable/validation.json",
+    "owner_process_preserved": 98444
+  }
 }

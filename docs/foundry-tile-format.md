@@ -1,5 +1,9 @@
 # Foundry scene Tile probe
 
+Owner scope replacement2026-10-17 (ADR-020): DALE edits one scene image and its optional source contour JSON, repairs/joins/closes contours, cleans alpha and exports separate native RGBA PNGs for all connected closed objects or selected minimum cells. Every PNG filename includes its exact final width and height in pixels. Levels, wall/floor presets, composition, portals, native Scene export and Foundry runtime configuration are cancelled; the owner configures these manually in Foundry. Earlier plans are historical, not a backlog.
+
+The following historical decisions/evidence do not authorize removed product features.
+
 Checked 2026-10-16. Research and future export design; no native scene/Tile generator is implemented here. A Tile is a placed scene image/video document. The correct Russian term is «тайл», not «тайтл». Contours remain DALE editing geometry; a scene JSON contains much more than that geometry.
 
 ## Evidence
@@ -58,6 +62,10 @@ The [v14 BaseTile schema](https://foundryvtt.com/api/v14/classes/foundry.documen
 Occlusion codes are version-sensitive. Published [v13 constants](https://foundryvtt.com/api/v13/variables/CONST.TILE_OCCLUSION_MODES.html) give NONE=0, FADE=1, RADIAL=3, VISION=4. Published [v14 constants](https://foundryvtt.com/api/v14/variables/CONST.TILE_OCCLUSION_MODES.html) give NONE=0, FADE=1, SURFACE=2, RADIAL=4, VISION=8. The current guide allows multiple v14 modes. Store semantic mode names internally and serialize for the explicit target; never copy a v13 numeric mode directly into v14. The present mode 0 is common, but proves no nonzero conversion.
 
 ## Future PNG floor placement
+
+Owner decisions2026-10-17 add separate floor rendering presets and placed-floor editing through the standard image/Regions workflow (ADR-015 / FR-072..074). Floor preset expansion belongs in native Tile properties, not baked PNG recoloring. Desired automatic visibility depends on token-base height with lower floors visible through alpha holes; verify it in the chosen13 + Wall Height profile before claiming support. Editing a placed floor publishes a new immutable derived asset while preserving placement/identity and separate source copies. Authored portals use only the owning floor plane; original source Region ranges remain untouched.
+
+Scope update2026-10-17: this is now required full-package work under ADR-012, not optional export research. Native Tile elevation is already demonstrated as20ft; wall-height flags are demonstrated separately in the scene atlas. New floor Tiles will use owning level.bottom and new walls will use that level's interval, preserving the original probe bytes/values. The owner's source portals are confirmed working; authored portals are specified in ADR-013. Visibility across multiple generated floors is a separate runtime acceptance case, not a missing elevation field.
 
 The owner's intended floor artwork carrier is a Tile referencing a PNG extracted from selected DALE regions. A Tile supplies positioned artwork; explicit elevation/Level, visibility, contour gameplay semantics and teleport behavior still require separate configuration.
 

@@ -72,10 +72,10 @@ def test_reject_oversized_before_decoding(tmp_path):
             pass
 
 
-def test_non_jpeg_and_exif_rotation_rejected(tmp_path):
-    path = tmp_path / "image.png"
+def test_unsupported_format_and_exif_rotation_rejected(tmp_path):
+    path = tmp_path / "image.gif"
     Image.new("RGB", (4, 4)).save(path)
-    with pytest.raises(ValueError, match="JPG"):
+    with pytest.raises(ValueError, match="Unsupported"):
         with open_source(path):
             pass
     rotated = tmp_path / "rotated.jpg"

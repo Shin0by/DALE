@@ -10,7 +10,6 @@ import psutil
 from PIL import Image
 from shapely.geometry import box
 
-from dale.placement import Placement
 from dale.raster import export_png, load_preview
 from dale.scene import MAX_SIDE, load_pair
 from dale.session import ContourMask, Stroke
@@ -47,7 +46,7 @@ def run(side: int):
     started = time.perf_counter()
     destination = directory / "synthetic-overlay.png"
     try:
-        export_png(source, operations, destination, placement=Placement(14, 17))
+        export_png(source, operations, destination)
         elapsed = time.perf_counter() - started
     finally:
         stop.set()
@@ -61,7 +60,7 @@ def run(side: int):
             assert output.getpixel((0, 0))[3] == 0
             assert output.getpixel((200, 200))[3] == 255
             assert output.getpixel((side // 2, side // 2))[3] == 0
-            assert output.info["DALE.ElevationFeet"] == "17"
+            assert "DALE.ElevationFeet" not in output.info
     finally:
         Image.MAX_IMAGE_PIXELS = previous
     result = {
@@ -70,7 +69,7 @@ def run(side: int):
         "export_seconds": round(elapsed, 2),
         "peak_export_rss_mib": round(peak[0] / 1024**2),
         "output_bytes": destination.stat().st_size,
-        "checks": ["dimensions", "RGBA", "mask", "brush", "placement_metadata"],
+        "checks": ["dimensions", "RGBA", "mask", "brush", "source_pixels"],
     }
     (directory / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result))

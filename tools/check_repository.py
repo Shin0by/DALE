@@ -5,6 +5,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from text_policy import check_authored_texts
+
 ROOT = Path(__file__).resolve().parents[1]
 index = json.loads((ROOT / "project/index.json").read_text(encoding="utf-8"))
 state = json.loads((ROOT / index["state"]).read_text(encoding="utf-8"))
@@ -37,4 +39,8 @@ if (
     or version[1] != state["current_version"]
 ):
     raise SystemExit("Package, project metadata, and state versions must agree.")
+text_count, text_failures = check_authored_texts(ROOT)
+if text_failures:
+    raise SystemExit("Authored text must use only ASCII hyphens:\n" + "\n".join(text_failures))
 print(f"Repository index valid: {len(paths)} paths, {len(ids)} requirement IDs.")
+print(f"ASCII hyphen policy valid: {text_count} authored text files.")

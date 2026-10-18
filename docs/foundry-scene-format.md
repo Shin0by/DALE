@@ -1,5 +1,9 @@
 # Foundry scene probe: observed format
 
+Owner scope replacement2026-10-17 (ADR-020): DALE edits one scene image and its optional source contour JSON, repairs/joins/closes contours, cleans alpha and exports separate native RGBA PNGs for all connected closed objects or selected minimum cells. Every PNG filename includes its exact final width and height in pixels. Levels, wall/floor presets, composition, portals, native Scene export and Foundry runtime configuration are cancelled; the owner configures these manually in Foundry. Earlier plans are historical, not a backlog.
+
+The following historical decisions/evidence do not authorize removed product features.
+
 Checked 2026-10-16. Status: analysis only; no new importer, semantic editor or Foundry exporter is implemented by this research. Read [export feasibility](foundry-export-feasibility.md) for the proposed implementation boundaries and [the machine profile](../project/foundry-format-profile.json) for indexed observations.
 
 ## Evidence and scope
@@ -162,5 +166,11 @@ Missing coverage includes secret open/locked doors, actual animation textures/ty
 Convenience API interfaces can lag runtime schemas: the v13 RegionData interface describes elevation differently from this exported object and BaseRegion's SchemaField. Prefer actual target exports plus `defineSchema()` and runtime validation; do not generate from an interface summary alone. Original source preservation and Foundry 13/14 support do not introduce support for older `.dale` archives.
 
 ## Additional Tile probe
+
+### Owner confirmation and renewed portal scope (2026-10-17)
+
+The owner confirms that the portals worked in the Foundry world from which these files were exported. This is owner-reported runtime evidence for the source scene, not merely a schema hypothesis. Read-only reinspection on2026-10-17 reproduced both recorded SHA-256 hashes and confirmed identical complete regions arrays in the two exports. Only tiles and _stats differ. Native Region.color values and the four directed destination/choice combinations are therefore the concrete authoring/export reference for [ADR-013](architecture.md#adr-013-authored-portals-and-directed-connections).
+
+The other six image/JSON pairs are Dungeon Alchemist inputs to be assembled into a new Foundry scene with floors, walls and authored portals. Do not confuse these source pairs with the two native target-format probes. The native wall-height flags and the Tile elevation20 in the second probe are demonstrated output fields; do not describe their presence as unknown. Module version, regenerated-scene UUID handling and the detailed generated cross-level/player test matrix are separate evidence questions. Owner-confirmed source operation does not establish how Import Data rewrites absolute references into a differently identified new scene.
 
 A second export of this scene adds one Tile while preserving the original native `walls`, Regions, Token and Drawings. The inventory above describes the first file. See [Tile analysis](foundry-tile-format.md) and the machine profile tile_probe for the revised file, screenshot mapping and future PNG floor-artwork design.

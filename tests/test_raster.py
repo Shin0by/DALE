@@ -4,9 +4,15 @@ import pytest
 from PIL import Image, ImageChops
 from shapely.geometry import Polygon
 
-from dale.placement import Placement
-from dale.raster import ExportCancelled, export_png, render_alpha, render_export_alpha
-from dale.scene import open_source
+from dale.raster import (
+    ExportCancelled,
+    export_png,
+    raster_operations,
+    render_alpha,
+    render_export_alpha,
+    render_preview,
+)
+from dale.scene import load_pair, open_source
 from dale.session import Closure, ContourMask, Session, Stroke
 
 
@@ -66,7 +72,7 @@ def test_export_stripes_match_full_render_preserve_rgb_and_source(pair_factory, 
     ]
     path = source.image_path.parent / "overlay.png"
     progress = []
-    export_png(source, operations, path, progress.append, placement=Placement(13, 17))
+    export_png(source, operations, path, progress.append)
     expected = render_export_alpha(source.size, source.size, operations)
     with Image.open(path) as result, open_source(source.image_path) as original:
         assert result.mode == "RGBA"
@@ -76,8 +82,6 @@ def test_export_stripes_match_full_render_preserve_rgb_and_source(pair_factory, 
         difference.paste((0, 0, 0), mask=ImageChops.invert(expected))
         assert difference.getbbox() is None
         assert result.getpixel((0, 0)) == (0, 0, 0, 0)
-        assert result.info["DALE.FoundryMajor"] == "13"
-        assert result.info["DALE.ElevationFeet"] == "17"
     assert progress[-1] == 100
     assert before == (source.image_path.read_bytes(), source.json_path.read_bytes())
 
@@ -121,9 +125,57 @@ def test_png_suffix_required(pair_factory):
         export_png(pair_factory(), [], Path("overlay.jpg"))
 
 
-@pytest.mark.parametrize("version", [13, 14])
-def test_elevation_accepts_integer_feet_for_both_versions(version):
-    assert Placement(version, 1).elevation_ft == 1
-    assert Placement(version, -3).elevation_ft == -3
-    with pytest.raises(ValueError, match="whole"):
-        Placement(version, 1.5)
+@pytest.mark.parametrize("mode", ["inside", "outside"])
+@pytest.mark.parametrize("offset", [-3.25, 0, 4.5])
+def test_preview_matches_export_rgba_for_live_offset_and_immutable_mask(
+    pair_factory, tmp_path, mode, offset
+):
+    source = pair_factory(size=(80, 80))
+    image = Image.new("RGBA", source.size, (37, 91, 203, 160))
+    image.putpixel((26, 36), (5, 9, 17, 0))
+    path = tmp_path / "alpha.png"
+    image.save(path)
+    source = load_pair(path, source.json_path)
+    source_bytes = path.read_bytes(), source.json_path.read_bytes()
+    session = Session(source, contour_offset=2)
+    boundary = Polygon(
+        [(9.3, 13.7), (69.2, 22.8), (63.4, 70.1), (12.2, 66.3)],
+        holes=[[(25.3, 35.2), (38.1, 36.4), (34.9, 48.8)]],
+    )
+    mask = session.make_mask(mode, boundary)
+    session.add(mask)
+    session.add(Stroke(((20.5, 30.4), (32.2, 57.8)), 3.7))
+    session.add(Stroke(((29.2, 45.1),), 1.1, restore=True))
+    frozen = mask.area.wkb, mask.boundary.wkb
+    session.contour_offset = offset
+    operations = raster_operations(session.operations, session.contour_offset)
+    assert operations[0].area.equals(
+        boundary.buffer(offset, join_style="mitre") if offset else boundary
+    )
+    preview = render_preview(image, source.size, operations)
+    destination = tmp_path / "native.png"
+    export_png(source, operations, destination)
+    with Image.open(destination) as exported:
+        assert preview.tobytes() == exported.tobytes()
+    assert any(0 < alpha < 160 for alpha in preview.getchannel("A").tobytes())
+    assert preview.getpixel((26, 36)) == (0, 0, 0, 0)
+    assert (mask.area.wkb, mask.boundary.wkb) == frozen
+    assert source_bytes == (path.read_bytes(), source.json_path.read_bytes())
+
+
+@pytest.mark.parametrize("mode", ["inside", "outside"])
+def test_projected_preview_uses_export_filter_and_handles_fully_eroded_mask(mode):
+    native_size = (6000, 4000)
+    preview = Image.new("RGBA", (600, 400), (19, 73, 122, 255))
+    boundary = Polygon([(203, 177), (5233, 793), (3001, 3501)])
+    mask = ContourMask(boundary, mode, boundary)
+    result = render_preview(preview, native_size, [mask])
+    alpha = render_export_alpha(preview.size, native_size, [mask], scale=(0.1, 0.1))
+    assert result.getchannel("A").tobytes() == alpha.tobytes()
+    assert any(0 < value < 255 for value in alpha.tobytes())
+    eroded = raster_operations([mask], -5000)
+    assert eroded[0].area.is_empty
+    eroded_result = render_preview(preview, native_size, eroded)
+    assert eroded_result.getchannel("A").getextrema() == (
+        (0, 0) if mode == "outside" else (255, 255)
+    )

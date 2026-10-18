@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from dale.geometry import analyze_regions, offset_region
-from dale.provenance import LineRecord, geometry_edges, vertex_records
+from dale.provenance import LineRecord, SourceWall, geometry_edges, vertex_records
 from dale.scene import Point, SceneInput
 
 
@@ -36,6 +36,7 @@ class Stroke:
 class ContourMask:
     area: object
     mode: Literal["outside", "inside"]
+    boundary: object = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,8 @@ class GeometryEdit:
     closures: tuple[tuple[Point, ...], ...] = ()
     lineage: tuple[LineRecord, ...] = field(default=(), compare=False)
     ancestry: tuple[LineRecord, ...] = field(default=(), compare=False)
+    wall_styles: tuple = field(default=(), compare=False, kw_only=True)
+    connection_state: tuple = field(default=(), init=False)
 
     def __post_init__(self):
         edges = geometry_edges(self.walls, self.closures)
@@ -53,10 +56,30 @@ class GeometryEdit:
             )
         elif len(self.lineage) != len(edges):
             raise ValueError("Line provenance must match the working edge count.")
+        groups = tuple(record.connection_group for record in self.lineage)
+        object.__setattr__(self, "connection_state", groups if any(groups) else ())
 
     @property
     def vertex_lineage(self):
         return vertex_records(self)
+
+
+@dataclass(frozen=True)
+class AddedSourceWall:
+    """Stable native identity with manual bounds or exact imported source properties."""
+
+    native_id: str
+    bottom: float | None
+    top: float | None
+    source_ref: SourceWall | None = None
+    properties_json: bytes | None = None
+
+
+@dataclass(frozen=True)
+class SourceRepairEdit(GeometryEdit):
+    """Canonical source coordinates followed by explicit manual/imported additions."""
+
+    additions: tuple[AddedSourceWall, ...] = ()
 
 
 Operation = Closure | Stroke | ContourMask | GeometryEdit
@@ -92,7 +115,13 @@ class Session:
                     *geometry.lineage,
                     *operation.lineage,
                 )
-                geometry = GeometryEdit(walls, tuple(closures), tuple(records), geometry.ancestry)
+                geometry = GeometryEdit(
+                    walls,
+                    tuple(closures),
+                    tuple(records),
+                    geometry.ancestry,
+                    wall_styles=geometry.wall_styles,
+                )
             elif isinstance(operation, GeometryEdit):
                 walls, closures = operation.walls, list(operation.closures)
                 geometry = operation
@@ -101,8 +130,9 @@ class Session:
     def analysis(self):
         return analyze_regions(self.walls, self.closures, self.gap_tolerance)
 
-    def make_mask(self, mode: Literal["outside", "inside"]):
-        return ContourMask(offset_region(self.analysis().area, self.contour_offset), mode)
+    def make_mask(self, mode: Literal["outside", "inside"], area=None):
+        area = self.analysis().area if area is None else area
+        return ContourMask(offset_region(area, self.contour_offset), mode, area)
 
     def add(self, operation: Operation):
         self.operations.append(operation)

@@ -71,6 +71,7 @@ class BoundsPreview(QObject):
             return BoundsResult(())
         raster = tuple(op for op in session.operations if isinstance(op, (ContourMask, Stroke)))
         key = (
+            session.source.image_path,
             session.source.size,
             session.analysis().area.wkb,
             session.contour_offset,

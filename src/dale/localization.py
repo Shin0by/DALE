@@ -1,5 +1,7 @@
 """English source strings and Russian desktop translations."""
 
+from textwrap import wrap
+
 from PySide6.QtCore import QTranslator
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
@@ -16,19 +18,488 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dale.scene_template_localization import TEMPLATE_RUSSIAN
-
 RUSSIAN = {
-    **TEMPLATE_RUSSIAN,
+    "Export adjacent regions as one?": "Выгрузить смежные области как одну?",
+    (
+        "Yes: one PNG per connected group of selected regions. No: one PNG per region. "
+        "Unselected regions are not included."
+    ): (
+        "Да: один PNG для каждой связной группы выбранных областей. Нет: отдельный PNG "
+        "для каждой области. Невыбранные области не включаются."
+    ),
+    "Remember the answer between launches. Right-click Export selected regions to change it.": (
+        "Запомнить ответ между запусками. Правый клик по кнопке экспорта выбранных областей "
+        "меняет настройку."
+    ),
+    "Save each adjacent selected group in one PNG.": "Сохранить каждую смежную группу одним PNG.",
+    "Save each selected region in its own PNG.": (
+        "Сохранить каждую выбранную область отдельным PNG."
+    ),
+    "Cancel without exporting or changing the question settings.": (
+        "Отменить экспорт, сохранив настройку вопроса."
+    ),
+    "Right-click this button: configure adjacent-region export.": (
+        "Правый клик по кнопке: настроить объединение смежных областей при экспорте."
+    ),
+    "Save selected regions as transparent PNGs, optionally joining adjacent selections.": (
+        "Сохранить выбранные области прозрачными PNG с возможностью объединить смежные."
+    ),
+    "Do not ask again": "Не спрашивать снова",
+    "Choose the answer for export. Clear the checkbox to ask on every export.": (
+        "Выберите ответ для экспорта. Снимите галочку, чтобы спрашивать при каждом экспорте."
+    ),
+    "Connect new cut endpoints to intersecting contours with shared vertices?": (
+        "Связать новые концы обрезанных линий с пересекающими контурами общими точками?"
+    ),
+    "Connect this point to the other contour with a shared vertex?": (
+        "Связать эту точку с другим контуром, сделав её общей?"
+    ),
+    "Choose the answer for this tool. Clear the checkbox to ask on each contact.": (
+        "Выберите ответ для этого инструмента. Снимите галочку, "
+        "чтобы спрашивать при каждом касании."
+    ),
+    "Remember this answer for this tool. Right-click its button to change it.": (
+        "Запомнить ответ для этого инструмента. Правый клик по его кнопке меняет настройку."
+    ),
+    "Connect the contours with shared vertices.": "Связать контуры общими точками.",
+    "Keep the contours separate.": "Оставить контуры независимыми, даже если точки совпадают.",
+    "Leave contours and question settings unchanged.": (
+        "Отменить правку и оставить настройку вопроса."
+    ),
+    "Right-click the tool button: configure the connection question.": (
+        "Правый клик по кнопке инструмента: настроить вопрос о связи контуров."
+    ),
+    "Select all contour lines": "Выбрать все отрезки контуров",
+    "Select all regions": "Выбрать все области",
+    "Select all elements of the current section in the visible height scope.": (
+        "Выбрать все элементы текущего раздела в выбранном слое высоты."
+    ),
+    "The current section contains selectable elements.": (
+        "В текущем разделе есть доступные элементы."
+    ),
+    "Select contour lines for moving, scaling, rotating or copying.": (
+        "Выбрать линии контуров для перемещения, масштабирования, вращения или копирования."
+    ),
+    "Transform selected open or closed contour lines as one group.": (
+        "Перемещать, масштабировать и вращать выбранные линии открытых и замкнутых контуров вместе."
+    ),
+    "Select open or closed contour lines to move, scale, rotate or copy together.": (
+        "Выбирать линии открытых и замкнутых контуров для совместного перемещения, "
+        "масштабирования, вращения и копирования."
+    ),
+    "Contours are available.": "На сцене есть линии контуров.",
+    "Click: toggle the line under the cursor.": (
+        "Клик: выбрать или снять выбор отрезка под курсором."
+    ),
+    "Double-click: select all lines connected by shared vertices.": (
+        "Двойной клик: выбрать все линии, связанные общими вершинами."
+    ),
+    "Drag over 10 screen pixels: invert lines intersecting the box.": (
+        "Перетаскивание дальше 10 экранных пикселей: инвертировать выбор отрезков в рамке."
+    ),
+    "Empty click clears selection.": "Клик по пустому месту снимает выделение.",
+    "No selected contours": "Контуры не выбраны",
+    "All contours": "Все контуры",
+    "Contour {number}": "Контур {number}",
+    "Selected lines: {count}": "Выбрано отрезков: {count}",
+    "Contour groups: {groups}\nSelected lines: {lines}": (
+        "Связанных контуров: {groups}\nВыбрано отрезков: {lines}"
+    ),
+    "Contours copied. Ctrl+V: place a copy.": "Контуры скопированы. Ctrl+V: вставить копию.",
+    "Vertices": "Вершины",
+    "Delete contours": "Удалить контуры",
+    "Cannot delete contours": "Не удалось удалить контуры",
+    "Delete only selected contour lines; keep unselected lines and image pixels.": (
+        "Удалить только выбранные линии контуров, сохранив остальные линии и пиксели изображения."
+    ),
+    "Contours is active, a line is selected and no gesture or export is in progress.": (
+        "Открыт раздел «Контуры», выбрана линия, нет незавершённого действия или экспорта."
+    ),
+    "Select contours": "Выбор контуров",
+    "Move contours": "Перемещение контуров",
+    "Rotate contours": "Вращение контуров",
+    "Contour point alignment": "К точкам контура",
+    "Contour guide alignment": "По направляющим контура",
+    "Figure point alignment": "К точкам",
+    "Figure guide alignment": "По направляющим",
+    "Copy contours": "Копировать контуры",
+    "Paste contours": "Вставить контуры",
+    "Copy selected contour lines. Image pixels stay in place.": (
+        "Копировать выбранные линии контуров. Пиксели изображения остаются на месте."
+    ),
+    "Place copied contour lines. Image pixels stay in place.": (
+        "Разместить скопированные линии контуров. Пиксели изображения остаются на месте."
+    ),
+    "Contour lines have been copied to the application clipboard.": (
+        "Линии контуров скопированы в буфер программы."
+    ),
+    "Choose a connected contour or all contour lines to select.": (
+        "Выбрать связанный контур или все линии контуров."
+    ),
+    "Select and position whole closed contour figures independently.": (
+        "Выбирать и размещать цельные замкнутые фигуры независимо от посторонних контуров."
+    ),
+    "Move selected contour lines together. Image pixels stay in place.": (
+        "Перемещать выбранные линии контуров вместе. Пиксели изображения остаются на месте."
+    ),
+    "Rotate selected contour lines around their common center.": (
+        "Вращать выбранные линии контуров вокруг общего центра."
+    ),
+    "Snap the highlighted contour vertex to an existing point.": (
+        "Совместить подсвеченную вершину контура с существующей точкой."
+    ),
+    "Align the highlighted contour vertex with vertex X/Y guides.": (
+        "Выровнять подсвеченную вершину контура по горизонтали или вертикали других вершин."
+    ),
+    "This button is enabled and contours are being moved or pasted.": (
+        "Кнопка включена; выполняется перемещение или вставка контуров."
+    ),
+    "Contours enclose a closed figure.": "Контуры образуют замкнутую фигуру.",
+    "At least one contour line is selected.": "Выбрана хотя бы одна линия контура.",
+    "Wheel: rotate selected contours by 0.1 degrees.": (
+        "Колесо: вращать выбранные контуры с шагом 0,1 градуса."
+    ),
+    "Click a figure: select/deselect its whole closed contour. Empty click clears selection.": (
+        "Клик по фигуре: выбрать или снять выбор её замкнутого контура целиком. "
+        "Пустой клик снимает выделение."
+    ),
+    "Drag over 10 screen pixels: invert figures intersecting the box.": (
+        "Перетаскивание дальше 10 экранных пикселей: инвертировать выбор фигур в рамке."
+    ),
+    "Drag selected contour lines: move. Ctrl+wheel: scale.": (
+        "Перетаскивание выбранных линий контуров: перемещение. Ctrl+колесо: масштабирование."
+    ),
+    "Wheel: rotate selected contour lines by 0.1 degrees around their common center.": (
+        "Колесо: вращение выбранных линий контуров с шагом 0,1 градуса вокруг общего центра."
+    ),
+    "The nearest contour vertex is highlighted and stays the grab point while dragging.": (
+        "Ближайшая вершина контура подсвечена и остаётся опорной при перетаскивании."
+    ),
+    "Alt: use the enabled contour point/guide alignment buttons.": (
+        "Alt: применить включённые кнопки привязки контуров к точкам и направляющим."
+    ),
+    "Ctrl+C: copy selected contours. Ctrl+V: preview a copy; click to place. Escape cancels.": (
+        "Ctrl+C: копировать выбранные контуры. Ctrl+V: предпросмотр копии; клик вставляет её. "
+        "Escape отменяет вставку."
+    ),
+    (
+        "Select whole closed figures. Unrelated crossings and nested contours "
+        "do not cut their shape."
+    ): (
+        "Выбрать замкнутые фигуры целиком. Посторонние пересечения и вложенные контуры "
+        "не разрезают их форму."
+    ),
+    "Closed figures stay whole across unrelated crossings and nested contours.": (
+        "Замкнутые фигуры остаются целыми при посторонних пересечениях и вложенных контурах."
+    ),
+    "Selectable closed figures: {cells}\nEditing operations: {operations}": (
+        "Замкнутых фигур для выбора: {cells}\nИзменений: {operations}"
+    ),
+    "Select raster regions": "Выбор областей растра",
+    "Erase raster outside selected regions": "Удалить растр снаружи областей",
+    "Erase raster inside selected regions": "Удалить растр внутри областей",
+    (
+        "Click to toggle a region; drag over 10 screen pixels to invert regions in a box. "
+        "Empty click clears selection."
+    ): (
+        "Клик переключает выделение области; перетаскивание дальше 10 экранных пикселей "
+        "инвертирует выделение в рамке. Клик по пустому месту снимает выделение."
+    ),
+    "Drag over 10 screen pixels: invert regions intersecting the box.": (
+        "Перетаскивание дальше 10 экранных пикселей: инвертировать выделение областей в рамке."
+    ),
+    "Escape: restore the selection from before dragging.": (
+        "Escape: восстановить выделение, которое было до перетаскивания."
+    ),
+    "Raster inside/outside commands use selected regions only.": (
+        "Удаление растра внутри и снаружи действует только относительно выделенных областей."
+    ),
+    "A scene image and selected regions are available.": (
+        "Открыто изображение сцены и выделены области."
+    ),
+    "Erase pixels outside selected regions using the same edge filtering as PNG export.": (
+        "Удалить пиксели снаружи выделенных областей, со сглаживанием краёв как при экспорте PNG."
+    ),
+    "Erase pixels inside selected regions using the same edge filtering as PNG export.": (
+        "Удалить пиксели внутри выделенных областей, со сглаживанием краёв как при экспорте PNG."
+    ),
+    "Decrease value": "Уменьшить значение",
+    "Increase value": "Увеличить значение",
+    "More tools": "Другие инструменты",
+    "Collapse the project/settings panel to give the scene more space.": (
+        "Свернуть панель проекта и настроек, освободив место для сцены."
+    ),
+    "Show the project and settings panel.": "Показать панель проекта и настроек.",
+    "Delete region": "Удалить область",
+    "Cannot delete region": "Не удалось удалить область",
+    (
+        "Delete selected region boundaries, including hole outlines. "
+        "Keep lines inside and image pixels."
+    ): (
+        "Удалить границы выбранных областей, включая границы отверстий. "
+        "Линии внутри и изображение сохраняются."
+    ),
+    "Regions is active, a region is selected and no gesture is in progress.": (
+        "Открыт раздел «Области», есть выделение, текущий жест завершён."
+    ),
+    "Region point alignment": "К точкам",
+    "Region guide alignment": "По направляющим",
+    "Snap the highlighted region vertex to an existing point; move the whole figure.": (
+        "Совместить подсвеченную вершину области с существующей точкой, сдвигая всю фигуру."
+    ),
+    "Align the highlighted region vertex with horizontal/vertical vertex guides.": (
+        "Выровнять подсвеченную вершину области по горизонтали или вертикали других вершин."
+    ),
+    "This button is enabled and a region is being moved or pasted.": (
+        "Кнопка включена; выполняется перемещение или вставка области."
+    ),
+    "The nearest region vertex is highlighted; dragging keeps this vertex as the anchor.": (
+        "Ближайшая вершина области подсвечена; при перетаскивании она остаётся опорной."
+    ),
+    "Alt: use the enabled region point/guide alignment buttons.": (
+        "Alt: применять включённые кнопки привязки области к точкам и направляющим."
+    ),
+    "Import to project…": "Импорт в проект…",
+    (
+        "Import images or scene JSON into the open project; replace the"
+        " current set or add a new one."
+    ): (
+        "Импортировать изображение или JSON в открытый проект: заменить"
+        " текущий набор или добавить новый."
+    ),
+    (
+        "Replace files in the current set or add a new set? Replaced "
+        "files are removed when no other set or history uses them."
+    ): (
+        "Заменить файлы в текущем наборе или добавить новый набор? "
+        "Заменённые файлы удаляются, если не используются другими "
+        "наборами или историей."
+    ),
+    "Replace in current set": "Заменить в текущем наборе",
+    "Add new set": "Добавить новый набор",
+    ("Scene assets (*.json *.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.dale)"): (
+        "Файлы сцены (*.json *.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.dale)"
+    ),
+    "Choose one DALE project, or at most one image and one JSON.": (
+        "Выберите один проект DALE либо не более одного изображения и одного JSON."
+    ),
+    "The project image catalog is full.": "Каталог изображений проекта заполнен.",
+    "Copy region contours": "Копировать контуры областей",
+    "Paste region contours": "Вставить контуры областей",
+    "Cannot paste regions": "Не удалось вставить области",
+    "Copy selected region boundaries. Raster pixels stay in place.": (
+        "Копировать границы выбранных областей. Растр остаётся на месте."
+    ),
+    (
+        "Preview copied contours at the cursor; click to place. Alt with "
+        "Contour alignment: snap to a vertex first, then horizontal/vertical guides. "
+        "Escape: cancel."
+    ): (
+        "Предпросмотр контуров у курсора; щелчок - вставить. Alt с "
+        "притягиванием контуров - сначала к вершине, затем к горизонтали или вертикали. Escape - "
+        "отменить."
+    ),
+    "Pasting with Alt: vertices take priority over horizontal/vertical guides.": (
+        "При вставке с Alt вершины имеют приоритет перед горизонталями и вертикалями."
+    ),
+    "Regions copied. Ctrl+V: place a copy of their contours.": (
+        "Области скопированы. Ctrl+V - разместить копию их контуров."
+    ),
+    ("Alt with Contour alignment enabled: align horizontally/vertically with distant vertices."): (
+        "Alt с включённым притягиванием контуров: выравнивание по "
+        "горизонтали и вертикали с удалёнными вершинами."
+    ),
+    (
+        "Ctrl+C: copy selected region contours. Ctrl+V: preview a copy; "
+        "click to place. Escape: cancel. Raster stays in place."
+    ): (
+        "Ctrl+C - копировать контуры выбранных областей. Ctrl+V - "
+        "предпросмотр копии; щелчок - вставить. Escape - отменить. Растр "
+        "остаётся на месте."
+    ),
+    "The project JSON catalog is full. Export to a different project.": (
+        "Каталог JSON проекта заполнен. Выгрузите набор в другой проект."
+    ),
+    "Dataset": "Набор",
+    "Image": "Изображение",
+    "No JSON": "Без JSON",
+    "No image": "Без изображения",
+    "Rename…": "Переименовать…",
+    "Rename current set": "Переименовать текущий набор",
+    "Set name": "Название набора",
+    "Cannot rename set": "Не удалось переименовать набор",
+    "Export to project…": "Экспорт в проект…",
+    ("Choose project assets independently. Each pair retains its editing history."): (
+        "Выбирайте JSON и изображение независимо. У каждой пары сохраняется своя история правок."
+    ),
+    "Rename the current JSON/image set without changing source files.": (
+        "Переименовать текущий набор JSON и изображения, сохранив исходные файлы."
+    ),
+    (
+        "Append current contours and the exact source image to an existing"
+        " DALE project without opening it."
+    ): (
+        "Добавить текущие контуры и исходное изображение в существующий "
+        "проект DALE, не открывая его."
+    ),
+    "Set appended. The current editor remains open.": (
+        "Набор добавлен. Текущая сцена осталась открытой."
+    ),
+    "An identical set is already in this project.": "Точно такой же набор уже есть в этом проекте.",
+    "Current contours (DALE)": "Исправленные контуры (DALE)",
+    "New rectangle": "Прямоугольник",
+    "New rectangular contour": "Создать прямоугольный контур",
+    (
+        "Press for the first corner, drag, release for the opposite "
+        "corner. One closed contour, one undo step."
+    ): (
+        "Нажмите для первого угла, растяните и отпустите для "
+        "противоположного. Замкнутый контур создаётся за один шаг отмены."
+    ),
+    "A set name must contain 1 to 251 characters.": (
+        "Название набора должно содержать от 1 до 251 символа."
+    ),
+    (
+        "Affected segments: {segments}\nEndpoint extensions: {extensions}\n"
+        "Endpoint shortenings: {retractions}\nShared intersections: {connections}\n\n"
+        "Connect the highlighted lines?"
+    ): (
+        "Затронуто отрезков: {segments}\nПродлений концов: {extensions}\n"
+        "Укорочений концов: {retractions}\nОбщих пересечений: {connections}\n\n"
+        "Соединить подсвеченные линии?"
+    ),
+    "No compatible endpoint moves at this distance.": (
+        "Нет согласованных перемещений концов при этом допуске."
+    ),
+    (
+        "Hover to trace connected lines and valid continuations. White edges show affected lines; "
+        "dashed lines preview extensions and shortened tails. Click to adjust free ends "
+        "along their vectors after confirmation in one undo step."
+    ): (
+        "Наведите курсор для поиска связанных линий. Белые края показывают затронутые линии; "
+        "пунктир - продления и укорачиваемые хвосты. После подтверждения концы перемещаются "
+        "вдоль своих векторов одним шагом отмены."
+    ),
+    (
+        "Extend or shorten eligible free ends along their vectors after "
+        "confirmation. Distance uses screen pixels."
+    ): (
+        "Продлить или укоротить свободные концы вдоль их векторов после подтверждения. "
+        "Допуск измеряется в экранных пикселях."
+    ),
+    "Height layers": "Слои высоты",
+    "All height layers": "Все слои",
+    "Ambiguous heights": "Неоднозначные высоты",
+    "{range} (exact range)": "{range} (только этот диапазон)",
+    (
+        "Show and edit one height band including shared contours, or an exact source range. "
+        "Shared contours keep one identity in every covered band. New contours use this range."
+    ): (
+        "Показать и редактировать слой вместе с общими контурами или только точный диапазон. "
+        "Общий контур остаётся одним во всех своих слоях. Новые контуры получают этот диапазон."
+    ),
+    (
+        "Repair contours by height layers, move endpoints and draw ordinary new contours. "
+        "Original properties are preserved. Disable for PNG editing."
+    ): (
+        "Склеивание по слоям высоты, перемещение точек и рисование новых обычных контуров. "
+        "Исходные свойства сохраняются. Выключите для подготовки PNG."
+    ),
+    (
+        "Original contours: {count}\nNew contours: {added}\nVisible contours: {visible}\n"
+        "Height bands: {layers}\nAmbiguous heights: {ambiguous}"
+    ): (
+        "Исходных контуров: {count}\nНовых контуров: {added}\nВидимых контуров: {visible}\n"
+        "Слоёв высоты: {layers}\nНеоднозначных высот: {ambiguous}"
+    ),
+    "Choose a height range before drawing a new contour.": (
+        "Выберите диапазон высоты справа перед рисованием нового контура."
+    ),
+    "Moving this point would collapse a contour. The move was not applied.": (
+        "Такое перемещение схлопнет контур в точку. Перемещение не применено."
+    ),
+    (
+        "Drag a circle: move existing contour endpoints. Alt-drag: use enabled "
+        "angle/contour alignment buttons; "
+        "guides show anchors."
+    ): (
+        "Перетаскивайте кружок для перемещения концов контура. Alt применяет включённые "
+        "кнопки углов и привязки по контуру; опоры показаны направляющими."
+    ),
+    "Shared endpoints follow the contour in every covered height band.": (
+        "Общие точки перемещаются вместе с контуром во всех его слоях высоты."
+    ),
+    "Use New line to close a gap manually. Escape: cancel the current gesture.": (
+        "Для ручного замыкания используйте новую линию контура. Escape: отмена действия."
+    ),
+    "Choose a height range. Press, drag, release: create an ordinary contour there.": (
+        "Выберите диапазон высоты. Нажмите, протяните, отпустите: создать обычный контур."
+    ),
+    "Original contours are not split or replaced. Escape: cancel the current gesture.": (
+        "Исходные контуры не разбиваются и не заменяются. Escape: отмена действия."
+    ),
+    "Editing operations: {operations}": "Изменений: {operations}",
+    "No compatible endpoint extensions at this distance.": (
+        "Нет согласованных продлений концов при этом допуске."
+    ),
+    "Preserve JSON when joining contours": "Сохранять JSON при склеивании контуров",
+    (
+        "Join existing contours by height layers without duplicating contours. "
+        "Other geometry tools are disabled in this mode. Disable for PNG editing."
+    ): (
+        "Склеивать исходные контуры по слоям высоты без дублирования. "
+        "Остальные инструменты геометрии отключены. Выключите этот режим для подготовки PNG."
+    ),
+    "Export JSON…": "Экспорт JSON…",
+    "Export the current set's applied contours as JSON, including unsaved edits.": (
+        "Экспортировать текущие контуры выбранного набора в JSON, включая несохранённые правки."
+    ),
+    "Height bands: {layers}. Conflict groups left unchanged: {conflicts}.": (
+        "Слоёв высоты: {layers}. Конфликтных групп без изменений: {conflicts}."
+    ),
+    "Review original contours: {numbers}.": "Проверьте исходные контуры: {numbers}.",
+    "Source contours: {count}\nHeight bands: {layers}\nAmbiguous heights: {ambiguous}": (
+        "Исходных контуров: {count}\nСлоёв высоты: {layers}\nНеоднозначных высот: {ambiguous}"
+    ),
+    "JSON exported": "JSON экспортирован",
+    "Current set contours exported.\n{path}": "Текущие контуры набора экспортированы.\n{path}",
+    "Cannot export scene JSON": "Не удалось экспортировать JSON сцены",
+    "Cannot enable JSON repair": "Не удалось включить исправление JSON",
+    "Undo other geometry edits or reopen the JSON for safe repair.": (
+        "Для безопасного исправления отмените другие правки геометрии или откройте JSON заново."
+    ),
+    "Disable JSON repair and open a scene image for PNG export.": (
+        "Для экспорта PNG отключите исправление JSON и откройте изображение сцены."
+    ),
+    "PNG export": "Экспорт PNG",
+    "JSON repair requires original wall identities. Undo geometry edits or reopen the JSON.": (
+        "Для исправления JSON нужны исходные контуры. Отмените правки геометрии "
+        "или откройте JSON заново."
+    ),
+    "JSON export supports safe contour repair only. Undo other geometry edits or reopen.": (
+        "В JSON можно выгрузить только безопасное склеивание контуров. "
+        "Отмените другие правки геометрии или откройте исходник заново."
+    ),
+    "JSON export cannot replace an imported source file.": "Нельзя перезаписывать исходный файл.",
+    "Source JSON changed outside DALE. Reopen it before exporting.": (
+        "Исходный JSON изменён вне DALE. Откройте его заново перед экспортом."
+    ),
+    "The original scene snapshot is no longer intact.": "Исходные данные сцены изменены.",
+    "Open a scene JSON before exporting repaired JSON.": (
+        "Откройте JSON сцены перед экспортом исправленного JSON."
+    ),
+    "The repair preview is no longer current. Analyze connections again.": (
+        "Предпросмотр исправлений устарел. Повторите анализ соединений."
+    ),
+    "Scene images (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)": (
+        "Изображения сцены (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff)"
+    ),
+    "This project contains no scene JSON.": "В этом проекте нет JSON сцены.",
     "Sections": "Разделы",
-    "Scene": "Сцена",
     "Main": "Основное",
-    "Levels": "Уровни",
-    "Open scene-level sections.": "Открыть разделы работы со сценой.",
     "Common navigation, selection, visibility, and settings controls.": (
         "Общие действия: перемещение, выделение, видимость контуров и настройки."
     ),
-    "Open the scene levels panel.": "Открыть панель уровней сцены.",
     "Show or hide the application settings panel.": (
         "Показать или скрыть панель настроек приложения."
     ),
@@ -97,8 +568,8 @@ RUSSIAN = {
         "Ctrl+wheel while drawing: adjust the radius."
     ): (
         "Нажмите для задания центра, тяните для изменения радиуса, "
-        "отпустите для создания круглого контура. До 0,5 клетки — 4 "
-        "вершины, до 1 — 6, до 2 — 8; дальше число вершин растёт. "
+        "отпустите для создания круглого контура. До 0,5 клетки - 4 "
+        "вершины, до 1 - 6, до 2 - 8; дальше число вершин растёт. "
         "Ctrl+колесо при рисовании: изменить радиус."
     ),
     ("Circle center and radius must be finite and within coordinate limits."): (
@@ -115,15 +586,20 @@ RUSSIAN = {
     "Click a line: insert a contour point. Drag a circle: move it.": (
         "Клик по линии: добавить точку контура. Тяните кружок для перемещения."
     ),
-    ("Double-click a circle: delete the point. Alt-drag: follow the line vector."): (
-        "Двойной клик по кружку: удалить точку. Alt при перетаскивании: вдоль линии."
+    (
+        "Double-click a circle: delete the point. Alt-drag: use enabled angle/contour "
+        "alignment buttons; "
+        "guides show anchors."
+    ): (
+        "Двойной клик по кружку: удалить точку. Alt применяет включённые кнопки углов "
+        "и привязки по контуру; опоры показаны направляющими."
     ),
     "Press, drag, release: draw a contour line.": "Нажать, тянуть, отпустить: новая линия контура.",
     "Hover: preview contour connections. Click: review and apply.": (
         "Наведение: предпросмотр замыкания контуров. Клик: подтверждение и применение."
     ),
-    "Drag the circle: erase highlighted contour lines.": (
-        "Тяните круг: стереть подсвеченные линии контура."
+    "Drag the circle: erase highlighted pieces up to intersections or endpoints.": (
+        "Тяните круг: стереть подсвеченные части до пересечений или концов."
     ),
     "Drag the circle: erase highlighted contour points.": (
         "Тяните круг: стереть подсвеченные точки контура."
@@ -170,10 +646,10 @@ RUSSIAN = {
     ),
     "Export regions": "Экспорт областей",
     "Auto-close contours": "Автозамыкание контуров",
-    "Edit contour points": "Точки контура",
+    "Edit contour vertices": "Вершины контура",
     "New contour line": "Новая линия контура",
     "Erase contour lines": "Ластик линий контура",
-    "Erase contour points": "Ластик точек контура",
+    "Erase contour vertices": "Ластик вершин контура",
     "Contour snapping (px)": "Прилипание контура (px)",
     "Region artwork offset (px)": "Отступ изображения областей (px)",
     "Erase raster pixels": "Ластик растра",
@@ -193,6 +669,46 @@ RUSSIAN = {
     ): "Выберите исходный или обновлённый JSON сцены из проекта DALE.",
     "Original scene JSON": "Исходный JSON сцены",
     "Updated scene JSON": "Обновлённый JSON сцены",
+    "Right-angle alignment": "Прямые углы",
+    "Contour alignment": "Привязка по контуру",
+    (
+        "With Alt held, snap to 90 degrees between adjacent lines, including rotated "
+        "contours. Own screen-pixel tolerance; highlighted lines and a square mark show the joint."
+    ): (
+        "При зажатом Alt выправлять 90° между смежными линиями, включая повёрнутые контуры. "
+        "Свой допуск в экранных пикселях; подсветка линий и знак прямого угла показывают стык."
+    ),
+    (
+        "With Alt held, snap x/y to other vertices in this connected contour or region. "
+        "Own screen-pixel tolerance; thin dashed guides show the anchors."
+    ): (
+        "При зажатом Alt привязывать X/Y к другим вершинам этого связанного контура или области. "
+        "Свой допуск в экранных пикселях; тонкий пунктир показывает опорные точки."
+    ),
+    "Right-angle tolerance (px)": "Допуск прямого угла (px)",
+    "Contour alignment tolerance (px)": "Допуск привязки по контуру (px)",
+    "Independent screen-pixel distance to a 90-degree joint. Requires this button and Alt.": (
+        "Свой допуск до стыка 90° в экранных пикселях. Нужны включённая кнопка и зажатый Alt."
+    ),
+    (
+        "Independent screen-pixel distance to a contour vertex's horizontal/vertical guide. "
+        "Requires this button and Alt."
+    ): (
+        "Свой допуск до горизонтали/вертикали вершины контура в экранных пикселях. "
+        "Нужны включённая кнопка и зажатый Alt."
+    ),
+    "Current contours (DALE).json": "Исправленные контуры (DALE).json",
+    "Save JSON…": "Сохранить JSON…",
+    "Save the selected JSON to a separate file without importing it.": (
+        "Сохранить выбранный JSON отдельным файлом без импорта."
+    ),
+    (
+        "Current contours (DALE) contains applied line edits only, in image pixels. "
+        "Use it in DALE; it is not a full Foundry Scene."
+    ): (
+        "«Исправленные контуры (DALE)» содержит текущие линии в пикселях изображения. "
+        "Этот JSON предназначен для DALE, а не для импорта полной сцены в Foundry."
+    ),
     "Import": "Импортировать",
     "Load the selected scene JSON for the current scene image.": (
         "Загрузить выбранный JSON сцены для текущего изображения сцены."
@@ -255,7 +771,7 @@ RUSSIAN = {
         "connected lines. Each notch is one undo step."
     ): (
         "Колесо: вращение выбранных контуров с шагом 0,1° вокруг общего "
-        "центра. Вверх — по часовой стрелке, вниз — обратно. Растр "
+        "центра. Вверх - по часовой стрелке, вниз - обратно. Растр "
         "остаётся на месте. Правый клик: настройка связанных линий. "
         "Каждый шаг колеса можно отменить."
     ),
@@ -323,12 +839,12 @@ RUSSIAN = {
     ),
     (
         "Click a line to insert; drag a fixed-size circle to move; "
-        "double-click it to delete. Hold Alt to move along the selected "
-        "line vector."
+        "double-click it to delete. Hold Alt to use enabled angle/contour alignment buttons "
+        "with their independent tolerances."
     ): (
         "Клик по линии добавляет точку; тяните кружок для перемещения, "
-        "дважды щёлкните для удаления. Зажмите Alt, чтобы двигать точку "
-        "только по вектору выбранного отрезка. Отпустите Alt для "
+        "дважды щёлкните для удаления. Alt применяет включённые кнопки углов и "
+        "привязки по контуру с независимыми допусками. Отпустите Alt для "
         "свободного движения. Escape отменяет жест."
     ),
     (
@@ -339,7 +855,7 @@ RUSSIAN = {
     ): (
         "Наведите курсор, чтобы проследить связанные линии и допустимые "
         "продолжения. Белый кант показывает затрагиваемые линии, пунктир "
-        "— продолжения. Клик открывает подтверждение «Отмена / Да». "
+        "- продолжения. Клик открывает подтверждение «Отмена / Да». "
         "Продление выполняется одним шагом отмены."
     ),
     "Confirm auto-close": "Подтвердить автозамыкание",
@@ -416,12 +932,6 @@ RUSSIAN = {
     ),
     "Decrease by 1 px.": "Уменьшить на 1 px.",
     "Increase by 1 px.": "Увеличить на 1 px.",
-    (
-        "Select the target Foundry generation. The choice is saved between launches."
-    ): "Выберите версию Foundry. Выбор запоминается между запусками.",
-    "Foundry version changed; preferences could not be written.": (
-        "Версия Foundry изменена, но сохранить настройки не удалось."
-    ),
     "PNG: none": "PNG: нет",
     "Tool size": "Размер",
     "Image + JSON": "Изображение сцены + JSON",
@@ -461,8 +971,8 @@ RUSSIAN = {
         "connected groups of unresolved lines. PNG bounds include every "
         "nonzero bicubic alpha pixel, clipped to the scene image."
     ): (
-        "Замкнутые — связанные замкнутые области текущей геометрии. "
-        "Незамкнутые — связанные группы незамкнутых линий. PNG включает "
+        "Замкнутые - связанные замкнутые области текущей геометрии. "
+        "Незамкнутые - связанные группы незамкнутых линий. PNG включает "
         "каждый пиксель с альфа-каналом больше нуля после "
         "bicubic-сглаживания в пределах исходного изображения сцены."
     ),
@@ -471,10 +981,10 @@ RUSSIAN = {
         "Выберите все замкнутые области или одну для подсветки и экспорта."
     ),
     ("Press for the first point, drag, release for the second. Snap now or when moving points."): (
-        "Нажатие задаёт первую точку, отпускание — вторую. Прилипание "
+        "Нажатие задаёт первую точку, отпускание - вторую. Прилипание "
         "работает при создании и переносе."
     ),
-    ("Erase entire line segments touched by the circle. Drag is one undo step."): (
+    ("Erase touched pieces between intersections or endpoints. Drag is one undo step."): (
         "Удалить отрезки, задетые кругом. Всё движение мышью отменяется одним шагом."
     ),
     (
@@ -498,20 +1008,6 @@ RUSSIAN = {
     ),
     "Language changed; preferences could not be written.": (
         "Язык изменён; сохранить настройки на диск не удалось."
-    ),
-    (
-        "Foundry 13: place the PNG as a tile at {height} ft. Floor "
-        "visibility depends on the scene's module configuration."
-    ): (
-        "Foundry 13: разместите PNG как тайл на высоте {height} футов. "
-        "Видимость этажей зависит от модулей сцены."
-    ),
-    (
-        "Foundry 14: assign the PNG to the intended Scene Level at "
-        "{height} ft and configure its elevation range/visibility."
-    ): (
-        "Foundry 14: назначьте PNG нужному уровню сцены на высоте "
-        "{height} футов и настройте диапазон высот и видимость."
     ),
     "Cancelling after the current decode/stripe…": (
         "Отмена после текущего декодирования или полосы изображения…"
@@ -538,13 +1034,14 @@ RUSSIAN = {
     "Fit": "Вся сцена",
     "Show contours": "Показывать контуры",
     "Apply alignment": "Применить смещение",
-    "Target": "Версия Foundry",
     "Language": "Язык",
-    "Open a scene image and its scene JSON to begin.": (
-        "Откройте изображение сцены и соответствующий JSON сцены."
+    "Open a scene image to begin; scene JSON is optional.": (
+        "Откройте изображение сцены. JSON сцены необязателен."
     ),
     "Ready. All editing is local.": "Готово. Файлы обрабатываются на этом компьютере.",
-    "Load a scene image and its scene JSON.": "Загрузить изображение сцены и JSON сцены.",
+    "Load a scene image and optional scene JSON.": (
+        "Загрузить изображение сцены и необязательный JSON сцены."
+    ),
     "Open a portable .dale archive including sources and undo history.": (
         "Открыть архив .dale с исходниками и историей изменений."
     ),
@@ -575,21 +1072,13 @@ RUSSIAN = {
     ("Apply source-scene origin offsets. Existing edits require save/discard."): (
         "Применить смещение начала сцены. Текущую работу можно предварительно сохранить."
     ),
-    ("Presets every 5 ft; type any whole number of feet, including negatives."): (
-        "Готовые высоты через 5 футов. Можно ввести целое число, включая отрицательное."
-    ),
     (
         "Connect free contour ends within this distance in original image "
         "pixels. 0 disables joining."
     ): (
         "Соединять свободные концы контуров в пределах указанного "
-        "расстояния в исходных пикселях. 0 — выключено."
+        "расстояния в исходных пикселях. 0 - выключено."
     ),
-    "Enter a whole-number elevation in feet.": "Введите высоту в футах целым числом.",
-    "Elevation must be a whole number of feet.": "Высота должна быть целым числом футов.",
-    (
-        "Placement in Foundry is configured separately. PNG margin is configurable."
-    ): "Размещение настраивается в Foundry. Отступ PNG задаётся отдельно.",
     ("Contour preview updated. Apply Remove outside/inside to use these settings."): (
         "Предпросмотр контура обновлён. Примените «Удалить снаружи/внутри», чтобы изменить маску."
     ),
@@ -602,7 +1091,6 @@ RUSSIAN = {
     "DALE projects (*.dale)": "Проекты DALE (*.dale)",
     "Open scene image": "Открыть изображение сцены",
     "Load scene JSON": "Загрузить JSON сцены",
-    "Scene images (*.jpg *.jpeg)": "Изображения сцены (*.jpg *.jpeg)",
     "Scene JSON (*.json)": "JSON сцены (*.json)",
     "Cannot open scene": "Не удалось открыть сцену",
     "Cannot save project": "Не удалось сохранить проект",
@@ -616,7 +1104,6 @@ RUSSIAN = {
     ("No enclosed area remains. Reduce the inward offset or close a boundary."): (
         "Замкнутая область исчезла. Уменьшите отступ внутрь или замкните контур."
     ),
-    "Invalid elevation": "Некорректная высота",
     "Export separate PNGs": "Экспорт отдельных PNG",
     "Exporting separate PNGs…": "Экспорт отдельных PNG…",
     "Export failed": "Ошибка экспорта",
@@ -633,9 +1120,625 @@ RUSSIAN = {
 }
 
 
+RUSSIAN.update(
+    {
+        "Rename the dataset. Export filenames follow this name.": (
+            "Переименовать набор. Имена экспортируемых файлов берутся из этого названия."
+        ),
+        "Rename this file label without changing its contents.": (
+            "Переименовать файл в наборе, сохранив его содержимое."
+        ),
+        "Scene JSON": "JSON сцены",
+        "Scene image": "Изображение сцены",
+        "Load JSON": "Загрузить JSON",
+        "Replace JSON": "Заменить JSON",
+        "Merge contours": "Объединить контуры",
+        "Load image": "Загрузить изображение",
+        "Replace image": "Заменить изображение",
+        "To another dataset": "В другой набор",
+        "Delete JSON": "Удалить JSON",
+        "Delete image": "Удалить изображение",
+        "Import datasets from project": "Импорт наборов из проекта",
+        "Export dataset to project": "Экспорт набора в проект",
+        "Import datasets": "Импорт наборов",
+        "Export dataset": "Экспорт набора",
+        "Save JSON": "Сохранить JSON",
+        "Cancel this operation without changing the datasets.": (
+            "Отменить эту операцию, сохранив наборы без изменений."
+        ),
+        "Move this file and its current edits to the chosen dataset, removing it here.": (
+            "Перенести файл с текущими правками в выбранный набор, убрав его из этого набора."
+        ),
+        (
+            "Copy this file and its current edits to the chosen dataset, "
+            "keeping both copies independent."
+        ): ("Скопировать файл с текущими правками в выбранный набор. Обе копии будут независимы."),
+        "Create an independent empty dataset, then load its JSON or image.": (
+            "Создать независимый пустой набор, затем загрузить в него JSON или изображение."
+        ),
+        (
+            "Delete the selected dataset, including its JSON, contours, image and edits.\n"
+            "External files are kept. Deleting the last dataset leaves one empty dataset."
+        ): (
+            "Удалить выбранный набор вместе с JSON, контурами, изображением и правками.\n"
+            "Внешние файлы сохраняются. После удаления последнего набора остаётся один пустой."
+        ),
+        (
+            "Choose a Scene JSON and load its contours into this dataset.\n"
+            "You can also choose a JSON stored in a DALE project. The image and "
+            "raster edits are kept."
+        ): (
+            "Выбрать JSON сцены и загрузить его контуры в этот набор.\n"
+            "Можно выбрать JSON из проекта DALE. Изображение и правки растра сохраняются."
+        ),
+        (
+            "Choose another JSON to replace the current JSON and all its "
+            "contours, including edits.\n"
+            "The image and raster edits are kept. Use Merge contours to keep the current contours."
+        ): (
+            "Выбрать другой JSON вместо текущего JSON и всех его контуров, включая правки.\n"
+            "Изображение и правки растра сохраняются. Для дополнения используйте "
+            "«Объединить контуры»."
+        ),
+        (
+            "Choose another JSON and add its contours to the current ones, "
+            "keeping existing edits.\n"
+            "Exact copies of coordinates and properties are skipped. Export "
+            "produces one combined JSON."
+        ): (
+            "Выбрать ещё один JSON и добавить его контуры к текущим, сохранив "
+            "существующие правки.\n"
+            "Точные копии координат и свойств пропускаются. Экспортируется один общий JSON."
+        ),
+        (
+            "Choose an image for this dataset. Existing contours keep their coordinates.\n"
+            "For a completely empty dataset, a same-name JSON beside the image is loaded too."
+        ): (
+            "Выбрать изображение для этого набора. Существующие контуры сохраняют координаты.\n"
+            "В полностью пустой набор также загрузится JSON с тем же именем рядом с изображением."
+        ),
+        (
+            "Choose another image to replace the current image and its raster edits.\n"
+            "Contours keep their coordinates."
+        ): (
+            "Выбрать другое изображение вместо текущего изображения и его правок растра.\n"
+            "Контуры сохраняют координаты."
+        ),
+        (
+            "Choose another dataset, then move or copy this file with its current edits.\n"
+            "Move removes it from this dataset; copy keeps both versions independent.\n"
+            "An occupied destination requires explicit replacement."
+        ): (
+            "Выбрать другой набор, затем перенести или скопировать в него этот "
+            "файл с текущими правками.\n"
+            "При переносе файл убирается из этого набора; при копировании обе версии независимы.\n"
+            "Занятое место требует явного подтверждения замены."
+        ),
+        (
+            "Remove this dataset's JSON and all its contours, including edits.\n"
+            "The image and raster edits are kept. External files are kept."
+        ): (
+            "Убрать из набора JSON и все его контуры, включая правки.\n"
+            "Изображение, правки растра и внешние файлы сохраняются."
+        ),
+        (
+            "Remove this dataset's image and all its raster edits.\n"
+            "Contours and external files are kept."
+        ): (
+            "Убрать из набора изображение и все его правки растра.\n"
+            "Контуры и внешние файлы сохраняются."
+        ),
+        (
+            "Choose an existing DALE project and select complete datasets to add here.\n"
+            "Their files and edits are copied; the current datasets are kept."
+        ): (
+            "Выбрать существующий проект DALE и отметить наборы для добавления сюда целиком.\n"
+            "Их файлы и правки копируются; текущие наборы сохраняются."
+        ),
+        (
+            "Add the selected dataset with its current files and edits to an "
+            "existing DALE project.\n"
+            "The destination stays closed and its other datasets are kept. "
+            "Duplicate names get a suffix."
+        ): (
+            "Добавить выбранный набор с текущими файлами и правками в существующий проект DALE.\n"
+            "Проект назначения остаётся закрытым, его наборы сохраняются. "
+            "Совпавшие имена получают суффикс."
+        ),
+        (
+            "Close the manager and discard unapplied changes.\n"
+            "Changes already applied to the editor remain."
+        ): (
+            "Закрыть менеджер и отменить неприменённые изменения.\n"
+            "Уже применённые в редакторе изменения остаются."
+        ),
+        (
+            "Apply all dataset changes to the editor and keep this manager open.\n"
+            "Use Save project to write the project to disk."
+        ): (
+            "Применить все изменения наборов в редакторе, оставив менеджер открытым.\n"
+            "Для записи проекта на диск используйте «Сохранить проект»."
+        ),
+        (
+            "Apply all dataset changes, open the selected dataset in the editor "
+            "and close the manager.\n"
+            "Use Save project to write the project to disk."
+        ): (
+            "Применить изменения всех наборов, открыть выбранный набор в "
+            "редакторе и закрыть менеджер.\n"
+            "Для записи проекта на диск используйте «Сохранить проект»."
+        ),
+        "Dataset manager": "Менеджер наборов",
+        "Dataset manager…": "Менеджер наборов…",
+        "Discard": "Не сохранять",
+        "Dismiss": "Закрыть",
+        "&Dismiss": "&Закрыть",
+        "Hide right panel": "Скрыть правую панель",
+        "Show right panel": "Показать правую панель",
+        "Choose a dataset with its current image and contours.": (
+            "Выбрать набор с его текущим изображением и контурами."
+        ),
+        "Open the dataset manager. Ctrl+I": "Открыть менеджер наборов. Ctrl+I",
+        "No dataset": "Нет набора",
+        "Close project": "Закрыть проект",
+        "Cannot update datasets": "Не удалось изменить наборы",
+        "Use a nonempty file-safe name of at most 240 characters.": (
+            "Введите непустое имя до 240 символов, допустимое для файла."
+        ),
+        "A dataset with this name already exists.": "Набор с таким именем уже существует.",
+        "+ New dataset": "+ Новый набор",
+        "Delete dataset": "Удалить набор",
+        "+ Add JSON…": "+ Добавить JSON…",
+        "Replace…": "Заменить…",
+        "Transfer…": "Передать…",
+        "Delete": "Удалить",
+        "Add…": "Добавить…",
+        "Export filenames": "Имена при экспорте",
+        "Names and paths inside JSON are preserved.": "Имена и пути внутри JSON сохраняются.",
+        "Import datasets from project…": "Импорт наборов из проекта…",
+        "Export dataset to project…": "Экспорт набора в проект…",
+        "Drag JSON or an image onto another dataset. Changes apply together.": (
+            "Перетащите JSON или изображение на другой набор. Изменения применяются вместе."
+        ),
+        "Apply": "Применить",
+        "Open dataset": "Открыть набор",
+        "Drag to another dataset, then choose Move or Copy.": (
+            "Перетащите на другой набор и выберите «Перенести» или «Копировать»."
+        ),
+        "Empty dataset": "Пустой набор",
+        "Delete this dataset and its edits? External source files are kept.": (
+            "Удалить этот набор и его правки? Внешние исходные файлы сохраняются."
+        ),
+        "Delete JSON and all current contours? The image is kept.": (
+            "Удалить JSON и все текущие контуры? Изображение останется."
+        ),
+        "Delete the image and its raster edits? Contours are kept.": (
+            "Удалить изображение и его правки растра? Контуры останутся."
+        ),
+        "JSON added; existing contours are kept.": "JSON добавлен; существующие контуры сохранены.",
+        "Dataset updated. Press Apply to keep changes.": (
+            "Набор изменён. Нажмите «Применить», чтобы сохранить изменения."
+        ),
+        "Transfer JSON": "Передать JSON",
+        "Transfer image": "Передать изображение",
+        "Move": "Перенести",
+        "Copy": "Копировать",
+        "The destination already contains this component. Replace it or cancel.": (
+            "В выбранном наборе такой файл уже есть. Замените его или отмените действие."
+        ),
+        "Move or copy the current edits to this dataset?": (
+            "Перенести или скопировать текущие правки в этот набор?"
+        ),
+        "Replace and move": "Заменить и перенести",
+        "Replace and copy": "Заменить и копировать",
+        "Dataset changes applied. Save the project to write them to disk.": (
+            "Изменения наборов применены. Сохраните проект для записи на диск."
+        ),
+        "Dataset exported": "Набор экспортирован",
+        "Cannot export dataset": "Не удалось экспортировать набор",
+        "Unknown dataset.": "Неизвестный набор.",
+        "Unknown dataset component.": "Неизвестный файл набора.",
+    }
+)
+
+
+RUSSIAN.update(
+    {
+        "Purpose: {description}": ("Назначение: {description}"),
+        "Condition: {description}": ("Условие: {description}"),
+        "Keys:": ("Клавиши:"),
+        "Keys: no dedicated shortcut.": ("Клавиши: отдельного сочетания нет."),
+        "No additional conditions.": ("Дополнительных условий нет."),
+        "Run this command.": ("Выполнить действие."),
+        "Dataset manager: create, rename, combine or transfer datasets.": (
+            "Менеджер наборов: создать, переименовать, объединить или перенести наборы."
+        ),
+        "Open a .dale project with its files, edits and undo history.": (
+            "Открыть проект .dale с файлами, правками и историей отмены."
+        ),
+        "Save every dataset and its editing history in the current .dale project.": (
+            "Сохранить все наборы и историю правок в текущем проекте .dale."
+        ),
+        "Save all datasets and editing history to a new .dale project file.": (
+            "Сохранить все наборы и историю правок в новый файл проекта .dale."
+        ),
+        ("Save closed regions as separate transparent PNGs with a coordinate manifest."): (
+            "Сохранить замкнутые области отдельными PNG с прозрачностью и файлом координат."
+        ),
+        "Save the current dataset's contours, including unsaved edits, as JSON.": (
+            "Сохранить текущие контуры набора в JSON, включая несохранённые правки."
+        ),
+        "Close all datasets. Unsaved changes can be saved first.": (
+            "Закрыть все наборы. Перед закрытием можно сохранить изменения."
+        ),
+        "Exit DALE. Unsaved changes can be saved first.": (
+            "Выйти из DALE. Перед выходом можно сохранить изменения."
+        ),
+        "Show the installed version and application information.": (
+            "Показать версию и сведения о программе."
+        ),
+        "Drag with either mouse button to pan the scene. Wheel: zoom.": (
+            "Перетаскивайте сцену любой кнопкой мыши. Колесо меняет масштаб."
+        ),
+        "Hover over a contour to preview connections. Click to confirm them.": (
+            "Наведите на контур, чтобы увидеть возможные соединения. Клик открывает подтверждение."
+        ),
+        "Preview joins across all contours by extending or shortening free ends.": (
+            "Найти соединения на всей сцене, продлевая или укорачивая свободные "
+            "концы. Результат нужно подтвердить."
+        ),
+        ("Press at the first point, drag to the second and release to create a line."): (
+            "Нажмите в первой точке, протяните до второй и отпустите, чтобы создать линию."
+        ),
+        "Press at one corner, drag to the opposite corner and release.": (
+            "Нажмите в одном углу, растяните до противоположного и отпустите."
+        ),
+        "Press at the center, drag the radius and release to create a contour.": (
+            "Нажмите в центре, растяните радиус и отпустите, чтобы создать круглый контур."
+        ),
+        "Delete touched line pieces up to their intersections or endpoints.": (
+            "Удалить задетые части линий до ближайших пересечений или концов."
+        ),
+        "Drag to delete points. Two neighbours reconnect; branches are removed.": (
+            "Проведите кистью, чтобы удалить точки. Две соседние линии "
+            "соединятся; у развилки удалятся её ветви."
+        ),
+        "Toggle snapping to existing points and lines. Points take priority.": (
+            "Включить или выключить прилипание к точкам и линиям. Точки имеют приоритет."
+        ),
+        ("Make a right angle with adjacent contour lines, including rotated contours."): (
+            "Выставить прямой угол относительно соседних линий контура, в том числе повёрнутого."
+        ),
+        "Align a point or shape with other vertices horizontally or vertically.": (
+            "Выровнять точку или фигуру по горизонтали или вертикали с другими вершинами."
+        ),
+        "Edit contour vertices and lines, draw shapes and close gaps.": (
+            "Редактировать вершины и линии контуров, рисовать и замыкать разрывы."
+        ),
+        "Select closed regions, adjust their contours and export PNGs.": (
+            "Перейти к выбору областей, перемещению их контуров и экспорту PNG."
+        ),
+        "Erase image pixels or restore them from the original image.": (
+            "Перейти к стиранию изображения и восстановлению исходных пикселей."
+        ),
+        ("Click a closed region to select or deselect it. Empty click: clear selection."): (
+            "Клик по замкнутой области выбирает её или снимает выбор. Клик по "
+            "пустому месту очищает выбор."
+        ),
+        "Drag selected contours to move them. Image pixels stay in place.": (
+            "Перетащить выбранные контуры. Изображение сцены остаётся на месте."
+        ),
+        (
+            "Wheel: rotate selected contours by 0.1 degrees per notch; up is "
+            "clockwise. Image pixels stay in place."
+        ): (
+            "Колесо поворачивает выбранные контуры на 0,1° за шаг; вверх - по "
+            "часовой стрелке. Изображение остаётся на месте."
+        ),
+        "Save only selected regions as separate transparent PNGs.": (
+            "Сохранить только выбранные области отдельными PNG с прозрачностью."
+        ),
+        "Include scene image pixels beyond the contour or cut inward.": (
+            "Добавить пиксели изображения сцены за контуром или обрезать их внутрь."
+        ),
+        ("Click a line: add a point. Drag a point: move it. Double-click: delete it."): (
+            "Клик по линии добавляет точку. Перетаскивание точки перемещает её, "
+            "двойной клик удаляет."
+        ),
+        "Drag to make image pixels transparent.": (
+            "Проведите кистью, чтобы сделать пиксели изображения прозрачными."
+        ),
+        "Drag to restore image pixels from the original scene image.": (
+            "Проведите кистью, чтобы восстановить пиксели исходного изображения сцены."
+        ),
+        "Make pixels outside closed contours transparent.": (
+            "Сделать пиксели снаружи замкнутых контуров прозрачными."
+        ),
+        "Make pixels inside closed contours transparent.": (
+            "Сделать пиксели внутри замкнутых контуров прозрачными."
+        ),
+        "Undo the last edit in the current dataset.": (
+            "Отменить последнюю правку текущего набора."
+        ),
+        "Reapply the last undone edit in the current dataset.": (
+            "Вернуть последнюю отменённую правку текущего набора."
+        ),
+        "Fit the whole scene image in the editing area.": (
+            "Показать изображение сцены целиком в рабочей области."
+        ),
+        ("Toggle contour visibility. Selected regions and highlighted lines stay visible."): (
+            "Показать или скрыть контуры. Выбранные области и подсвеченные линии остаются видимыми."
+        ),
+        "Deselect regions and highlighted contours; cancel the current gesture.": (
+            "Снять выбор областей и подсветку контуров; отменить текущий жест."
+        ),
+        "Open or close language and tool settings in the right panel.": (
+            "Открыть или закрыть настройки языка и инструментов справа."
+        ),
+        "Copy selected outlines to the clipboard for use in any dataset.": (
+            "Скопировать контуры выбранных областей для вставки в любой набор."
+        ),
+        "Click to place copied outlines. Image pixels stay in place.": (
+            "Поставить копию контуров кликом на сцене. Изображение остаётся на месте."
+        ),
+        "An image or contour JSON is open.": ("Открыто изображение или JSON с контурами."),
+        "This button is enabled and Alt is held while moving a point.": (
+            "Кнопка включена; при перемещении точки зажат Alt."
+        ),
+        "This button is enabled and Alt is held while moving or drawing.": (
+            "Кнопка включена; при перемещении или рисовании зажат Alt."
+        ),
+        "Contours enclose a closed region.": ("Есть замкнутая область."),
+        "At least one region is selected.": ("Выбрана хотя бы одна область."),
+        "Region contours have been copied to the application clipboard.": (
+            "Контуры областей скопированы в буфер программы."
+        ),
+        "A scene image is open and at least one region is selected.": (
+            "Открыто изображение сцены и выбрана хотя бы одна область."
+        ),
+        ("A scene image and closed contours are available; JSON preservation is off."): (
+            "Есть изображение и замкнутые контуры; сохранение исходных данных JSON выключено."
+        ),
+        "The current dataset has contours or a scene JSON.": (
+            "В текущем наборе есть контуры или JSON сцены."
+        ),
+        "A scene image is open; JSON preservation is off.": (
+            "Открыто изображение; сохранение исходных данных JSON выключено."
+        ),
+        "A scene image and closed contours are available.": (
+            "Есть изображение сцены и замкнутые контуры."
+        ),
+        "The current dataset has an edit to undo.": ("В текущем наборе есть правка для отмены."),
+        "The current dataset has an undone edit to reapply.": (
+            "В текущем наборе есть отменённая правка."
+        ),
+        "Alt: use the enabled alignment buttons.": (
+            "Alt: применить включённые кнопки выравнивания."
+        ),
+        "Alt: align corners when Contour alignment is enabled.": (
+            "Alt: выровнять углы при включённой привязке по контуру."
+        ),
+        "Alt: apply this alignment while dragging.": (
+            "Alt: применить это выравнивание при перетаскивании."
+        ),
+        "Ctrl+wheel: scale selected contours.": (
+            "Ctrl+колесо: изменить размер выбранных контуров."
+        ),
+        "Right-click this button: choose whether connected lines follow.": (
+            "Правый клик по кнопке задаёт, перемещать ли связанные линии."
+        ),
+        "Number: snap distance to a right angle, in screen pixels.": (
+            "Значение: допуск до прямого угла в экранных пикселях."
+        ),
+        "Number: snap distance to horizontal/vertical guides, in screen pixels.": (
+            "Значение: допуск до горизонтали или вертикали вершины в экранных пикселях."
+        ),
+        "Number: brush diameter in screen pixels.": (
+            "Значение: диаметр кисти в экранных пикселях."
+        ),
+        "Number: maximum endpoint movement, in screen pixels.": (
+            "Значение: максимальное перемещение конца линии в экранных пикселях."
+        ),
+        "Number: brush diameter in original image pixels.": (
+            "Значение: диаметр кисти в пикселях исходного изображения."
+        ),
+        "Number: snap distance in screen pixels; 0 disables snapping.": (
+            "Значение: допуск прилипания в экранных пикселях; 0 выключает прилипание."
+        ),
+        "Number: original image pixels; positive expands, negative cuts inward.": (
+            "Значение: отступ в пикселях исходного изображения; плюс расширяет, "
+            "минус обрезает внутрь."
+        ),
+        "Ctrl+wheel: change this value.": ("Ctrl+колесо: изменить значение."),
+        "Drag an endpoint to move it in every shared height layer.": (
+            "Перетащить конец линии. Общая точка переместится во всех её слоях высоты."
+        ),
+        "Choose a height range, then drag to draw a new line in that range.": (
+            "Выберите диапазон высоты, затем растяните новую линию на сцене."
+        ),
+        (
+            "Use these tool values for every project. Enabling copies current "
+            "values; disabling restores this project's values."
+        ): (
+            "Применять эти значения инструментов во всех проектах. Включение "
+            "копирует текущие значения, выключение возвращает значения этого "
+            "проекта."
+        ),
+        (
+            "Keep other scene JSON data unchanged while editing contours. Turn "
+            "off to prepare and export PNG regions."
+        ): (
+            "Сохранять остальные данные JSON сцены при правке контуров. Для "
+            "подготовки и экспорта PNG выключите."
+        ),
+        "Create an empty dataset for its own image and contours.": (
+            "Создать пустой набор для отдельного изображения и контуров."
+        ),
+        "Delete this dataset and its edits. External source files are kept.": (
+            "Удалить набор со всеми правками. Исходные файлы на диске сохраняются."
+        ),
+        "Load contours from a JSON file or DALE project. Keep the current image.": (
+            "Загрузить контуры из JSON или проекта DALE. Текущее изображение сохранится."
+        ),
+        "Replace the current JSON and contour edits. Keep the image.": (
+            "Заменить текущий JSON и правки контуров. Изображение сохранится."
+        ),
+        (
+            "Add contours from another JSON without replacing existing ones. "
+            "Export one combined JSON; exact copies are skipped."
+        ): (
+            "Добавить контуры из другого JSON к текущим. Экспортируется один "
+            "общий JSON; точные копии пропускаются."
+        ),
+        (
+            "Load an image without moving existing contours. An empty dataset "
+            "also loads a same-name JSON beside the image."
+        ): (
+            "Загрузить изображение, не сдвигая контуры. Для пустого набора также "
+            "загрузится одноимённый JSON рядом с изображением."
+        ),
+        "Replace the image and its raster edits. Keep contour coordinates.": (
+            "Заменить изображение и его правки растра. Координаты контуров сохранятся."
+        ),
+        ("Move or copy this file and its edits to another dataset. A copy is independent."): (
+            "Перенести или скопировать файл с правками в другой набор. Копия будет независимой."
+        ),
+        "Remove the JSON and all contour edits. Keep the image and external files.": (
+            "Удалить JSON и все правки контуров. Изображение и исходные файлы на диске сохранятся."
+        ),
+        "Remove the image and raster edits. Keep contours and external files.": (
+            "Удалить изображение и правки растра. Контуры и исходные файлы на диске сохранятся."
+        ),
+        "Copy complete datasets from another .dale project into this project.": (
+            "Скопировать целые наборы из другого проекта .dale в текущий."
+        ),
+        ("Add this dataset and its edits to an existing .dale project without opening it."): (
+            "Добавить набор с правками в существующий проект .dale, не открывая его."
+        ),
+        ("Close without applying pending changes. Previously applied changes remain."): (
+            "Закрыть без применения новых правок. Ранее применённые изменения останутся."
+        ),
+        (
+            "Apply changes to the editor and keep this window open. Save project "
+            "writes them to disk."
+        ): (
+            "Применить изменения в редакторе и оставить окно открытым. На диск "
+            "их записывает команда сохранения проекта."
+        ),
+        (
+            "Apply changes, open the selected dataset and close this window. "
+            "Save project writes changes to disk."
+        ): (
+            "Применить изменения, открыть выбранный набор и закрыть окно. На "
+            "диск изменения записывает команда сохранения проекта."
+        ),
+        "A dataset is selected; deleting the last one leaves an empty dataset.": (
+            "Выбран набор; удаление последнего оставит один пустой набор."
+        ),
+        "The selected dataset has JSON or contours.": ("В выбранном наборе есть JSON или контуры."),
+        "The selected dataset already has JSON or drawn contours.": (
+            "В выбранном наборе уже есть JSON или нарисованные контуры."
+        ),
+        "The selected dataset has an image.": ("В выбранном наборе есть изображение."),
+        "This file exists and there is another dataset to receive it.": (
+            "Файл есть в наборе; существует другой набор для передачи."
+        ),
+        "Choose an existing source .dale project.": (
+            "Выберите существующий проект .dale для импорта."
+        ),
+        "Choose an existing destination .dale project.": (
+            "Выберите существующий проект .dale для добавления набора."
+        ),
+        "Select the dataset to edit.": ("Выбран набор для редактирования."),
+        "Escape: close without applying pending changes.": (
+            "Escape: закрыть без применения новых правок."
+        ),
+        "Enter: apply changes and open the selected dataset.": (
+            "Enter: применить изменения и открыть выбранный набор."
+        ),
+        "Close this window.": ("Закрыть это окно."),
+        "Escape: close this window.": ("Escape: закрыть окно."),
+        "Leave contours unchanged.": ("Оставить контуры без изменений."),
+        "Escape: cancel.": ("Escape: отменить действие."),
+        "This button is enabled and a contour point is being moved.": (
+            "Кнопка включена; перемещается точка контура."
+        ),
+        "This button is enabled and a point or shape is being moved or drawn.": (
+            "Кнопка включена; перемещается или рисуется точка либо фигура."
+        ),
+    }
+)
+
+
+RUSSIAN.update(
+    {
+        (
+            "Turn off Preserve JSON when joining contours in the right panel. "
+            "Show the panel with the edge arrow."
+        ): (
+            "Выключите «Сохранять JSON при склеивании контуров» справа. "
+            "Панель раскрывается стрелкой у края."
+        ),
+    }
+)
+
+
+RUSSIAN.update(
+    {
+        "Edit contours by height layers": "Редактировать контуры по слоям высоты",
+        "Filter contour editing by height range. JSON export preserves all other scene data.": (
+            "Выбрать диапазон высоты для редактирования контуров. "
+            "При экспорте JSON остальные данные сцены сохраняются."
+        ),
+        "A scene image is open.": "Открыто изображение сцены.",
+    }
+)
+
+
 def translate(text: str, language: str, **values) -> str:
     result = RUSSIAN.get(text, text) if language == "ru" else text
     return result.format(**values) if values else result
+
+
+def format_tooltip(
+    parts, language, shortcut=None, *, condition=None, keys=(), shortcut_label=None, title=None
+):
+    """Render the tool name, purpose, preconditions and actual controls from stable sources."""
+    purpose = " ".join(translate(part, language) for part in dict.fromkeys(parts) if part)
+    if not purpose:
+        return ""
+    caption = title or shortcut_label
+    lines = [translate(caption, language).replace("&", "")] if caption else []
+    lines.append(translate("Purpose: {description}", language, description=purpose))
+    lines.append(
+        translate(
+            "Condition: {description}",
+            language,
+            description=translate(condition or "No additional conditions.", language),
+        )
+    )
+    key_lines = [translate(key, language) for key in dict.fromkeys(keys)]
+    if shortcut is not None and not shortcut.isEmpty():
+        sequence = shortcut.toString(QKeySequence.SequenceFormat.PortableText)
+        key_lines.insert(
+            0, f"{sequence}: {shortcut_label or translate('Run this command.', language)}"
+        )
+    if key_lines:
+        lines.append(translate("Keys:", language))
+        lines.extend(f"- {line}" for line in key_lines)
+    else:
+        lines.append(translate("Keys: no dedicated shortcut.", language))
+    return "\n".join(
+        chunk
+        for line in lines
+        for chunk in wrap(
+            line,
+            width=68,
+            subsequent_indent="  " if line.startswith("- ") else "",
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
 
 
 class DesktopTranslator(QTranslator):
@@ -663,6 +1766,7 @@ def prepare_control_tooltips(root):
             continue
         if isinstance(control, QToolButton) and control.defaultAction() is None:
             control.setToolTip("Show tools that do not fit in this panel.")
+            control.setProperty("dale_tooltip_title", "More tools")
             continue
         parent = control.parentWidget()
         while parent is not None:
@@ -714,15 +1818,30 @@ def translate_static(root: QWidget, language: str, excluded=()):
             if action is not None:
                 parts = parts or action.property("dale_tooltip_parts")
         if parts:
-            tooltip = "\n".join(translate(part, language) for part in parts)
+            source_parts = parts
         else:
             original = widget.property("dale_original_tooltip")
             if original is None:
                 original = widget.toolTip()
                 widget.setProperty("dale_original_tooltip", original)
-            tooltip = translate(original, language) if original else ""
-        if action is not None and not action.shortcut().isEmpty():
-            keys = action.shortcut().toString(QKeySequence.SequenceFormat.PortableText)
-            tooltip += "\n" + translate("Shortcut: {keys}", language, keys=keys)
+            source_parts = [original] if original else []
+        tooltip = format_tooltip(
+            source_parts,
+            language,
+            action.shortcut() if action is not None else None,
+            condition=widget.property("dale_tooltip_condition")
+            or (action.property("dale_tooltip_condition") if action is not None else None),
+            keys=widget.property("dale_tooltip_keys")
+            or (action.property("dale_tooltip_keys") if action is not None else [])
+            or [],
+            shortcut_label=action.text() if action is not None else None,
+            title=widget.property("dale_tooltip_title")
+            or (action.text() if action is not None else None)
+            or (
+                (widget.text() or widget.accessibleName())
+                if isinstance(widget, QAbstractButton)
+                else None
+            ),
+        )
         if tooltip:
             widget.setToolTip(tooltip)

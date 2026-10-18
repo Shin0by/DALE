@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from itertools import pairwise
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -43,6 +43,7 @@ class LineRecord:
     parents: tuple[str, ...] = ()
     sources: tuple[SourceWall, ...] = ()
     origin: str = "editor"
+    connection_group: str | None = field(default=None, compare=False)
 
     @classmethod
     def source(cls, reference):
@@ -61,11 +62,13 @@ class LineRecord:
             str(uuid4()) if manual else str(uuid5(NAMESPACE_URL, repr((ids, edge_key(edge)))))
         )
         sources = {s.id: s for p in parents for s in p.sources}
+        groups = {p.connection_group for p in parents}
         return cls(
             f"line:{identifier}",
             ids,
             tuple(sources[k] for k in sorted(sources)),
             "editor" if manual else "derived",
+            next(iter(groups)) if len(groups) == 1 else None,
         )
 
 
@@ -76,7 +79,7 @@ def vertex_records(geometry):
         geometry_edges(geometry.walls, geometry.closures), geometry.lineage, strict=True
     ):
         for point in edge:
-            nodes.setdefault(point, []).append(record)
+            nodes.setdefault((point, record.connection_group), []).append(record)
     return tuple(
         {
             "point": point,
@@ -88,8 +91,11 @@ def vertex_records(geometry):
                     {s.id: s for r in records for s in r.sources}.values(), key=lambda s: s.id
                 )
             ],
+            **({"connection_group": group} if group is not None else {}),
         }
-        for point, records in sorted(nodes.items())
+        for (point, group), records in sorted(
+            nodes.items(), key=lambda item: (item[0][0], item[0][1] or "")
+        )
     )
 
 
@@ -97,7 +103,10 @@ class LineageBuilder:
     """Carry identities through exact copies/splits; other changes require explicit parents."""
 
     def __init__(self, geometry):
+        from dale.wall_styles import geometry_styles
+
         self.original = geometry
+        self.styles = geometry_styles(geometry)
         self.edges = geometry_edges(geometry.walls, geometry.closures)
         self.shapes = [LineString(edge) for edge in self.edges]
         self.tree = STRtree(self.shapes)
@@ -133,17 +142,40 @@ class LineageBuilder:
             return LineRecord.child((), edge, manual=True)
         return LineRecord.child(parents, edge, manual=manual)
 
-    def build(self, walls, closures=(), overrides=None):
+    def build(self, walls, closures=(), overrides=None, style_overrides=None):
         from dale.session import GeometryEdit
 
         walls, closures = tuple(walls), tuple(closures)
         overrides = overrides or {}
-        records = tuple(
-            overrides.get(edge_key(edge)) or self.record(edge)
-            for edge in geometry_edges(walls, closures)
-        )
+        used = {}
+        records = []
+        for edge in geometry_edges(walls, closures):
+            key = edge_key(edge)
+            candidates = self.exact.get(key, ())
+            at = used.get(key, 0)
+            record = overrides.get(key)
+            if record is None:
+                record = candidates[at] if at < len(candidates) else self.record(edge)
+            used[key] = at + 1
+            records.append(record)
+        records = tuple(records)
         catalog = {r.id: r for r in (*self.original.ancestry, *self.original.lineage, *records)}
-        return GeometryEdit(walls, closures, records, tuple(catalog.values()))
+        from dale.wall_styles import geometry_styles
+
+        styles = dict(self.styles)
+        for edge, record in zip(geometry_edges(walls, closures), records, strict=True):
+            if style_overrides and edge_key(edge) in style_overrides:
+                styles[record.id] = style_overrides[edge_key(edge)]
+        result = GeometryEdit(
+            walls, closures, records, tuple(catalog.values()), wall_styles=tuple(styles.items())
+        )
+        return GeometryEdit(
+            walls,
+            closures,
+            records,
+            tuple(catalog.values()),
+            wall_styles=tuple(geometry_styles(result).items()),
+        )
 
 
 def encode_record(record):
@@ -189,4 +221,7 @@ def decode_record(value):
         ):
             raise ValueError("Invalid source contour identity.")
         references.append(SourceWall(digest, index, wall_id))
-    return LineRecord(identifier, tuple(parents), tuple(references), origin)
+    group = value.get("connection_group")
+    if group is not None and (not isinstance(group, str) or not 1 <= len(group) <= 128):
+        raise ValueError("Invalid contour connection group.")
+    return LineRecord(identifier, tuple(parents), tuple(references), origin, group)

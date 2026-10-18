@@ -13,13 +13,23 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
-from dale.localization import translate
+from dale.localization import format_tooltip
 
 
 def tool_icon(name):
-    name = {"Contours": "Edit points", "Regions": "Select regions", "Raster": "Erase"}.get(
+    name = {
+        "Contours": "Select regions",
+        "Select figures": "Select regions",
+        "Move figures": "Move regions",
+        "Rotate figures": "Rotate regions",
+        "Figure point alignment": "Region point alignment",
+        "Figure guide alignment": "Region guide alignment",
+    }.get(name, name)
+    name = {"Vertices": "Edit points", "Regions": "Select regions", "Raster": "Erase"}.get(
         name, name
     )
+    if name == "Select raster regions":
+        name = "Select regions"
     canvas = QPixmap(24, 24)
     canvas.fill(Qt.GlobalColor.transparent)
     painter = QPainter(canvas)
@@ -40,7 +50,20 @@ def tool_icon(name):
     def circle(x, y, r=2):
         painter.drawEllipse(QPointF(x, y), r, r)
 
-    if name in ("Open scene", "Open project"):
+    if name == "Select all contour lines":
+        painter.drawRect(QRectF(2, 2, 20, 20))
+        for y in (7, 12, 17):
+            line((6, y), (18, y))
+        painter.setBrush(QColor("#58d9ec"))
+        for y in (7, 12, 17):
+            circle(6, y, 1.4)
+            circle(18, y, 1.4)
+    elif name == "Dataset manager":
+        painter.drawRect(QRectF(3, 5, 13, 15))
+        painter.drawRect(QRectF(7, 2, 13, 15))
+        line((10, 7), (17, 7))
+        line((10, 11), (17, 11))
+    elif name in ("Open scene", "Open project"):
         painter.drawRoundedRect(QRectF(3, 7, 18, 13), 2, 2)
         line((4, 7), (4, 4))
         line((4, 4), (11, 4))
@@ -140,12 +163,29 @@ def tool_icon(name):
         if name == "New line":
             line((17, 18), (23, 18))
             line((20, 15), (20, 21))
+    elif name == "Rename…":
+        painter.drawPolygon(
+            QPolygonF([QPointF(5, 15), QPointF(16, 4), QPointF(20, 8), QPointF(9, 19)])
+        )
+        line((5, 15), (4, 20))
+        line((4, 20), (9, 19))
+        line((13, 7), (17, 11))
+    elif name == "New rectangle":
+        painter.drawRect(QRectF(3, 5, 18, 14))
+        painter.setBrush(QColor("#58d9ec"))
+        circle(3, 5, 2)
+        circle(21, 19, 2)
     elif name == "New circle":
         circle(12, 12, 9)
         painter.setBrush(QColor("#58d9ec"))
         circle(12, 12, 2)
         line((12, 12), (19, 7))
-    elif name in ("Erase", "Restore", "Erase lines", "Erase vertices"):
+    elif name in ("Erase", "Restore", "Erase lines", "Erase vertices", "Delete region"):
+        if name == "Delete region":
+            painter.setPen(QPen(QColor("#58d9ec"), 1.2, Qt.PenStyle.DashLine))
+            painter.drawRect(QRectF(1, 1, 21, 21))
+            painter.setPen(QPen(QColor("#f1f6ff"), 1.8))
+            painter.setBrush(QColor("#303030"))
         painter.drawPolygon(
             QPolygonF(
                 [QPointF(4, 14), QPointF(13, 4), QPointF(21, 11), QPointF(12, 21), QPointF(10, 21)]
@@ -170,13 +210,28 @@ def tool_icon(name):
             ((19, 19), (21, 21)),
         ]:
             line(a, b)
-    elif name in ("Snap", "Snapping (px)"):
+    elif name in ("Snap", "Snapping (px)", "Region point alignment"):
         painter.setBrush(QColor("#58d9ec"))
         circle(5, 19, 3)
         circle(19, 5, 3)
         line((10, 14), (14, 10))
         line((14, 10), (10, 10))
         line((14, 10), (14, 14))
+    elif name == "Right-angle alignment":
+        line((4, 4), (4, 20))
+        line((4, 20), (21, 20))
+        painter.setPen(QPen(QColor("#58d9ec"), 1.6))
+        line((4, 13), (11, 13))
+        line((11, 13), (11, 20))
+    elif name in ("Contour alignment", "Region guide alignment"):
+        painter.drawPolyline(
+            QPolygonF([QPointF(4, 17), QPointF(8, 5), QPointF(20, 9), QPointF(20, 17)])
+        )
+        painter.setPen(QPen(QColor("#58d9ec"), 1.2, Qt.PenStyle.DashLine))
+        line((4, 17), (20, 17))
+        painter.setBrush(QColor("#58d9ec"))
+        circle(4, 17, 2)
+        circle(20, 17, 2)
     elif name == "Select regions":
         painter.setBrush(QColor(88, 217, 236, 90))
         painter.drawPolygon(
@@ -268,15 +323,15 @@ class SizedToolButton(QToolButton):
             QLineEdit { background: transparent; border: 0; padding: 0; font-size: 10px; }
         """)
         editor.ensurePolished()
-        editor.setFixedSize(28, 18)
-        editor.move(10, 49)
+        editor.setFixedSize(34, 18)
+        editor.move(7, 49)
         self.decrease_button, self.increase_button = QToolButton(self), QToolButton(self)
         for button, x, arrow, amount in (
-            (self.decrease_button, 1, Qt.ArrowType.LeftArrow, -1),
-            (self.increase_button, 38, Qt.ArrowType.RightArrow, 1),
+            (self.decrease_button, 0, Qt.ArrowType.LeftArrow, -1),
+            (self.increase_button, 41, Qt.ArrowType.RightArrow, 1),
         ):
             button.setArrowType(arrow)
-            button.setFixedSize(9, 18)
+            button.setFixedSize(7, 18)
             button.move(x, 49)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setStyleSheet("""
@@ -285,6 +340,12 @@ class SizedToolButton(QToolButton):
                 QToolButton:pressed { background: #252525; }
             """)
             button.clicked.connect(lambda checked=False, amount=amount: editor.stepBy(amount))
+        self.help_language = None
+        action.changed.connect(self.refresh_help)
+
+    def refresh_help(self):
+        if self.help_language and self.defaultAction().property("dale_tooltip_parts"):
+            self.set_help(self.help_language)
 
     def editor(self):
         return self.editor_widget
@@ -305,85 +366,70 @@ class SizedToolButton(QToolButton):
         )
 
     def set_help(self, language):
+        self.help_language = language
         tool_name = self.defaultAction().property("dale_tool_key")
-        title, description, modifier = {
-            "Erase lines": (
-                "Contour line eraser diameter (px)",
-                "This tool keeps its own diameter in screen pixels.",
-                "Ctrl+wheel: change this tool's diameter.",
+        tool_name = {
+            "Figure point alignment": "Region point alignment",
+            "Figure guide alignment": "Region guide alignment",
+        }.get(tool_name, tool_name)
+        value_help = {
+            "Right-angle alignment": "Number: snap distance to a right angle, in screen pixels.",
+            "Contour alignment": (
+                "Number: snap distance to horizontal/vertical guides, in screen pixels."
             ),
-            "Erase vertices": (
-                "Contour point eraser diameter (px)",
-                "This tool keeps its own diameter in screen pixels.",
-                "Ctrl+wheel: change this tool's diameter.",
+            "Region guide alignment": (
+                "Number: snap distance to horizontal/vertical guides, in screen pixels."
             ),
-            "Auto-close": (
-                "Contour auto-close distance (px)",
-                "Independent distance in screen pixels; ordinary snapping is unchanged.",
-                "Ctrl+wheel: change the auto-close distance.",
+            "Region point alignment": (
+                "Number: snap distance in screen pixels; 0 disables snapping."
             ),
-            "Close all contours": (
-                "Whole-scene close distance (px)",
-                (
-                    "Extend eligible lines across the whole scene after "
-                    "confirmation. Distance uses screen pixels."
-                ),
-                "Ctrl+wheel: change this value.",
-            ),
-            "Erase": (
-                "Pixel eraser diameter (px)",
-                "Diameter in original image pixels. Ctrl+wheel changes it.",
-                "Ctrl+wheel: change this tool's diameter.",
-            ),
-            "Restore": (
-                "Restore brush diameter (px)",
-                "Diameter in original image pixels. Ctrl+wheel changes it.",
-                "Ctrl+wheel: change this tool's diameter.",
-            ),
-            "Snapping (px)": (
-                "Contour snapping (px)",
-                (
-                    "Distance to existing vertices or lines. Vertices take priority. Click "
-                    "the icon to toggle snapping."
-                ),
-                "Ctrl+wheel: change this value.",
-            ),
+            "Erase lines": "Number: brush diameter in screen pixels.",
+            "Erase vertices": "Number: brush diameter in screen pixels.",
+            "Auto-close": "Number: maximum endpoint movement, in screen pixels.",
+            "Close all contours": "Number: maximum endpoint movement, in screen pixels.",
+            "Erase": "Number: brush diameter in original image pixels.",
+            "Restore": "Number: brush diameter in original image pixels.",
+            "Snapping (px)": "Number: snap distance in screen pixels; 0 disables snapping.",
             "Artwork offset (px)": (
-                "Region artwork offset (px)",
-                (
-                    "Keep scene image pixels beyond the lines. Positive expands the "
-                    "artwork; negative cuts inward."
-                ),
-                "Ctrl+wheel: change this value.",
+                "Number: original image pixels; positive expands, negative cuts inward."
             ),
         }[tool_name]
-        parts = list(
-            dict.fromkeys(
-                [*self.defaultAction().property("dale_tooltip_parts"), title, description]
-            )
+        modifier = "Ctrl+wheel: change this value."
+        editor_parts = [value_help]
+        action = self.defaultAction()
+        parts = [*action.property("dale_tooltip_parts"), value_help]
+        keys = [*(action.property("dale_tooltip_keys") or []), modifier]
+        condition = action.property("dale_tooltip_condition")
+        self.setProperty("dale_tooltip_parts", parts)
+        self.setProperty("dale_tooltip_condition", condition)
+        self.setProperty("dale_tooltip_keys", keys)
+        self.setToolTip(
+            format_tooltip(parts, language, condition=condition, keys=keys, title=action.text())
         )
-        if modifier not in parts:
-            parts.append(modifier)
-        for control in (self, self.editor(), self.editor().lineEdit()):
-            control.setProperty("dale_tooltip_parts", parts)
-            control.setToolTip("\n".join(translate(part, language) for part in parts))
+        for control in (self.editor(), self.editor().lineEdit()):
+            control.setProperty("dale_tooltip_parts", editor_parts)
+            control.setProperty("dale_tooltip_keys", [modifier])
+            control.setProperty(
+                "dale_tooltip_title", action.property("dale_display_key") or tool_name
+            )
+            control.setToolTip(
+                format_tooltip(editor_parts, language, keys=[modifier], title=action.text())
+            )
         for button, description in (
             (self.decrease_button, "Decrease by 1 px."),
             (self.increase_button, "Increase by 1 px."),
         ):
-            parts = [
-                self.defaultAction().property("dale_display_key") or tool_name,
-                description,
-                modifier,
-            ]
+            parts = [description]
             button.setProperty("dale_tooltip_parts", parts)
-            button.setToolTip("\n".join(translate(part, language) for part in parts))
+            button.setProperty("dale_tooltip_keys", [modifier])
+            title = "Decrease value" if button is self.decrease_button else "Increase value"
+            button.setProperty("dale_tooltip_title", title)
+            button.setToolTip(format_tooltip(parts, language, keys=[modifier], title=title))
 
 
 PANEL_HELP = {
     "General": "Open, save, close, export, and navigate projects.",
     "Sections": "Choose which tools appear to the left of the scene image.",
-    "Scene": "Open scene-level sections.",
     "Main": "Common navigation, selection, visibility, and settings controls.",
     "Tool size": "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.",
     "Snapping": "Configure snapping to existing vertices and line interiors.",
@@ -431,7 +477,9 @@ def make_toolbar(window, title, new_row=False, vertical=False):
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         bar.setIconSize(QSize(24, 24))
         bar.setFixedWidth(60)
-        bar.setStyleSheet(STYLE + "QToolBar::separator { height: 1px; width: 38px; }")
+        bar.setStyleSheet(
+            STYLE + "QToolBar { spacing: 3px; } QToolBar::separator { height: 1px; width: 38px; }"
+        )
     elif title == "General":
         bar.setStyleSheet(COMMAND_STYLE)
     elif title != "General":

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import math
+from collections import OrderedDict
 from dataclasses import dataclass
 from itertools import pairwise
 from typing import Literal
 
+from shapely import STRtree
 from shapely.geometry import LineString
 from shapely.geometry import Point as ShapePoint
 
@@ -92,6 +94,101 @@ def snap_point(
     return hit.point if hit else None
 
 
+def alignment_points(
+    geometry: GeometryEdit, vertex: Point, intervals=None, *, neighbours_only=False
+):
+    """Freeze guide anchors in this connected contour, respecting optional height intervals."""
+    edges = geometry_edges(geometry.walls, geometry.closures)
+    shapes = [LineString(edge) for edge in edges]
+    tree = STRtree(shapes)
+    seed = ShapePoint(vertex)
+    pending = [
+        int(i) for i in tree.query(seed.buffer(EPSILON)) if shapes[int(i)].distance(seed) <= EPSILON
+    ]
+    visited = set(pending)
+    neighbours = {p for i in pending for p in edges[i] if not _same(p, vertex)}
+    if neighbours_only:
+        return tuple(sorted(neighbours, key=lambda p: (math.dist(p, vertex), p)))
+    while pending:
+        index = pending.pop()
+        for other in tree.query(shapes[index].buffer(EPSILON)):
+            other = int(other)
+            if other in visited or shapes[index].distance(shapes[other]) > EPSILON:
+                continue
+            if intervals is not None and (
+                intervals[index] is None
+                or intervals[other] is None
+                or max(intervals[index][0], intervals[other][0])
+                >= min(intervals[index][1], intervals[other][1])
+            ):
+                continue
+            visited.add(other)
+            pending.append(other)
+    return tuple(
+        sorted(
+            {p for i in visited for p in edges[i] if not _same(p, vertex)},
+            key=lambda p: (p not in neighbours, math.dist(p, vertex), p),
+        )
+    )
+
+
+def align_orthogonal_point(point: Point, anchors, tolerance: float):
+    """Snap x/y independently to fixed vertices in the connected contour."""
+    guides = []
+    destination = list(point)
+    for axis in (0, 1):
+        candidates = [
+            (abs(point[axis] - anchor[axis]), rank, anchor)
+            for rank, anchor in enumerate(anchors)
+            if abs(point[axis] - anchor[axis]) <= tolerance
+        ]
+        if candidates:
+            anchor = min(candidates)[2]
+            destination[axis] = anchor[axis]
+            guides.append((axis, anchor))
+    return tuple(destination), tuple(guides)
+
+
+def right_angle_point(point, preferred, vertex, neighbours, geometry, tolerance):
+    """Snap a joint to 90 degrees, independent of map axes; return its two guide legs."""
+    if len(neighbours) >= 2:
+        a, b = neighbours[:2]
+        center = tuple((a[i] + b[i]) / 2 for i in (0, 1))
+        radius = math.dist(a, b) / 2
+        direction = tuple(preferred[i] - center[i] for i in (0, 1))
+        length = math.hypot(*direction)
+        if length <= EPSILON:
+            return preferred, None
+        target = tuple(center[i] + direction[i] * radius / length for i in (0, 1))
+        if (
+            math.dist(point, target) <= tolerance
+            and min(math.dist(target, a), math.dist(target, b)) > EPSILON
+        ):
+            return target, (a, target, b)
+    elif neighbours:
+        # A terminal handle may square its incident segment with the stationary
+        # continuation at its neighbour, rather than with a global map axis.
+        joint = neighbours[0]
+        candidates = []
+        for edge in geometry_edges(geometry.walls, geometry.closures):
+            if joint not in edge or vertex in edge:
+                continue
+            other = edge[1] if edge[0] == joint else edge[0]
+            length = math.dist(other, joint)
+            if length <= EPSILON:
+                continue
+            normal = (-(other[1] - joint[1]) / length, (other[0] - joint[0]) / length)
+            distance = sum((preferred[i] - joint[i]) * normal[i] for i in (0, 1))
+            target = tuple(joint[i] + distance * normal[i] for i in (0, 1))
+            delta = math.dist(point, target)
+            if delta <= tolerance and math.dist(target, joint) > EPSILON:
+                candidates.append((delta, target, other))
+        if candidates:
+            _, target, other = min(candidates)
+            return target, (other, joint, target)
+    return preferred, None
+
+
 def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
     if _same(start, end):
         return geometry
@@ -164,6 +261,152 @@ def add_circle(
     return builder.build(walls, geometry.closures, overrides)
 
 
+def rectangle_points(start: Point, end: Point) -> tuple[Point, ...]:
+    """A closed axis-aligned rectangle from opposite corners, without snapping."""
+    if any(not math.isfinite(v) or abs(v) > 1e9 for p in (start, end) for v in p):
+        raise ValueError("Rectangle corners must be finite and within coordinate limits.")
+    return (start, (end[0], start[1]), end, (start[0], end[1]), start)
+
+
+def add_rectangle(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
+    if start[0] == end[0] or start[1] == end[1]:
+        return geometry
+    for a, b in pairwise(rectangle_points(start, end)):
+        geometry = add_line(geometry, a, b)
+    return geometry
+
+
+class LineEraser:
+    """Lazily partition hit source edges at exact intersections, without global noding."""
+
+    def __init__(self, geometry):
+        self.geometry = geometry
+        self.edges = geometry_edges(geometry.walls, geometry.closures)
+        self.shapes = tuple(LineString(edge) for edge in self.edges)
+        self.tree = STRtree(self.shapes)
+        self.parts = OrderedDict()
+
+    def _parts(self, index):
+        if index in self.parts:
+            self.parts.move_to_end(index)
+            return self.parts[index]
+        edge, shape = self.edges[index], self.shapes[index]
+        cuts = [(0.0, edge[0]), (1.0, edge[1])]
+
+        def add_point(point):
+            point = tuple(point)
+            if not any(_same(point, end) for end in edge):
+                _, position = project(point, edge)
+                cuts.append((position, point))
+
+        def add_intersection(intersection):
+            if intersection.is_empty:
+                return
+            if intersection.geom_type == "Point":
+                add_point(intersection.coords[0])
+            elif intersection.geom_type == "LineString":
+                for point in (intersection.coords[0], intersection.coords[-1]):
+                    add_point(point)
+            elif hasattr(intersection, "geoms"):
+                for part in intersection.geoms:
+                    add_intersection(part)
+
+        for hit in self.tree.query(shape):
+            other = int(hit)
+            if other != index:
+                add_intersection(shape.intersection(self.shapes[other]))
+        points = []
+        for _, point in sorted(cuts):
+            if not points or not _same(points[-1], point):
+                points.append(point)
+        result = tuple(pairwise(points))
+        self.parts[index] = result
+        if len(self.parts) > 128:
+            self.parts.popitem(last=False)
+        return result
+
+    def targets(self, start, end, radius):
+        """Owner index and atomic piece for every part touched by the circular sweep."""
+        from shapely.geometry import box
+
+        sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
+        x0, y0, x1, y1 = sweep.bounds
+        bounds = box(x0 - radius, y0 - radius, x1 + radius, y1 + radius)
+        result = []
+        for hit in sorted(self.tree.query(bounds)):
+            index = int(hit)
+            if sweep.distance(self.shapes[index]) <= radius:
+                result.extend(
+                    (index, piece)
+                    for piece in self._parts(index)
+                    if sweep.distance(LineString(piece)) <= radius
+                )
+        return tuple(result)
+
+    def erase(self, targets):
+        """Keep untouched owners exact; surviving partial edges inherit only their own parent."""
+        from dale.wall_styles import geometry_styles
+
+        selected = {}
+        for index, edge in targets:
+            selected.setdefault(index, set()).add(edge)
+        if not selected:
+            return self.geometry
+        geometry = self.geometry
+        styles = geometry_styles(geometry)
+        ancestry = {r.id: r for r in (*geometry.ancestry, *geometry.lineage)}
+        records = []
+
+        def remaining(index):
+            parent = geometry.lineage[index]
+            if index not in selected:
+                records.append(parent)
+                return (self.edges[index],)
+            runs = []
+            for piece in self._parts(index):
+                if piece in selected[index]:
+                    continue
+                if runs and runs[-1][1] == piece[0]:
+                    runs[-1] = (runs[-1][0], piece[1])
+                else:
+                    runs.append(piece)
+            for edge in runs:
+                record = LineRecord.child((parent,), edge)
+                records.append(record)
+                ancestry[record.id] = record
+                styles[record.id] = styles[parent.id]
+            return tuple(runs)
+
+        walls = tuple(edge for i in range(len(geometry.walls)) for edge in remaining(i))
+        closures = []
+        index = len(geometry.walls)
+        for path in geometry.closures:
+            run = []
+            for _ in pairwise(path):
+                edges = remaining(index)
+                index += 1
+                if not edges:
+                    if len(run) > 1:
+                        closures.append(tuple(run))
+                    run = []
+                for a, b in edges:
+                    if run and run[-1] != a:
+                        closures.append(tuple(run))
+                        run = []
+                    if not run:
+                        run.append(a)
+                    run.append(b)
+            if len(run) > 1:
+                closures.append(tuple(run))
+        return GeometryEdit(
+            walls,
+            tuple(closures),
+            tuple(records),
+            tuple(ancestry.values()),
+            wall_styles=tuple(styles.items()),
+        )
+
+
 def geometry_targets(geometry, start, end, radius, target):
     """Use the same circle/capsule hit test for hover previews and deletion."""
     sweep = ShapePoint(start) if _same(start, end) else LineString((start, end))
@@ -171,57 +414,58 @@ def geometry_targets(geometry, start, end, radius, target):
         return tuple(p for p in vertices(geometry) if sweep.distance(ShapePoint(p)) <= radius)
     if target != "lines":
         raise ValueError("Unknown geometry eraser target.")
-    edges = (*geometry.walls, *(edge for path in geometry.closures for edge in pairwise(path)))
-    return tuple(edge for edge in edges if sweep.distance(LineString(edge)) <= radius)
+    return tuple(piece for _, piece in LineEraser(geometry).targets(start, end, radius))
 
 
 def erase_geometry(geometry, start, end, radius, target):
     """Erase touched edges or vertices across a swept circular brush, including fast drags."""
-    selected = geometry_targets(geometry, start, end, radius, target)
     if target == "vertices":
+        selected = geometry_targets(geometry, start, end, radius, target)
         for point in selected:
             if hit_vertex(geometry, point, EPSILON) is not None:
                 geometry = delete_vertex(geometry, point)
         return geometry
-    selected = set(selected)
-
-    def touched(edge):
-        return edge in selected
-
-    walls = tuple(edge for edge in geometry.walls if not touched(edge))
-    closures = []
-    for path in geometry.closures:
-        run = []
-        for a, b in pairwise(path):
-            if touched((a, b)):
-                if len(run) >= 2:
-                    closures.append(tuple(run))
-                run = []
-            else:
-                if not run:
-                    run.append(a)
-                run.append(b)
-        if len(run) >= 2:
-            closures.append(tuple(run))
-    return LineageBuilder(geometry).build(walls, closures)
+    if target != "lines":
+        raise ValueError("Unknown geometry eraser target.")
+    index = LineEraser(geometry)
+    return index.erase(index.targets(start, end, radius))
 
 
 def insert_vertex(geometry: GeometryEdit, hit: EdgeHit) -> GeometryEdit:
+    builder = LineageBuilder(geometry)
+    records = list(geometry.lineage)
+    styles = dict(builder.styles)
     if hit.kind == "wall":
         walls = list(geometry.walls)
         a, b = walls[hit.path_index]
         if _same(a, hit.point) or _same(b, hit.point):
             return geometry
         walls[hit.path_index : hit.path_index + 1] = [(a, hit.point), (hit.point, b)]
-        return LineageBuilder(geometry).build(walls, geometry.closures)
-    closures = list(geometry.closures)
-    points = list(closures[hit.path_index])
-    a, b = points[hit.edge_index : hit.edge_index + 2]
-    if _same(a, hit.point) or _same(b, hit.point):
-        return geometry
-    points.insert(hit.edge_index + 1, hit.point)
-    closures[hit.path_index] = tuple(points)
-    return LineageBuilder(geometry).build(geometry.walls, closures)
+        closures = geometry.closures
+        index = hit.path_index
+    else:
+        walls = geometry.walls
+        closures = list(geometry.closures)
+        points = list(closures[hit.path_index])
+        a, b = points[hit.edge_index : hit.edge_index + 2]
+        if _same(a, hit.point) or _same(b, hit.point):
+            return geometry
+        points.insert(hit.edge_index + 1, hit.point)
+        closures[hit.path_index] = tuple(points)
+        index = len(walls) + sum(len(p) - 1 for p in closures[: hit.path_index]) + hit.edge_index
+    parent = records[index]
+    children = tuple(LineRecord.child((parent,), edge) for edge in ((a, hit.point), (hit.point, b)))
+    records[index : index + 1] = children
+    for record in children:
+        styles[record.id] = styles[parent.id]
+    ancestry = {r.id: r for r in (*geometry.ancestry, *geometry.lineage, *children)}
+    return GeometryEdit(
+        tuple(walls),
+        tuple(closures),
+        tuple(records),
+        tuple(ancestry.values()),
+        wall_styles=tuple(styles.items()),
+    )
 
 
 def _split_at(segments, point):
@@ -239,69 +483,115 @@ def _expanded_path(path, point):
     return [segment[0] for segment in _split_at(pairwise(path), point)] + [path[-1]]
 
 
-def move_vertex(geometry: GeometryEdit, point: Point, destination: Point) -> GeometryEdit:
+def move_vertex(
+    geometry: GeometryEdit, point: Point, destination: Point, *, connect=True, connection_group=None
+) -> GeometryEdit:
     if _same(point, destination):
         return geometry
 
     def replace(value):
         return destination if _same(value, point) else value
 
-    geometry = node_geometry(geometry, (point,))
+    if connect:
+        geometry = node_geometry(geometry, (point,))
 
-    walls = [(replace(a), replace(b)) for a, b in _split_at(geometry.walls, point)]
-    closures = []
-    for path in geometry.closures:
-        points = [replace(value) for value in _expanded_path(path, point)]
-        clean = [points[0]]
-        clean.extend(p for a, p in pairwise(points) if not _same(a, p))
-        if len(clean) >= 2:
-            closures.append(tuple(clean))
-    moved = tuple(
-        (replace(a), replace(b)) for a, b in geometry_edges(geometry.walls, geometry.closures)
-    )
     builder = LineageBuilder(geometry)
     contacts = tuple(
         record
         for edge, record in zip(builder.edges, geometry.lineage, strict=True)
-        if not any(_same(p, point) for p in edge)
+        if connect
+        and not any(_same(p, point) for p in edge)
         and _same(project(destination, edge)[0], destination)
     )
-    overrides = {
-        edge_key(edge): (
-            LineRecord.child((record, *contacts), edge)
-            if contacts
-            and any(_same(p, destination) for p in edge)
-            and edge_key(edge) != edge_key(old)
+    styles = dict(builder.styles)
+    ancestry = {r.id: r for r in (*geometry.ancestry, *geometry.lineage)}
+    records = []
+
+    def move_edge(edge, record):
+        moved = (
+            tuple(replace(p) for p in edge)
+            if connect or record.connection_group == connection_group
+            else edge
+        )
+        if _same(*moved):
+            return None
+        current = (
+            LineRecord.child((record, *contacts), moved)
+            if contacts and any(_same(p, destination) for p in moved) and moved != edge
             else record
         )
-        for old, edge, record in zip(builder.edges, moved, geometry.lineage, strict=True)
-        if not _same(*edge)
-    }
-    result = builder.build(
-        tuple((a, b) for a, b in walls if not _same(a, b)), tuple(closures), overrides
+        records.append(current)
+        ancestry[current.id] = current
+        styles[current.id] = builder.styles[record.id]
+        return moved
+
+    source_records = iter(geometry.lineage)
+    walls = tuple(moved for e in geometry.walls if (moved := move_edge(e, next(source_records))))
+    closures = []
+    for path in geometry.closures:
+        edges = [moved for e in pairwise(path) if (moved := move_edge(e, next(source_records)))]
+        if edges:
+            closures.append((edges[0][0], *(e[1] for e in edges)))
+    result = GeometryEdit(
+        walls,
+        tuple(closures),
+        tuple(records),
+        tuple(ancestry.values()),
+        wall_styles=tuple(styles.items()),
     )
-    return node_geometry(result, (destination,))
+    return node_geometry(result, (destination,)) if connect else result
 
 
 def extend_lines(geometry: GeometryEdit, extensions: tuple[Segment, ...]) -> GeometryEdit:
-    """Move free ends simultaneously, then node their destinations into target lines."""
+    """Extend/shorten free ends simultaneously, then node their target contacts."""
     destinations = dict(extensions)
     walls = tuple((destinations.get(a, a), destinations.get(b, b)) for a, b in geometry.walls)
     closures = tuple(
         tuple(destinations.get(point, point) for point in path) for path in geometry.closures
     )
     return node_geometry(
-        GeometryEdit(walls, closures, geometry.lineage, geometry.ancestry), destinations.values()
+        GeometryEdit(
+            walls, closures, geometry.lineage, geometry.ancestry, wall_styles=geometry.wall_styles
+        ),
+        destinations.values(),
     )
 
 
 def node_geometry(geometry: GeometryEdit, points) -> GeometryEdit:
     """Materialize shared connections without changing the drawn line shapes."""
-    walls, closures = geometry.walls, geometry.closures
-    for destination in sorted(set(points)):
-        walls = tuple(_split_at(walls, destination))
-        closures = tuple(tuple(_expanded_path(path, destination)) for path in closures)
-    return LineageBuilder(geometry).build(walls, closures)
+    from dale.wall_styles import geometry_styles
+
+    points = sorted(set(points))
+    records, styles = [], geometry_styles(geometry)
+    ancestry = {r.id: r for r in (*geometry.ancestry, *geometry.lineage)}
+    source_records = iter(geometry.lineage)
+
+    def split(edge):
+        parent = next(source_records)
+        pieces = [edge]
+        for point in points:
+            pieces = _split_at(pieces, point)
+        children = (
+            [parent] if len(pieces) == 1 else [LineRecord.child((parent,), e) for e in pieces]
+        )
+        for record in children:
+            records.append(record)
+            ancestry[record.id] = record
+            styles[record.id] = styles[parent.id]
+        return pieces
+
+    walls = tuple(e for edge in geometry.walls for e in split(edge))
+    closures = []
+    for path in geometry.closures:
+        edges = [e for edge in pairwise(path) for e in split(edge)]
+        closures.append((edges[0][0], *(e[1] for e in edges)))
+    return GeometryEdit(
+        walls,
+        tuple(closures),
+        tuple(records),
+        tuple(ancestry.values()),
+        wall_styles=tuple(styles.items()),
+    )
 
 
 def delete_vertex(geometry: GeometryEdit, point: Point) -> GeometryEdit:

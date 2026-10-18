@@ -13,6 +13,8 @@ TOOL_VALUE_RANGES = {
     "auto_close_distance_px": (1, 256, 14),
     "global_close_distance_px": (1, 256, 14),
     "snap_distance_px": (0, 256, 14),
+    "right_angle_distance_px": (1, 9999, 14),
+    "contour_alignment_distance_px": (1, 9999, 14),
     "artwork_offset_px": (-4096, 4096, 0),
 }
 
@@ -37,11 +39,6 @@ def load_language(path: Path) -> str:
     return "en" if _load(path).get("language") == "en" else "ru"
 
 
-def load_foundry_major(path: Path) -> int:
-    value = _load(path).get("foundry_major")
-    return value if type(value) is int and value in (13, 14) else 14
-
-
 def _save(path: Path, **changes):
     data = _load(path)
     data.update(changes)
@@ -55,8 +52,13 @@ def save_language(path: Path, language: str):
     _save(path, language=language)
 
 
-def save_foundry_major(path: Path, foundry_major: int):
-    _save(path, foundry_major=foundry_major)
+def load_right_panel_visible(path: Path) -> bool:
+    value = _load(path).get("right_panel_visible", True)
+    return value if type(value) is bool else True
+
+
+def save_right_panel_visible(path: Path, visible: bool):
+    _save(path, right_panel_visible=visible)
 
 
 def load_tool_values(path: Path) -> dict[str, int]:
@@ -93,6 +95,36 @@ def load_move_related(path: Path) -> bool | None:
 
 def save_move_related(path: Path, choice: bool | None):
     _save(path, move_related_lines=choice)
+
+
+def load_merge_selected_regions(path: Path) -> bool | None:
+    value = _load(path).get("merge_selected_regions")
+    return value if type(value) is bool else None
+
+
+def save_merge_selected_regions(path: Path, choice: bool | None):
+    if choice is not None and type(choice) is not bool:
+        raise ValueError("Invalid selected-region export preference.")
+    _save(path, merge_selected_regions=choice)
+
+
+CONNECTION_TOOLS = ("Erase lines", "Edit points")
+
+
+def load_connection_choice(path: Path, tool: str) -> bool | None:
+    if tool not in CONNECTION_TOOLS:
+        raise ValueError("Unknown contour connection tool.")
+    stored = _load(path).get("contour_connection_choices", {})
+    value = stored.get(tool) if isinstance(stored, dict) else None
+    return value if type(value) is bool else None
+
+
+def save_connection_choice(path: Path, tool: str, choice: bool | None):
+    if tool not in CONNECTION_TOOLS or (choice is not None and type(choice) is not bool):
+        raise ValueError("Invalid contour connection preference.")
+    choices = {key: load_connection_choice(path, key) for key in CONNECTION_TOOLS}
+    choices[tool] = choice
+    _save(path, contour_connection_choices=choices)
 
 
 def load_directory(path: Path, purpose: str) -> Path | None:

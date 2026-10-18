@@ -40,8 +40,10 @@ def open_source(path: Path):
         finally:
             Image.MAX_IMAGE_PIXELS = previous
     try:
-        if image.format != "JPEG":
-            raise ValueError("The scene image must be a JPG/JPEG file.")
+        if image.format not in {"JPEG", "PNG", "WEBP", "BMP", "TIFF"}:
+            raise ValueError("Unsupported scene image format.")
+        if getattr(image, "n_frames", 1) != 1:
+            raise ValueError("Animated or multipage scene images are not supported.")
         if max(image.size) > MAX_SIDE:
             raise ValueError(f"Image exceeds the {MAX_SIDE:,}-pixel per-side limit.")
         if image.getexif().get(274, 1) != 1:
@@ -53,8 +55,8 @@ def open_source(path: Path):
 
 @dataclass(frozen=True)
 class SceneInput:
-    image_path: Path
-    json_path: Path
+    image_path: Path | None
+    json_path: Path | None
     size: tuple[int, int]
     raw: dict
     walls: tuple[Segment, ...]
@@ -62,6 +64,21 @@ class SceneInput:
     background_offset: Point
     warnings: tuple[str, ...]
     wall_sources: tuple[SourceWall, ...] = ()
+    json_bytes: bytes | None = None
+    image_name: str | None = None
+    json_name: str | None = None
+
+    @property
+    def name(self):
+        return (
+            self.json_name
+            or self.image_name
+            or (
+                (self.json_path or self.image_path).name
+                if self.json_path or self.image_path
+                else "Contours.json"
+            )
+        )
 
     @property
     def cell_pixels(self) -> float:
@@ -84,23 +101,46 @@ class SceneInput:
         )
 
 
-def load_pair(image_path: Path, json_path: Path) -> SceneInput:
-    image_path, json_path = image_path.resolve(), json_path.resolve()
-    with open_source(image_path) as image:
-        size = image.size
+def load_pair(image_path: Path | None, json_path: Path | None = None) -> SceneInput:
+    image_path = image_path.resolve() if image_path else None
+    json_path = json_path.resolve() if json_path else None
+    if image_path is None and json_path is None:
+        raise ValueError("Open a scene image or scene JSON.")
+    size = (1, 1)
+    if image_path:
+        with open_source(image_path) as image:
+            size = image.size
+    if json_path is None:
+        return SceneInput(
+            image_path, None, size, {}, (), size, (0, 0), (), image_name=image_path.name
+        )
     if json_path.stat().st_size > 32 * 1024 * 1024:
         raise ValueError("JSON exceeds the 32 MiB prototype input limit.")
     source_bytes = json_path.read_bytes()
+    return scene_from_json(
+        source_bytes, size if image_path else None, image_path=image_path, json_path=json_path
+    )
+
+
+def scene_from_json(source_bytes, image_size=None, *, image_path=None, json_path=None):
+    """Parse frozen JSON with an optional image header size, without decoding raster pixels."""
+    if len(source_bytes) > 32 * 1024 * 1024:
+        raise ValueError("JSON exceeds the 32 MiB prototype input limit.")
+    size = image_size or (1, 1)
     digest = hashlib.sha256(source_bytes).hexdigest()
     raw = json.loads(source_bytes.decode("utf-8-sig"))
     if not isinstance(raw, dict) or not isinstance(raw.get("walls"), list):
         raise ValueError("Scene JSON must contain a `walls` array.")
     if len(raw.get("walls", [])) > 100_000:
         raise ValueError("More than 100,000 source contour segments are not supported yet.")
+    if image_size is None and ("width" not in raw or "height" not in raw):
+        raise ValueError("JSON-only editing requires explicit scene width and height.")
     width = number(raw.get("width", size[0]), "Scene width")
     height = number(raw.get("height", size[1]), "Scene height")
     if width <= 0 or height <= 0:
         raise ValueError("Scene dimensions must be positive.")
+    if image_size is None:
+        size = (math.ceil(width), math.ceil(height))
     background = raw.get("background") or {}
     if not isinstance(background, dict):
         raise ValueError("Scene background must be an object.")
@@ -125,7 +165,7 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
                 raise ValueError(f"Contour segment {i}: identifier exceeds 256 characters.")
             references.append(SourceWall(digest, i, str(wall_id) if wall_id is not None else None))
     warnings = []
-    if max(size) > COMPATIBILITY_SIDE:
+    if image_path and max(size) > COMPATIBILITY_SIDE:
         warnings.append("Above 8,192 pixels: check the texture limit of every Foundry client.")
     if raw.get("padding", 0):
         warnings.append("Scene padding is nonzero. Verify contour alignment before editing.")
@@ -149,4 +189,7 @@ def load_pair(image_path: Path, json_path: Path) -> SceneInput:
         offset,
         tuple(warnings),
         tuple(references),
+        source_bytes,
+        image_path.name if image_path else None,
+        json_path.name if json_path else None,
     )

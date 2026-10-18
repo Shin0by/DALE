@@ -8,13 +8,13 @@ import struct
 import tempfile
 import zlib
 from collections.abc import Callable, Sequence
+from contextlib import nullcontext
 from itertools import pairwise
 from pathlib import Path
 
 import psutil
 from PIL import Image, ImageChops, ImageDraw
 
-from dale.placement import Placement
 from dale.scene import SceneInput, open_source
 from dale.session import ContourMask, Operation, Stroke
 
@@ -28,10 +28,12 @@ class ExportCancelled(Exception):
 
 
 def load_preview(source: SceneInput) -> Image.Image:
+    if source.image_path is None:
+        return Image.new("RGBA", (1, 1))
     with open_source(source.image_path) as image:
         image.draft("RGB", (PREVIEW_SIDE, PREVIEW_SIDE))
         image.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE), Image.Resampling.LANCZOS)
-        return image.convert("RGB")
+        return image.convert("RGBA")
 
 
 def _polygon_mask(size, area, sx, sy, top, left=0):
@@ -99,12 +101,41 @@ def render_alpha(
 
 def render_preview(source: Image.Image, native_size, operations) -> Image.Image:
     result = source.convert("RGBA")
-    result.putalpha(render_alpha(source.size, native_size, operations))
+    alpha = ImageChops.multiply(
+        result.getchannel("A"),
+        render_export_alpha(
+            source.size,
+            native_size,
+            operations,
+            scale=(source.width / native_size[0], source.height / native_size[1]),
+        ),
+    )
+    result.putalpha(alpha)
+    result.paste((0, 0, 0, 0), mask=alpha.point([255] + [0] * 255))
     return result
 
 
-def render_export_alpha(size, native_size, operations, top=0, left=0):
-    """Minimal 2x alpha supersampling with bicubic reduction and seam-safe filter halos."""
+def raster_operations(operations, artwork_offset=0):
+    """Resolve live offsets from immutable mask boundaries for preview and PNG export."""
+    if not math.isfinite(artwork_offset):
+        raise ValueError("Contour offset must be finite.")
+    return tuple(
+        ContourMask(
+            operation.boundary.buffer(artwork_offset, join_style="mitre")
+            if artwork_offset
+            else operation.boundary,
+            operation.mode,
+            operation.boundary,
+        )
+        if isinstance(operation, ContourMask) and operation.boundary is not None
+        else operation
+        for operation in operations
+        if isinstance(operation, (ContourMask, Stroke))
+    )
+
+
+def render_export_alpha(size, native_size, operations, top=0, left=0, *, scale=(1, 1)):
+    """Shared 2x/bicubic alpha with seam-safe halos, at native or preview projection."""
     width, height = size
     halo = ALPHA_FILTER_HALO
     padded = (width + 2 * halo, height + 2 * halo)
@@ -114,14 +145,19 @@ def render_export_alpha(size, native_size, operations, top=0, left=0):
         operations,
         top=(top - halo) * 2,
         left=(left - halo) * 2,
-        scale=(2, 2),
+        scale=(2 * scale[0], 2 * scale[1]),
     )
     alpha = alpha.resize(padded, Image.Resampling.BICUBIC)
     return alpha.crop((halo, halo, halo + width, halo + height))
 
 
-def alpha_bounds(native_size, operations, crop, cancelled=None):
+def alpha_bounds(native_size, operations, crop, cancelled=None, source_path=None):
     """Find the exact nonzero-alpha box without decoding RGB or allocating a full mask."""
+    with open_source(source_path) if source_path else nullcontext(None) as original:
+        return _alpha_bounds_rows(native_size, operations, crop, cancelled, original)
+
+
+def _alpha_bounds_rows(native_size, operations, crop, cancelled, original):
     left, top, right, bottom = crop
     result = None
     for row in range(top, bottom, STRIPE_ROWS):
@@ -134,6 +170,13 @@ def alpha_bounds(native_size, operations, crop, cancelled=None):
             top=row,
             left=left,
         )
+        if original is not None and ("A" in original.getbands() or "transparency" in original.info):
+            source_alpha = (
+                original.crop((left, row, right, row + alpha.height))
+                .convert("RGBA")
+                .getchannel("A")
+            )
+            alpha = ImageChops.multiply(alpha, source_alpha)
         found = alpha.getbbox()
         if found is not None:
             x0, y0, x1, y1 = found
@@ -164,18 +207,18 @@ def export_png(
     destination: Path,
     progress: Callable[[int], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
-    placement: Placement | None = None,
     crop: tuple[int, int, int, int] | None = None,
     metadata: dict[str, str] | None = None,
 ):
     destination = destination.resolve()
-    if destination in (source.image_path.resolve(), source.json_path.resolve()):
+    sources = tuple(path for path in (source.image_path, source.json_path) if path)
+    if source.image_path is None:
+        raise ValueError("An image is required for PNG export.")
+    if destination in (path.resolve() for path in sources):
         raise ValueError("Export cannot replace an imported source file.")
     if destination.suffix.lower() != ".png":
         raise ValueError("Export destination must have a .png extension.")
-    if destination.exists() and any(
-        os.path.samefile(destination, path) for path in (source.image_path, source.json_path)
-    ):
+    if destination.exists() and any(os.path.samefile(destination, path) for path in sources):
         raise ValueError("Export cannot replace a hard-linked source file.")
     left, origin_y, right, bottom_y = crop or (0, 0, *source.size)
     width, height = right - left, bottom_y - origin_y
@@ -203,8 +246,7 @@ def export_png(
             with os.fdopen(descriptor, "wb") as stream:
                 stream.write(b"\x89PNG\r\n\x1a\n")
                 _chunk(stream, b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
-                text_metadata = placement.metadata() if placement else {}
-                text_metadata.update(metadata or {})
+                text_metadata = metadata or {}
                 if text_metadata:
                     for key, value in text_metadata.items():
                         _chunk(
@@ -226,6 +268,7 @@ def export_png(
                         top=origin_y + top,
                         left=left,
                     )
+                    alpha = ImageChops.multiply(alpha, stripe.getchannel("A"))
                     visible = visible or alpha.getextrema()[1] > 0
                     stripe.putalpha(alpha)
                     stripe.paste((0, 0, 0, 0), mask=alpha.point([255] + [0] * 255))

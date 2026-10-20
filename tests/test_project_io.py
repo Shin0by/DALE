@@ -9,9 +9,104 @@ from dale.raster import render_alpha
 from dale.session import Closure, Session, Stroke
 
 
+def test_project_custom_colors_roundtrip_and_absent_default(pair_factory, tmp_path):
+    from dale.project_io import DEFAULT_CUSTOM_COLORS
+
+    session = Session(pair_factory())
+    path = tmp_path / "custom-colors.dale"
+    save_project(session, path)
+    with load_project(path) as loaded:
+        assert loaded.custom_colors == DEFAULT_CUSTOM_COLORS
+    colors = [f"#{(i * 0x1020304):08X}" for i in range(16)]
+    save_project(session, path, custom_colors=colors)
+    with load_project(path) as loaded:
+        assert loaded.custom_colors == tuple(color.lower() for color in colors)
+        assert loaded.session.geometry() == session.geometry()
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["schema_version"] == 7
+    assert manifest["custom_colors"] == [color.lower() for color in colors]
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        None,
+        {},
+        [],
+        ["#ffffffff"] * 15,
+        ["#ffffffff"] * 17,
+        ["#ffffff"] * 16,
+        ["#ggffffff"] * 16,
+        [True] * 16,
+    ],
+)
+def test_invalid_project_custom_colors_are_rejected_on_open(pair_factory, tmp_path, invalid):
+    path = tmp_path / "bad-colors.dale"
+    save_project(Session(pair_factory()), path)
+
+    def corrupt(members):
+        manifest = json.loads(members["manifest.json"])
+        manifest["custom_colors"] = invalid
+        members["manifest.json"] = json.dumps(manifest).encode()
+
+    _rewrite(path, corrupt)
+    with pytest.raises(ValueError, match="custom colors"):
+        load_project(path)
+
+
+def test_invalid_palette_save_keeps_existing_archive(pair_factory, tmp_path):
+    path = tmp_path / "protected-colors.dale"
+    session = Session(pair_factory())
+    save_project(session, path)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="custom colors"):
+        save_project(session, path, custom_colors=["bad"] * 16)
+    assert path.read_bytes() == before
+
+
+def test_optional_section_region_selections_keep_current_schema(pair_factory, tmp_path):
+    from dale.project_io import SCHEMA_VERSION, _load_ui
+
+    assert "section_region_selections" not in _load_ui({})
+    values = {"regions": [2, 0, 2], "pixels": [1]}
+    path = tmp_path / "section-selections.dale"
+    save_project(Session(pair_factory()), path, {"section_region_selections": values})
+    with load_project(path) as loaded:
+        assert loaded.ui_state["section_region_selections"] == {
+            "regions": (0, 2),
+            "pixels": (1,),
+        }
+    with zipfile.ZipFile(path) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["schema_version"] == SCHEMA_VERSION == 7
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        [],
+        {"regions": []},
+        {"regions": [], "pixels": [], "geometry": []},
+        {"regions": [True], "pixels": []},
+        {"regions": [], "pixels": [-1]},
+        {"regions": [], "pixels": [100000]},
+        {"regions": "all", "pixels": []},
+        {"regions": [], "pixels": [1.5]},
+    ],
+)
+def test_section_region_selections_reject_invalid_values(value):
+    from dale.project_io import _load_ui
+
+    with pytest.raises(ValueError, match="selection"):
+        _load_ui({"section_region_selections": value})
+
+
 @pytest.mark.parametrize(
     "key",
     [
+        "right_angle_neighbours",
+        "right_angle_own_priority",
         "figure_point_alignment",
         "figure_guide_alignment",
         "region_point_alignment",
@@ -294,10 +389,31 @@ def test_current_schema_catalog_checks_history_when_deriving_contours(pair_facto
         read_json_documents(path)
 
 
-@pytest.mark.parametrize("field", ["right_angle_distance_px", "contour_alignment_distance_px"])
+@pytest.mark.parametrize("field", ["right_angle_tolerance_deg", "contour_alignment_distance_px"])
 @pytest.mark.parametrize("value", [0, 10000, 1.5, True])
 def test_alignment_tolerances_reject_invalid_values(pair_factory, tmp_path, field, value):
     path = tmp_path / "bad-alignment.dale"
     save_project(Session(pair_factory()), path, {field: value})
     with pytest.raises(ValueError):
         load_project(path)
+
+
+@pytest.mark.parametrize("angle", [1, 90])
+def test_angular_settings_roundtrip_with_strict_limits(pair_factory, tmp_path, angle):
+    from dale.project_io import _load_ui
+
+    path = tmp_path / "degrees.dale"
+    save_project(
+        Session(pair_factory()),
+        path,
+        {"right_angle_tolerance_deg": angle, "right_angle_neighbours": False},
+    )
+    with load_project(path) as loaded:
+        assert loaded.ui_state["right_angle_tolerance_deg"] == angle
+        assert loaded.ui_state["right_angle_neighbours"] is False
+    with pytest.raises(ValueError, match="angular tolerance"):
+        _load_ui({"right_angle_tolerance_deg": 91})
+    defaults = _load_ui({"right_angle_distance_px": 9999})
+    assert defaults["right_angle_tolerance_deg"] == 5
+    assert defaults["right_angle_neighbours"] is True
+    assert "right_angle_distance_px" not in defaults

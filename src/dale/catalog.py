@@ -476,6 +476,11 @@ class SceneCatalog:
                         ),
                         "operations": [_encode(op) for op in view.session.operations],
                         "redo": [_encode(op) for op in view.session.future],
+                        **(
+                            {"undo_floor": view.session.history_floor}
+                            if view.session.history_floor
+                            else {}
+                        ),
                         "ui": view.ui,
                     },
                 }

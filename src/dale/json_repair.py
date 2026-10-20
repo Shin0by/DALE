@@ -340,7 +340,7 @@ def export_repaired_json(session, destination: Path):
     return changed
 
 
-def write_json_copy(payload: bytes, destination: Path, sources=()):
+def write_json_copy(payload: bytes, destination: Path, sources=(), *, conflict=None):
     """Atomically save an exact selected JSON document without replacing input assets."""
     destination = destination.resolve()
     if destination.suffix.lower() != ".json":
@@ -351,6 +351,10 @@ def write_json_copy(payload: bytes, destination: Path, sources=()):
         for p in sources
     ):
         raise ValueError("JSON export cannot replace an imported source file.")
+    if conflict is not None:
+        from dale.export_files import resolve_export_file
+
+        destination = resolve_export_file(destination, conflict)
     temporary = None
     try:
         descriptor, name = tempfile.mkstemp(
@@ -365,6 +369,7 @@ def write_json_copy(payload: bytes, destination: Path, sources=()):
             raise ValueError("JSON output verification failed.")
         os.replace(temporary, destination)
         temporary = None
+        return destination
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

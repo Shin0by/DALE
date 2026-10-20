@@ -23,6 +23,18 @@ def incoming(tmp_path, walls, **other):
     return Session(load_pair(None, path))
 
 
+def test_dataset_append_keeps_the_target_projects_custom_palette(tmp_path):
+    target = DatasetCatalog()
+    path = tmp_path / "Target colors.dale"
+    palette = ["#ff123456"] * 16
+    save_project(target.current.session, path, catalog=target, custom_colors=palette)
+    source = DatasetCatalog()
+    append_dataset(path, source, source.base_key)
+    with load_project(path) as loaded:
+        assert loaded.custom_colors == tuple(palette)
+        assert len(loaded.catalog.views) == 2
+
+
 def test_multiple_empty_datasets_stable_ids_rename_and_default_roundtrip(tmp_path):
     catalog = DatasetCatalog()
     first = catalog.base_key
@@ -34,7 +46,7 @@ def test_multiple_empty_datasets_stable_ids_rename_and_default_roundtrip(tmp_pat
     save_project(catalog.current.session, path, catalog=catalog)
     with load_project(path) as loaded:
         assert list(loaded.catalog.views) == [first, second.id, third.id]
-        assert loaded.catalog.active_key == first
+        assert loaded.catalog.active_key == third.id
         assert [v.name for v in loaded.catalog.views.values()] == ["First", "Second", "Third"]
         assert all(not v.has_json and not v.has_image for v in loaded.catalog.views.values())
         loaded.catalog.remove(first)
@@ -43,6 +55,35 @@ def test_multiple_empty_datasets_stable_ids_rename_and_default_roundtrip(tmp_pat
         assert len(loaded.catalog.views) == 1 and loaded.catalog.base_key != first
         save_project(loaded.catalog.current.session, path, catalog=loaded.catalog)
     assert read_json_documents(path) == ()
+
+
+def test_appending_and_removing_datasets_preserves_or_repairs_reopening_choice(tmp_path):
+    catalog = DatasetCatalog()
+    first = catalog.base_key
+    selected = catalog.create("Selected")
+    catalog.activate(selected.id)
+    path = tmp_path / "selected.dale"
+    save_project(catalog.current.session, path, catalog=catalog)
+    incoming = DatasetCatalog()
+    appended, _ = append_dataset(path, incoming, incoming.base_key)
+    with load_project(path) as loaded:
+        assert loaded.catalog.active_key == selected.id
+        assert loaded.catalog.base_key == first
+        assert appended in loaded.catalog.views
+        loaded.catalog.remove(selected.id)
+        assert loaded.catalog.active_key == first
+        save_project(loaded.session, path, catalog=loaded.catalog)
+    with load_project(path) as loaded:
+        assert loaded.catalog.active_key == first and selected.id not in loaded.catalog.views
+
+
+@pytest.mark.parametrize("invalid", [None, True, [], {}, "set-" + "f" * 32])
+def test_saved_dataset_default_must_reference_an_existing_stable_identity(invalid):
+    catalog = DatasetCatalog()
+    value = json.loads(json.dumps(catalog.encode()))
+    value["default"] = invalid
+    with pytest.raises(ValueError, match="default dataset"):
+        DatasetCatalog.restore(catalog.base_session, {}, (), (), value)
 
 
 def test_transaction_fork_keeps_original_and_copy_components_independent(pair_factory, tmp_path):
@@ -146,6 +187,44 @@ def test_native_json_append_keeps_unknown_scene_data_and_incoming_wall_propertie
         assert repaired_json_bytes(loaded.session)[0] == payload
         assert loaded.catalog.snapshot().name == "Exported name.json"
         assert loaded.session.source.raw["background"]["src"] == "old/path/original.png"
+
+
+@pytest.mark.parametrize("authored", [False, True])
+def test_merge_current_split_or_image_only_authored_source_preserves_properties_and_ancestry(
+    pair_factory, tmp_path, authored
+):
+    from dale.datasets import empty_source
+    from dale.editing import hit_edge, insert_vertex
+
+    catalog = DatasetCatalog(Session(pair_factory(size=(400, 400))))
+    session = catalog.current.session
+    if authored:
+        addition = Session(empty_source((400, 400)))
+        addition.add(add_line(addition.geometry(), (150, 150), (180, 150)))
+    else:
+        addition = incoming(
+            tmp_path, [{"c": [150, 150, 180, 150], "door": 2, "flags": {"custom": 9}}]
+        )
+        addition.add(
+            insert_vertex(addition.geometry(), hit_edge(addition.geometry(), (165, 150), 1))
+        )
+    before = addition.geometry()
+    count = len(before.lineage)
+    assert catalog.add_json(catalog.base_key, addition) == count
+    assert addition.geometry() == before
+    assert session.geometry().walls[-count:] == before.walls
+    payload = json.loads(repaired_json_bytes(session)[0])
+    added = [wall for wall in payload["walls"] if wall["c"][0] >= 150]
+    assert len(added) == count
+    assert all(w["door"] == (0 if authored else 2) for w in added)
+    if not authored:
+        assert all(w["flags"] == {"custom": 9} for w in added)
+    assert catalog.add_json(catalog.base_key, addition) == 0
+    path = tmp_path / "current-merged.dale"
+    save_project(session, path, catalog=catalog)
+    with load_project(path) as loaded:
+        assert json.loads(repaired_json_bytes(loaded.session)[0]) == payload
+        assert loaded.session.geometry().lineage == session.geometry().lineage
 
 
 def test_general_json_append_keeps_old_geometry_and_different_properties(pair_factory, tmp_path):

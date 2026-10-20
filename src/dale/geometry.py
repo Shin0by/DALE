@@ -222,9 +222,35 @@ def structural_regions(walls, closures=(), joins=()):
         groups.setdefault(root(index), []).append(line)
     polygons = []
     for group in groups.values():
-        cells, _, _, _ = polygonize_full(unary_union(group))
+        cells, _, _, _ = polygonize_full(unary_union(_node_endpoint_contacts(group)))
         polygons.extend(cells.geoms)
     return tuple(sorted(polygons, key=lambda p: (p.bounds[1], p.bounds[0], p.area, p.wkb)))
+
+
+def _node_endpoint_contacts(lines):
+    """Insert near-exact T contacts into analysis lines without editing stored geometry."""
+    tolerance = 1e-7
+    tree = STRtree(lines)
+    endpoints = sorted({tuple(p) for line in lines for p in (line.coords[0], line.coords[-1])})
+    contacts = {}
+    for endpoint in endpoints:
+        point = Point(endpoint)
+        x, y = endpoint
+        for hit in tree.query(box(x - tolerance, y - tolerance, x + tolerance, y + tolerance)):
+            index = int(hit)
+            line = lines[index]
+            # Distinct nearby endpoints remain gaps; only segment-interior contacts
+            # need reconciliation after floating-point projection onto an angled wall.
+            if any(
+                math.dist(endpoint, end) <= tolerance for end in (line.coords[0], line.coords[-1])
+            ):
+                continue
+            if line.distance(point) <= tolerance:
+                contacts.setdefault(index, []).append(endpoint)
+    return [
+        snap(line, MultiPoint(contacts[index]), tolerance) if index in contacts else line
+        for index, line in enumerate(lines)
+    ]
 
 
 def analyze_regions(
@@ -243,6 +269,7 @@ def analyze_regions(
         lines.extend(LineString(segment) for segment in pairwise(path) if segment[0] != segment[1])
     if not lines:
         return RegionAnalysis(GeometryCollection(), 0, ())
+    lines = _node_endpoint_contacts(lines)
     # Noding is essential when a closure ends on the middle of a source wall.
     noded = unary_union(lines)
     joins = _gap_joins(noded, gap_tolerance) if gap_tolerance else ()

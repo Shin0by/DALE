@@ -213,13 +213,18 @@ class DatasetManager(QDialog):
             details.addLayout(actions)
             self.component_buttons[kind] = load, send, remove
         details.addSpacing(18)
-        details.addWidget(QLabel(self.t("Export filenames")))
+        details.addWidget(QLabel(self.t("Export filename prefix")))
         self.export_names = QLabel()
         self.export_names.setObjectName("datasetExportNames")
         self.export_names.setTextFormat(Qt.TextFormat.PlainText)
         self.export_names.setWordWrap(True)
         details.addWidget(self.export_names)
-        note = QLabel(self.t("Names and paths inside JSON are preserved."))
+        note = QLabel(
+            self.t(
+                "Exports add the selected-region number and PNG dimensions. "
+                "Names and paths inside JSON are preserved."
+            )
+        )
         note.setWordWrap(True)
         details.addWidget(note)
         details.addStretch()
@@ -355,7 +360,7 @@ class DatasetManager(QDialog):
             remove.setEnabled(present)
             if present:
                 names.append(view.name + (".json" if kind == "json" else filename.suffix))
-        self.export_names.setText("\n".join(names) or self.t("Empty dataset"))
+        self.export_names.setText(view.name if names else self.t("Empty dataset"))
         self._refreshing = False
 
     def rename_dataset(self):
@@ -583,6 +588,20 @@ class DatasetManager(QDialog):
         )
         move = buttons.addButton(self.t("Move"), QDialogButtonBox.ButtonRole.AcceptRole)
         copy = buttons.addButton(self.t("Copy"), QDialogButtonBox.ButtonRole.ActionRole)
+        merge = (
+            buttons.addButton(self.t("Merge contours"), QDialogButtonBox.ButtonRole.ActionRole)
+            if kind == "json"
+            else None
+        )
+        if merge is not None:
+            merge.setToolTip(
+                self.help(
+                    "Add the current source contours to the destination without replacing its "
+                    "contours or image. Keep the source dataset unchanged.",
+                    condition="The destination already has JSON or drawn contours.",
+                    title="Merge contours",
+                )
+            )
         move.setToolTip(
             self.help(
                 "Move this file and its current edits to the chosen dataset, removing it here.",
@@ -597,8 +616,10 @@ class DatasetManager(QDialog):
             )
         )
         outcome = []
-        move.clicked.connect(lambda: (outcome.append(True), dialog.accept()))
-        copy.clicked.connect(lambda: (outcome.append(False), dialog.accept()))
+        move.clicked.connect(lambda: (outcome.append("move"), dialog.accept()))
+        copy.clicked.connect(lambda: (outcome.append("copy"), dialog.accept()))
+        if merge is not None:
+            merge.clicked.connect(lambda: (outcome.append("merge"), dialog.accept()))
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
@@ -607,13 +628,17 @@ class DatasetManager(QDialog):
             occupied = view.has_json if kind == "json" else view.has_image
             collision.setText(
                 self.t(
-                    "The destination already contains this component. Replace it or cancel."
+                    "The destination already contains JSON. Replace it, merge contours or cancel."
+                    if occupied and kind == "json"
+                    else "The destination already contains this component. Replace it or cancel."
                     if occupied
                     else "Move or copy the current edits to this dataset?"
                 )
             )
             move.setText(self.t("Replace and move" if occupied else "Move"))
             copy.setText(self.t("Replace and copy" if occupied else "Copy"))
+            if merge is not None:
+                merge.setEnabled(occupied)
 
         choices.currentIndexChanged.connect(update)
         update()
@@ -621,7 +646,11 @@ class DatasetManager(QDialog):
             destination = choices.currentData()
             if (
                 self.change(
-                    lambda catalog: catalog.transfer(source, destination, kind, move=outcome[0])
+                    lambda catalog: (
+                        catalog.add_json(destination, catalog.views[source].session)
+                        if outcome[0] == "merge"
+                        else catalog.transfer(source, destination, kind, move=outcome[0] == "move")
+                    )
                 )
                 is not False
             ):

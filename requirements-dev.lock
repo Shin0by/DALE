@@ -1,4 +1,5 @@
 # Tested Windows/Python 3.11 environment. Install before the editable project.
+cffi==2.1.1
 colorama==0.4.6
 iniconfig==2.3.1
 numpy==2.4.6
@@ -6,6 +7,9 @@ packaging==26.3
 Pillow==12.3.0
 pluggy==1.7.0
 psutil==7.2.2
+pycparser==3.11
+pyvips==3.2.0
+pyvips-binary==8.18.7
 Pygments==2.21.0
 PySide6_Essentials==6.12.0
 pytest==9.1.1

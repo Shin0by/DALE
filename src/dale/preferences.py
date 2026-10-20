@@ -2,20 +2,33 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
+ROTATION_VALUE_RANGES = {
+    "figure_rotation_step_cdeg": (1, 36000, 10),
+    "figure_alt_rotation_step_cdeg": (1, 36000, 4500),
+    "region_rotation_step_cdeg": (1, 36000, 10),
+    "region_alt_rotation_step_cdeg": (1, 36000, 4500),
+}
+
 TOOL_VALUE_RANGES = {
+    "circle_detail_steps": (0, 95, 0),
     "line_eraser_diameter": (1, 512, 24),
     "vertex_eraser_diameter": (1, 512, 24),
     "raster_erase_diameter": (1, 4096, 40),
     "raster_restore_diameter": (1, 4096, 40),
+    "raster_erase_square_diameter": (1, 4096, 40),
+    "raster_restore_square_diameter": (1, 4096, 40),
     "auto_close_distance_px": (1, 256, 14),
     "global_close_distance_px": (1, 256, 14),
     "snap_distance_px": (0, 256, 14),
-    "right_angle_distance_px": (1, 9999, 14),
+    "right_angle_tolerance_deg": (1, 90, 5),
     "contour_alignment_distance_px": (1, 9999, 14),
+    "extension_distance_px": (1, 9999, 14),
     "artwork_offset_px": (-4096, 4096, 0),
+    **ROTATION_VALUE_RANGES,
 }
 
 
@@ -108,6 +121,38 @@ def save_merge_selected_regions(path: Path, choice: bool | None):
     _save(path, merge_selected_regions=choice)
 
 
+def load_size_to_grid(path: Path) -> bool:
+    return _load(path).get("size_to_grid") is True
+
+
+def load_export_group_naming(path: Path) -> str | None:
+    value = _load(path).get("export_group_naming")
+    return value if isinstance(value, str) and value in ("dataset", "group") else None
+
+
+def save_export_group_naming(path: Path, choice: str | None):
+    if choice is not None and choice not in ("dataset", "group"):
+        raise ValueError("Invalid group export naming preference.")
+    _save(path, export_group_naming=choice)
+
+
+def load_include_json(path: Path) -> bool:
+    value = _load(path).get("include_json", True)
+    return value if type(value) is bool else True
+
+
+def save_include_json(path: Path, enabled: bool):
+    if type(enabled) is not bool:
+        raise ValueError("Invalid JSON export preference.")
+    _save(path, include_json=enabled)
+
+
+def save_size_to_grid(path: Path, enabled: bool):
+    if type(enabled) is not bool:
+        raise ValueError("Invalid grid export preference.")
+    _save(path, size_to_grid=enabled)
+
+
 CONNECTION_TOOLS = ("Erase lines", "Edit points")
 
 
@@ -168,3 +213,42 @@ def load_recent_projects(path: Path) -> list[Path]:
 
 def save_recent_projects(path: Path, projects: list[Path]):
     _save(path, recent_projects=[str(project.resolve()) for project in projects[:10]])
+
+
+def _project_dataset_choices(path: Path) -> dict[str, str]:
+    stored = _load(path).get("project_datasets", {})
+    if not isinstance(stored, dict):
+        return {}
+    choices = {}
+    for name, identifier in list(stored.items())[-100:]:
+        if not isinstance(name, str) or not isinstance(identifier, str):
+            continue
+        try:
+            project = Path(name)
+            if (
+                project.is_absolute()
+                and project.suffix.lower() == ".dale"
+                and re.fullmatch(r"set-[a-f0-9]{32}", identifier)
+            ):
+                choices[os.path.normcase(str(project.resolve()))] = identifier
+        except (OSError, ValueError):
+            continue
+    return choices
+
+
+def load_project_dataset(path: Path, project: Path) -> str | None:
+    return _project_dataset_choices(path).get(os.path.normcase(str(project.resolve())))
+
+
+def save_project_dataset(path: Path, project: Path, identifier: str):
+    if (
+        not isinstance(identifier, str)
+        or not re.fullmatch(r"set-[a-f0-9]{32}", identifier)
+        or project.suffix.lower() != ".dale"
+    ):
+        raise ValueError("Invalid project dataset preference.")
+    choices = _project_dataset_choices(path)
+    key = os.path.normcase(str(project.resolve()))
+    choices.pop(key, None)
+    choices[key] = identifier
+    _save(path, project_datasets=dict(list(choices.items())[-100:]))

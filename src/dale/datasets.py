@@ -16,7 +16,7 @@ from dale.catalog import CatalogImage, CatalogView
 from dale.json_repair import JsonCoordinateDocument, repaired_json_bytes
 from dale.layer_repair import repair_history_is_safe, wall_bounds
 from dale.project_io import JsonDocument, _encode, _restore_session, current_contours_document
-from dale.provenance import LineRecord, geometry_edges
+from dale.provenance import LineRecord, SourceWall, geometry_edges
 from dale.scene import SceneInput, load_pair, scene_from_json
 from dale.session import (
     AddedSourceWall,
@@ -174,7 +174,13 @@ class DatasetCatalog:
         for pair in pairs:
             old = catalog.views.get(pair)
             session = copy_session(old.session) if old else Session(catalog.source_for(pair))
-            identifier = "set-" + uuid4().hex
+            # Current pair catalogs have stable selection keys, even before their first save.
+            identifier = (
+                "set-"
+                + hashlib.sha256(
+                    json.dumps(pair, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()[:32]
+            )
             name = result.unique_name(
                 old.name if old and old.name else Path(session.source.name).stem,
                 (v.name for v in result.views.values()),
@@ -200,7 +206,7 @@ class DatasetCatalog:
 
     @property
     def default_key(self):
-        return self.base_key
+        return self.active_key
 
     @property
     def base_session(self):
@@ -361,7 +367,18 @@ class DatasetCatalog:
         name = self.unique_name(name or "Dataset", (v.name for v in self.views.values()))
         identifier = "set-" + uuid4().hex
         view = Dataset(Session(empty_source()), dict(ui or self.current.ui), name, identifier)
-        view.ui.update(safe_json_repair=False, source_layer="all", export_regions=None, mode="Pan")
+        view.ui.update(
+            safe_json_repair=False,
+            source_layer="all",
+            export_regions=None,
+            mode="Pan",
+            groups=[],
+            active_group=None,
+            group_sections={},
+            section_active_groups={},
+            raster_aids={},
+            raster_brushes={},
+        )
         self.views[identifier] = view
         return view
 
@@ -424,6 +441,8 @@ class DatasetCatalog:
                 active_offset
                 if key == self.active_key and active_offset is not None
                 else v.ui.get("artwork_offset_px", v.session.contour_offset),
+                json.dumps(v.ui.get("groups", []), sort_keys=True),
+                json.dumps(v.ui.get("group_sections", {}), sort_keys=True),
             )
             for key, v in self.views.items()
         )
@@ -464,11 +483,16 @@ class DatasetCatalog:
                         ),
                         "operations": [_encode(op) for op in view.session.operations],
                         "redo": [_encode(op) for op in view.session.future],
+                        **(
+                            {"undo_floor": view.session.history_floor}
+                            if view.session.history_floor
+                            else {}
+                        ),
                         "ui": view.ui,
                     },
                 }
             )
-        return {"version": 1, "default": self.base_key, "sets": sets}
+        return {"version": 1, "default": self.default_key, "sets": sets}
 
     @classmethod
     def restore(cls, session, ui, documents, images, value):
@@ -540,9 +564,10 @@ class DatasetCatalog:
                 item.get("json_label"),
                 item.get("image_label"),
             )
-        if value.get("default") != result.base_key:
+        default = value.get("default")
+        if not isinstance(default, str) or default not in result.views:
             raise ValueError("Invalid project default dataset.")
-        result.active_key = result.base_key
+        result.active_key = default
         result.base_session.json_documents = tuple(
             d for d in documents if d.id != "source" and not d.is_current
         )
@@ -556,6 +581,9 @@ class DatasetCatalog:
         raster = [op for op in target.operations if isinstance(op, (Stroke, ContourMask))]
         self._source_documents = self.documents
         if kind == "json":
+            view.ui.update(
+                groups=[], active_group=None, group_sections={}, section_active_groups={}
+            )
             base = (
                 incoming.source
                 if incoming
@@ -589,6 +617,12 @@ class DatasetCatalog:
                 operations=[*operations, *raster],
                 gap_tolerance=target.gap_tolerance,
                 contour_offset=target.contour_offset,
+                history_floor=sum(
+                    isinstance(op, (GeometryEdit, Closure))
+                    for op in incoming.operations[: incoming.history_floor]
+                )
+                if incoming
+                else 0,
             )
             view.ui.update(safe_json_repair=safe, source_layer="all", export_regions=None)
         elif kind == "image":
@@ -607,7 +641,15 @@ class DatasetCatalog:
                 op for op in incoming.operations if isinstance(op, (Stroke, ContourMask))
             ) if incoming else None
             view.session = replace(
-                target, source=source, operations=operations, future=[], json_documents=()
+                target,
+                source=source,
+                operations=operations,
+                future=[],
+                json_documents=(),
+                history_floor=sum(
+                    isinstance(op, (GeometryEdit, Closure))
+                    for op in target.operations[: target.history_floor]
+                ),
             )
             view.image_name = incoming.source.image_name if incoming else None
             view.ui.update(export_regions=None)
@@ -630,6 +672,8 @@ class DatasetCatalog:
 
     def add_json(self, identifier, incoming):
         """Append exact new contour records; safe native mode retains all other Scene bytes."""
+        from dale.wall_styles import geometry_styles, property_style, resolve_style
+
         view = self.views[identifier]
         if not view.has_json:
             self.replace_component(identifier, "json", incoming)
@@ -638,14 +682,32 @@ class DatasetCatalog:
         before, addition = session.geometry(), incoming.geometry()
         self._source_documents = (
             *self.documents,
-            JsonDocument(
-                "incoming",
-                incoming.source.json_name or "Contours.json",
-                "original",
-                incoming.source.json_bytes,
+            *incoming.json_documents,
+            *(
+                (
+                    JsonDocument(
+                        "incoming",
+                        incoming.source.json_name or "Contours.json",
+                        "original",
+                        incoming.source.json_bytes,
+                    ),
+                )
+                if incoming.source.json_bytes is not None
+                else ()
             ),
         )
-        if session.source.json_bytes is not None and repair_history_is_safe(session):
+        incoming_styles = geometry_styles(addition)
+        documents = {
+            hashlib.sha256(d.data).hexdigest(): json.loads(d.data) for d in self._source_documents
+        }
+        native_properties = all(
+            isinstance(style, SourceWall) for values in incoming_styles.values() for style in values
+        )
+        if (
+            session.source.json_bytes is not None
+            and repair_history_is_safe(session)
+            and native_properties
+        ):
             payload, _ = repaired_json_bytes(session)
             document = JsonCoordinateDocument(payload)
             existing = document.raw["walls"]
@@ -653,10 +715,14 @@ class DatasetCatalog:
             identifiers = {str(w.get("_id", w.get("id"))) for w in existing}
             walls = []
             kept_records = []
-            for edge, ref, record in zip(
-                addition.walls, incoming.source.wall_sources, addition.lineage, strict=True
+            for edge, record, style in (
+                (incoming_edge, incoming_record, owned_style)
+                for incoming_edge, incoming_record in zip(
+                    geometry_edges(addition.walls, addition.closures), addition.lineage, strict=True
+                )
+                for owned_style in incoming_styles[incoming_record.id]
             ):
-                wall = dict(incoming.source.raw["walls"][ref.wall_index])
+                wall = resolve_style(style, documents)
                 wall["c"] = [
                     p[axis] * session.source.scene_size[axis] / session.source.size[axis]
                     + session.origin[axis]
@@ -675,19 +741,19 @@ class DatasetCatalog:
                     native_id = wall["_id"]
                 identifiers.add(native_id)
                 walls.append(wall)
-                kept_records.append(record)
+                kept_records.append((record, style))
             if not walls:
                 return 0
             records = list(before.lineage)
             additions = list(getattr(before, "additions", ()))
             ancestry = {r.id: r for r in (*before.ancestry, *addition.ancestry)}
-            ids = {r.id for r in records}
+            ids = {r.id for r in (*records, *before.ancestry)}
             incoming_edges = {
                 record.id: edge
                 for edge, record in zip(addition.walls, addition.lineage, strict=True)
             }
-            for wall, record in zip(walls, kept_records, strict=True):
-                if record.id in ids:
+            for wall, (record, style) in zip(walls, kept_records, strict=True):
+                if record.id in ids or record.origin == "derived":
                     ancestry[record.id] = record
                     record = LineRecord.child((record,), incoming_edges[record.id], manual=True)
                 records.append(record)
@@ -702,14 +768,17 @@ class DatasetCatalog:
                         wall["_id"],
                         bottom if math.isfinite(bottom) else None,
                         top if math.isfinite(top) else None,
-                        record.sources[0],
+                        style if isinstance(style, SourceWall) else None,
                         json.dumps(
                             properties, ensure_ascii=True, allow_nan=False, separators=(",", ":")
                         ).encode(),
                     )
                 )
             # Appended edges stay in the original image pixel frame.
-            edges = (*before.walls, *(incoming_edges[record.id] for record in kept_records))
+            edges = (
+                *before.walls,
+                *(incoming_edges[record.id] for record, _ in kept_records),
+            )
             session.add(
                 SourceRepairEdit(
                     tuple(edges),
@@ -722,39 +791,31 @@ class DatasetCatalog:
             count = len(walls)
         else:
             # Preserve every existing edge/identity and all immutable raster snapshots.
-            from dale.wall_styles import geometry_styles, property_style, resolve_style
-
             edges = list(geometry_edges(before.walls, before.closures))
             records = list(before.lineage)
             styles = geometry_styles(before)
-            incoming_styles = geometry_styles(addition)
-            documents = {
-                hashlib.sha256(d.data).hexdigest(): json.loads(d.data)
-                for d in self._source_documents
+
+            def signature(edge, record, owned_styles):
+                return edge, frozenset(
+                    wall_key(dict(resolve_style(style, documents), c=[]))[1]
+                    for style in owned_styles[record.id]
+                )
+
+            known = {
+                signature(edge, record, styles) for edge, record in zip(edges, records, strict=True)
             }
-
-            def signature(edge, record):
-                properties = []
-                for ref in record.sources:
-                    wall = documents[ref.json_sha256]["walls"][ref.wall_index]
-                    properties.append(
-                        {k: v for k, v in wall.items() if k not in ("_id", "id", "c")}
-                    )
-                return edge, property_key(properties or [{}])
-
-            known = {signature(edge, record) for edge, record in zip(edges, records, strict=True)}
-            ids = {record.id for record in records}
+            ids = {record.id for record in (*records, *before.ancestry)}
             ancestors = {r.id: r for r in (*before.ancestry, *addition.ancestry)}
             for edge, record in zip(
                 geometry_edges(addition.walls, addition.closures), addition.lineage, strict=True
             ):
-                item = signature(edge, record)
+                item = signature(edge, record, incoming_styles)
                 if item not in known:
                     properties = tuple(
                         property_style(resolve_style(style, documents))
                         for style in incoming_styles[record.id]
                     )
-                    if record.id in ids:
+                    if record.id in ids or record.origin == "derived":
                         ancestors[record.id] = record
                         record = LineRecord.child((record,), edge, manual=True)
                     edges.append(edge)
@@ -810,7 +871,13 @@ def append_dataset(project, source, identifier, *, reserved_names=()):
             prefix=".dale-dataset-export-", dir=project.parent
         ) as directory:
             staging = Path(directory) / "project.dale"
-            save_project(target.current.session, staging, target.current.ui, catalog=target)
+            save_project(
+                target.current.session,
+                staging,
+                target.current.ui,
+                catalog=target,
+                custom_colors=list(loaded.custom_colors),
+            )
             with project.open("rb") as stream:
                 if hashlib.file_digest(stream, "sha256").digest() != before:
                     raise ValueError("The target project changed during export. Try again.")

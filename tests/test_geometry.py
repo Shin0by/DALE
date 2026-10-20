@@ -8,6 +8,36 @@ from dale.geometry import analyze_regions, nearest_source, offset_region
 from dale.session import Closure, ContourMask, Session, Stroke
 
 
+@pytest.mark.parametrize("scale,shift", [(1, 0), (1, 8000), (0.01, 50), (100, 100000)])
+def test_projected_wall_endpoint_stays_closed_while_sliding_on_angled_wall(scale, shift):
+    from dale.editing import project
+
+    def point(x, y):
+        return x * scale + shift, y * scale + shift
+
+    target = (point(39.9832, 182.7731), point(1101.3927, 519.2221))
+    corner = point(334.2481, 702.3419)
+    for index in range(20, 181):
+        cursor = tuple(
+            target[0][axis] + (target[1][axis] - target[0][axis]) * index / 200 for axis in (0, 1)
+        )
+        snapped, _ = project((cursor[0] - 2 * scale, cursor[1] + 3 * scale), target)
+        walls = (target, (target[0], corner), (corner, snapped))
+        before = tuple(walls)
+        result = analyze_regions(walls)
+        assert result.faces == 1, (index, snapped)
+        assert result.area.area > 0
+        assert len(result.unresolved) == 1
+        assert walls == before  # Contact reconciliation is analysis-only.
+
+
+def test_nearby_wall_gaps_and_parallel_lines_are_not_closed_by_contact_roundoff():
+    target = ((0, 0), (100, 50))
+    for gap in (1e-5, 1e-3, 1, 10):
+        walls = (target, ((0, 0), (0, -20)), ((0, -20), (50, 25 - gap)))
+        assert analyze_regions(walls).faces == 0
+
+
 def test_snap_projects_to_segment_interior_and_obeys_tolerance():
     walls = (((0, 0), (100, 0)),)
     assert nearest_source((43, 3), walls, 5) == (43, 0)

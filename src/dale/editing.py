@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_left, insort
 from collections import OrderedDict
 from dataclasses import dataclass
-from itertools import pairwise
+from itertools import combinations, pairwise
 from typing import Literal
 
 from shapely import STRtree
-from shapely.geometry import LineString
+from shapely.geometry import LineString, box
 from shapely.geometry import Point as ShapePoint
 
 from dale.provenance import LineageBuilder, LineRecord, edge_key, geometry_edges
@@ -17,6 +18,66 @@ from dale.scene import Point, Segment
 from dale.session import GeometryEdit
 
 EPSILON = 1e-7
+
+
+class GuideTargets:
+    """Frozen stationary vertices and cursor-acquired axis references for one gesture."""
+
+    def __init__(self, points):
+        self.points = tuple(sorted(set(points)))
+        self.point_set = frozenset(self.points)
+        self.tree = STRtree([ShapePoint(p) for p in self.points])
+        self.axes = tuple(tuple(sorted((p[axis], p) for p in self.points)) for axis in (0, 1))
+        self.acquired = set()
+        self.acquired_axes = ([], [])
+        self.last = None
+
+    def nearest(self, point, tolerance):
+        candidates = (
+            (math.dist(point, self.points[int(i)]), self.points[int(i)])
+            for i in self.tree.query(
+                box(
+                    point[0] - tolerance,
+                    point[1] - tolerance,
+                    point[0] + tolerance,
+                    point[1] + tolerance,
+                )
+            )
+        )
+        return min((hit for hit in candidates if hit[0] <= tolerance), default=(None, None))[1]
+
+    def acquire(self, cursor, tolerance):
+        point = self.nearest(cursor, tolerance)
+        if point is not None:
+            if point not in self.acquired:
+                self.acquired.add(point)
+                for axis in (0, 1):
+                    insort(self.acquired_axes[axis], (point[axis], point))
+            self.last = point
+        return point
+
+    def align(self, point, tolerance, *, acquired_only=False):
+        destination, guides = list(point), []
+        for axis in (0, 1):
+            for anchors in (
+                self.acquired_axes[axis],
+                *(() if acquired_only else (self.axes[axis],)),
+            ):
+                at = bisect_left(anchors, (point[axis], (-float("inf"), -float("inf"))))
+                candidates = [
+                    (abs(anchors[i][0] - point[axis]), anchors[i][1])
+                    for i in (at - 1, at)
+                    if 0 <= i < len(anchors) and abs(anchors[i][0] - point[axis]) <= tolerance
+                ]
+                if candidates:
+                    _, anchor = min(candidates)
+                    # The most recently visited vertex identifies coincident axis references.
+                    if self.last is not None and anchor[axis] == self.last[axis]:
+                        anchor = self.last
+                    destination[axis] = anchor[axis]
+                    guides.append((axis, anchor))
+                    break
+        return tuple(destination), tuple(guides)
 
 
 def _same(a: Point, b: Point) -> bool:
@@ -94,6 +155,105 @@ def snap_point(
     return hit.point if hit else None
 
 
+def _satisfies_right_angle(guide, moving, candidate):
+    a, joint, b = tuple(candidate if _same(p, moving) else p for p in guide)
+    u, v = tuple(a[i] - joint[i] for i in (0, 1)), tuple(b[i] - joint[i] for i in (0, 1))
+    lengths = math.hypot(*u), math.hypot(*v)
+    return min(lengths) > EPSILON and abs(sum(u[i] * v[i] for i in (0, 1))) <= EPSILON * math.prod(
+        lengths
+    )
+
+
+def _right_angle_deviation(guide, moving, candidate):
+    a, joint, b = tuple(candidate if _same(p, moving) else p for p in guide)
+    u, v = tuple(a[i] - joint[i] for i in (0, 1)), tuple(b[i] - joint[i] for i in (0, 1))
+    if min(math.hypot(*u), math.hypot(*v)) <= EPSILON:
+        return math.inf
+    return abs(math.degrees(math.atan2(u[0] * v[0] + u[1] * v[1], abs(u[0] * v[1] - u[1] * v[0]))))
+
+
+def snap_constrained_point(
+    geometry, point, tolerance, *, exclude=None, guides=(), angle=None, angles=()
+):
+    """Snap to stationary geometry without leaving accepted axes or a right-angle locus."""
+    if tolerance <= 0:
+        return None
+    angles = tuple(angles)
+    if angle is None and angles:
+        angle, angles = angles[0], angles[1:]
+    if not guides and angle is None:
+        return snap_point(geometry, point, tolerance, exclude=exclude)
+
+    def cross(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    def compatible(candidate):
+        if any(abs(candidate[axis] - anchor[axis]) > EPSILON for axis, anchor in guides):
+            return False
+        return all(
+            _satisfies_right_angle(guide, point, candidate)
+            for guide in ((angle,) if angle is not None else ()) + angles
+        )
+
+    candidates = [
+        (math.dist(point, vertex), vertex)
+        for vertex in vertices(geometry)
+        if (exclude is None or not _same(vertex, exclude))
+        and math.dist(point, vertex) <= tolerance
+        and compatible(vertex)
+    ]
+    if candidates:
+        return min(candidates)[1]
+
+    circle = None
+    if angle is not None:
+        a, joint, b = angle
+        if _same(joint, point):
+            circle = tuple((a[i] + b[i]) / 2 for i in (0, 1)), math.dist(a, b) / 2
+        else:
+            fixed = b if _same(a, point) else a
+            origin = joint
+            vector = (-(fixed[1] - joint[1]), fixed[0] - joint[0])
+    else:
+        axis, anchor = guides[0]
+        origin = anchor
+        vector = (0, 1) if axis == 0 else (1, 0)
+
+    for edge in geometry_edges(geometry.walls, geometry.closures):
+        if exclude is not None and _same(project(exclude, edge)[0], exclude):
+            continue
+        a, b = edge
+        delta = tuple(b[i] - a[i] for i in (0, 1))
+        length = math.hypot(*delta)
+        if length <= EPSILON:
+            continue
+        positions = []
+        if circle is not None:
+            center, radius = circle
+            unit = tuple(value / length for value in delta)
+            offset = tuple(center[i] - a[i] for i in (0, 1))
+            along = sum(offset[i] * unit[i] for i in (0, 1))
+            height_squared = radius * radius - cross(offset, unit) ** 2
+            if height_squared >= -EPSILON * max(radius, 1):
+                height = math.sqrt(max(0, height_squared))
+                positions = [(along - height) / length, (along + height) / length]
+        else:
+            offset = tuple(origin[i] - a[i] for i in (0, 1))
+            denominator = cross(delta, vector)
+            if abs(denominator) > EPSILON * length * math.hypot(*vector):
+                positions = [cross(offset, vector) / denominator]
+            elif abs(cross(offset, vector)) <= EPSILON * math.hypot(*vector):
+                positions = [project(point, edge)[1]]
+        for fraction in positions:
+            if -EPSILON / length <= fraction <= 1 + EPSILON / length:
+                fraction = max(0, min(1, fraction))
+                candidate = tuple(a[i] + fraction * delta[i] for i in (0, 1))
+                distance = math.dist(point, candidate)
+                if distance <= tolerance and compatible(candidate):
+                    candidates.append((distance, candidate))
+    return min(candidates)[1] if candidates else None
+
+
 def alignment_points(
     geometry: GeometryEdit, vertex: Point, intervals=None, *, neighbours_only=False
 ):
@@ -149,44 +309,294 @@ def align_orthogonal_point(point: Point, anchors, tolerance: float):
     return tuple(destination), tuple(guides)
 
 
-def right_angle_point(point, preferred, vertex, neighbours, geometry, tolerance):
-    """Snap a joint to 90 degrees, independent of map axes; return its two guide legs."""
-    if len(neighbours) >= 2:
-        a, b = neighbours[:2]
+def right_angle_line(
+    point, preferred, start, geometry, tolerance_deg, *, own_priority=True, guides=()
+):
+    """Square a new line against existing legs at its fixed start, without editing them."""
+    references = tuple(
+        (start, endpoint)
+        for edge in geometry_edges(geometry.walls, geometry.closures)
+        if _same(project(start, edge)[0], start)
+        for endpoint in edge
+        if not _same(endpoint, start)
+    )
+    target, angles = _right_angle_point(
+        point,
+        preferred,
+        None,
+        (start,),
+        references,
+        tolerance_deg,
+        own_priority=own_priority,
+        guides=guides,
+    )
+    return target, angles[0] if angles else None
+
+
+def right_angle_point(
+    point,
+    preferred,
+    vertex,
+    neighbours,
+    geometry,
+    tolerance_deg,
+    *,
+    include_neighbours=True,
+    own_priority=True,
+    guides=(),
+):
+    """Square a joint within angular tolerance; return its closest exact guide legs."""
+    target, angles = right_angle_constraints(
+        point,
+        preferred,
+        vertex,
+        neighbours,
+        geometry,
+        tolerance_deg,
+        include_neighbours=include_neighbours,
+        own_priority=own_priority,
+        guides=guides,
+    )
+    return target, angles[0] if angles else None
+
+
+def right_angle_constraints(
+    point,
+    preferred,
+    vertex,
+    neighbours,
+    geometry,
+    tolerance_deg,
+    *,
+    include_neighbours=True,
+    own_priority=True,
+    guides=(),
+):
+    """Keep the closest angle locus and combine nearby compatible affected corners."""
+    references = geometry_edges(geometry.walls, geometry.closures) if include_neighbours else ()
+    return _right_angle_point(
+        point,
+        preferred,
+        vertex,
+        neighbours,
+        references,
+        tolerance_deg,
+        own_priority=own_priority,
+        guides=guides,
+    )
+
+
+def _angle_locus(guide, moving):
+    a, joint, b = guide
+    if _same(joint, moving):
+        return "circle", tuple((a[i] + b[i]) / 2 for i in (0, 1)), math.dist(a, b) / 2
+    fixed = b if _same(a, moving) else a
+    length = math.dist(fixed, joint)
+    return "line", joint, (-(fixed[1] - joint[1]) / length, (fixed[0] - joint[0]) / length)
+
+
+def _angle_intersections(first, second):
+    """Exact intersections of two infinite right-angle loci, without extending geometry."""
+
+    def cross(a, b):
+        return a[0] * b[1] - a[1] * b[0]
+
+    if first[0] == "circle" and second[0] == "line":
+        first, second = second, first
+    if first[0] == "line":
+        _, origin, vector = first
+        _, other, value = second
+        offset = tuple(other[i] - origin[i] for i in (0, 1))
+        if second[0] == "line":
+            denominator = cross(vector, value)
+            if abs(denominator) <= EPSILON:
+                return ()
+            positions = (cross(offset, value) / denominator,)
+        else:
+            along = sum(offset[i] * vector[i] for i in (0, 1))
+            height_squared = value * value - cross(offset, vector) ** 2
+            if height_squared < -EPSILON * max(value, 1):
+                return ()
+            height = math.sqrt(max(0, height_squared))
+            positions = along - height, along + height
+        return tuple(tuple(origin[i] + t * vector[i] for i in (0, 1)) for t in positions)
+    _, a, ra = first
+    _, b, rb = second
+    distance = math.dist(a, b)
+    if distance <= EPSILON or distance > ra + rb + EPSILON or distance < abs(ra - rb) - EPSILON:
+        return ()
+    unit = tuple((b[i] - a[i]) / distance for i in (0, 1))
+    along = (ra * ra - rb * rb + distance * distance) / (2 * distance)
+    height_squared = ra * ra - along * along
+    if height_squared < -EPSILON * max(ra, 1):
+        return ()
+    height = math.sqrt(max(0, height_squared))
+    center = tuple(a[i] + along * unit[i] for i in (0, 1))
+    normal = -unit[1], unit[0]
+    return tuple(tuple(center[i] + sign * height * normal[i] for i in (0, 1)) for sign in (-1, 1))
+
+
+@dataclass(frozen=True)
+class _AngleRule:
+    kind: str
+    target: Point
+    guide: tuple | None
+    locus: tuple
+    allowance: float
+    deviation: float
+
+    def key(self, point, preferred, own_priority):
+        priority = (
+            {"own": 0, "adjacent": 1, "guide": 2}[self.kind] if own_priority else self.kind == "own"
+        )
+        return (
+            priority,
+            math.dist(point, self.target),
+            math.dist(preferred, self.target),
+            self.target,
+            self.guide or (),
+        )
+
+    def accepts(self, candidate):
+        if self.guide is not None:
+            return _satisfies_right_angle(self.guide, self.target, candidate)
+        _, origin, vector = self.locus
+        offset = tuple(candidate[i] - origin[i] for i in (0, 1))
+        return abs(offset[0] * vector[1] - offset[1] * vector[0]) <= EPSILON
+
+    def deviation_at(self, candidate):
+        return _right_angle_deviation(self.guide, self.target, candidate) if self.guide else 0
+
+    def moved_guide(self, target):
+        return tuple(target if _same(p, self.target) else p for p in self.guide)
+
+
+def _right_angle_point(
+    point, preferred, vertex, neighbours, references, tolerance_deg, *, own_priority=True, guides=()
+):
+    neighbours = tuple(sorted(set(neighbours)))
+    rules = []
+
+    def consider(target, guide, raw_joint):
+        a, joint, b = raw_joint
+        u = tuple(a[i] - joint[i] for i in (0, 1))
+        v = tuple(b[i] - joint[i] for i in (0, 1))
+        if min(math.hypot(*u), math.hypot(*v)) <= EPSILON:
+            return
+        deviation = abs(
+            math.degrees(math.atan2(u[0] * v[0] + u[1] * v[1], abs(u[0] * v[1] - u[1] * v[0])))
+        )
+        if min(math.dist(guide[0], guide[1]), math.dist(guide[1], guide[2])) <= EPSILON:
+            return
+        distance = math.dist(point, target)
+        allowance = distance + math.sin(math.radians(tolerance_deg)) * min(
+            math.hypot(*u), math.hypot(*v)
+        )
+        kind = "own" if vertex is None or _same(guide[1], target) else "adjacent"
+        rules.append(
+            _AngleRule(kind, target, guide, _angle_locus(guide, target), allowance, deviation)
+        )
+
+    for a, b in combinations(neighbours, 2):
         center = tuple((a[i] + b[i]) / 2 for i in (0, 1))
         radius = math.dist(a, b) / 2
         direction = tuple(preferred[i] - center[i] for i in (0, 1))
         length = math.hypot(*direction)
+        target = (
+            tuple(center[i] + direction[i] * radius / length for i in (0, 1))
+            if length > EPSILON
+            else None
+        )
+        if target is None or min(math.dist(target, a), math.dist(target, b)) <= EPSILON:
+            # Axis guides can land on the circle center or collapse one angle leg.
+            direction = tuple(point[i] - center[i] for i in (0, 1))
+            length = math.hypot(*direction)
         if length <= EPSILON:
-            return preferred, None
+            continue
         target = tuple(center[i] + direction[i] * radius / length for i in (0, 1))
-        if (
-            math.dist(point, target) <= tolerance
-            and min(math.dist(target, a), math.dist(target, b)) > EPSILON
-        ):
-            return target, (a, target, b)
-    elif neighbours:
-        # A terminal handle may square its incident segment with the stationary
-        # continuation at its neighbour, rather than with a global map axis.
-        joint = neighbours[0]
-        candidates = []
-        for edge in geometry_edges(geometry.walls, geometry.closures):
-            if joint not in edge or vertex in edge:
+        consider(target, (a, target, b), (a, point, b))
+
+    # Every incident segment also changes the angle at its fixed endpoint.
+    adjacent = set(neighbours)
+    for edge in references:
+        if vertex in edge:
+            continue
+        for joint, other in (edge, edge[::-1]):
+            if joint not in adjacent:
                 continue
-            other = edge[1] if edge[0] == joint else edge[0]
             length = math.dist(other, joint)
             if length <= EPSILON:
                 continue
             normal = (-(other[1] - joint[1]) / length, (other[0] - joint[0]) / length)
             distance = sum((preferred[i] - joint[i]) * normal[i] for i in (0, 1))
             target = tuple(joint[i] + distance * normal[i] for i in (0, 1))
-            delta = math.dist(point, target)
-            if delta <= tolerance and math.dist(target, joint) > EPSILON:
-                candidates.append((delta, target, other))
-        if candidates:
-            _, target, other = min(candidates)
-            return target, (other, joint, target)
-    return preferred, None
+            consider(target, (other, joint, target), (other, joint, point))
+    for axis, anchor in () if own_priority else guides:
+        rules.append(
+            _AngleRule(
+                "guide",
+                preferred,
+                None,
+                ("line", anchor, (0, 1) if axis == 0 else (1, 0)),
+                math.inf,
+                0,
+            )
+        )
+
+    def order(rule):
+        return rule.key(point, preferred, own_priority)
+
+    eligible = sorted((rule for rule in rules if rule.deviation <= tolerance_deg + 1e-9), key=order)
+    if not eligible:
+        return preferred, ()
+    first = eligible[0]
+    if not own_priority and first.kind == "own":
+        approached = [
+            rule
+            for rule in rules
+            if rule.kind != "own" and rule.deviation_at(first.target) <= tolerance_deg + 1e-9
+        ]
+        if approached:
+            first = min(approached, key=order)
+    # Secondary corners are also approached along the accepted primary arc/line,
+    # rather than only at the unconstrained cursor position.
+    rules = [
+        first,
+        *sorted(
+            (
+                rule
+                for rule in rules
+                if rule != first
+                and (
+                    rule.deviation <= tolerance_deg + 1e-9
+                    or rule.deviation_at(first.target) <= tolerance_deg + 1e-9
+                )
+            ),
+            key=order,
+        ),
+    ]
+    targets = {first.target}
+    for rule in rules[1:]:
+        targets.update(_angle_intersections(first.locus, rule.locus))
+    candidates = []
+    for target in targets:
+        if math.dist(point, target) > first.allowance + EPSILON or not first.accepts(target):
+            continue
+        matched = tuple(
+            rule
+            for rule in rules
+            if math.dist(point, target) <= rule.allowance + EPSILON and rule.accepts(target)
+        )
+        angles = tuple(dict.fromkeys(rule.moved_guide(target) for rule in matched if rule.guide))
+        own = sum(rule.kind == "own" for rule in matched)
+        external = sum(rule.kind != "own" for rule in matched)
+        axes = sum(rule.kind == "guide" for rule in matched)
+        priorities = (-own, -external, -axes) if own_priority else (-external, -axes, -own)
+        candidates.append(
+            (priorities, math.dist(point, target), math.dist(preferred, target), target, angles)
+        )
+    best = min(candidates)
+    return best[3], best[4]
 
 
 def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
@@ -207,7 +617,9 @@ def add_line(geometry: GeometryEdit, start: Point, end: Point) -> GeometryEdit:
     return builder.build(walls, closures, overrides)
 
 
-def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tuple[Point, ...]:
+def circle_points(
+    center: Point, radius: float, cell_pixels: float = 100, *, detail_steps: int = 0
+) -> tuple[Point, ...]:
     """Closed editable polygon, with density based on diameter in map cells."""
     if (
         type(radius) not in (int, float)
@@ -221,6 +633,8 @@ def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tup
         or any(abs(v) + radius > 1e9 for v in center)
     ):
         raise ValueError("Circle center and radius must be finite and within coordinate limits.")
+    if type(detail_steps) is not int or not 0 <= detail_steps <= 95:
+        raise ValueError("Circle detail must be an integer from 0 to 95.")
     diameter = min(5112, 2 * radius / cell_pixels)  # Cap before ceil, including overflow to inf.
     count = (
         4
@@ -231,6 +645,8 @@ def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tup
         if diameter <= 2
         else min(4096, 8 + 2 * math.ceil((diameter - 2) / 2.5))
     )
+    # Each step adds 20% of automatic detail; retain exact opposite vertices and the cap.
+    count = min(4096, 2 * ((count * (5 + detail_steps) + 9) // 10))
     cx, cy = center
     points = [
         (cx + radius * math.cos(math.tau * i / count), cy + radius * math.sin(math.tau * i / count))
@@ -244,9 +660,14 @@ def circle_points(center: Point, radius: float, cell_pixels: float = 100) -> tup
 
 
 def add_circle(
-    geometry: GeometryEdit, center: Point, radius: float, cell_pixels: float = 100
+    geometry: GeometryEdit,
+    center: Point,
+    radius: float,
+    cell_pixels: float = 100,
+    *,
+    detail_steps: int = 0,
 ) -> GeometryEdit:
-    points = circle_points(center, radius, cell_pixels)
+    points = circle_points(center, radius, cell_pixels, detail_steps=detail_steps)
     geometry = node_geometry(geometry, points[:-1])
     builder = LineageBuilder(geometry)
     walls = list(geometry.walls)

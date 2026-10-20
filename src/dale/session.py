@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from dale.geometry import analyze_regions, offset_region
@@ -30,6 +30,9 @@ class Stroke:
     points: tuple[Point, ...]
     radius: float
     restore: bool = False
+    shape: str = "circle"
+    feather: float = 0.0
+    opacity: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -40,12 +43,39 @@ class ContourMask:
 
 
 @dataclass(frozen=True)
+class RasterTransform:
+    """Immutable cut-and-transform of the preceding raster state in source pixels."""
+
+    area_wkb: bytes
+    matrix: tuple[float, float, float, float, float, float]
+    regions: tuple[bytes, ...] = ()
+    cells: tuple = ()
+
+
+@dataclass(frozen=True)
+class RegionSelection:
+    """Immutable selected cells, independent of Qt and transient cell indices."""
+
+    polygons: tuple[bytes, ...] = ()
+    detached: bool = False
+    line_ids: tuple[str, ...] = ()
+    all_regions: bool = False
+
+
+@dataclass(frozen=True)
+class RasterSelectionEdit:
+    before: RegionSelection
+    after: RegionSelection
+
+
+@dataclass(frozen=True)
 class GeometryEdit:
     walls: tuple
     closures: tuple[tuple[Point, ...], ...] = ()
     lineage: tuple[LineRecord, ...] = field(default=(), compare=False)
     ancestry: tuple[LineRecord, ...] = field(default=(), compare=False)
     wall_styles: tuple = field(default=(), compare=False, kw_only=True)
+    raster: RasterTransform | None = field(default=None, compare=False, kw_only=True)
     connection_state: tuple = field(default=(), init=False)
 
     def __post_init__(self):
@@ -82,7 +112,8 @@ class SourceRepairEdit(GeometryEdit):
     additions: tuple[AddedSourceWall, ...] = ()
 
 
-Operation = Closure | Stroke | ContourMask | GeometryEdit
+Operation = Closure | Stroke | ContourMask | GeometryEdit | RasterSelectionEdit
+HISTORY_LIMIT = 100
 
 
 @dataclass
@@ -94,6 +125,7 @@ class Session:
     gap_tolerance: float = 0.0
     contour_offset: float = 0.0
     json_documents: tuple = ()
+    history_floor: int = field(default=0, kw_only=True)
 
     @property
     def walls(self):
@@ -128,7 +160,13 @@ class Session:
         return geometry
 
     def analysis(self):
-        return analyze_regions(self.walls, self.closures, self.gap_tolerance)
+        geometry = self.geometry()
+        key = geometry.walls, geometry.closures, self.gap_tolerance
+        cached = getattr(self, "_analysis_cache", None)
+        if cached is None or cached[0] != key:
+            cached = key, analyze_regions(*key)
+            self._analysis_cache = cached
+        return cached[1]
 
     def make_mask(self, mode: Literal["outside", "inside"], area=None):
         area = self.analysis().area if area is None else area
@@ -137,9 +175,41 @@ class Session:
     def add(self, operation: Operation):
         self.operations.append(operation)
         self.future.clear()
+        self.trim_history()
+
+    def trim_history(self, keep=HISTORY_LIMIT):
+        """Checkpoint old geometry while retaining exact ordered raster state and lineage."""
+        self.future[:] = self.future[-keep:] if keep else []
+        cut = max(self.history_floor, len(self.operations) - max(0, keep - len(self.future)))
+        if cut <= self.history_floor:
+            return
+        prefix = self.operations[:cut]
+        baseline = [
+            op
+            for op in prefix
+            if isinstance(op, (Stroke, ContourMask)) or getattr(op, "raster", None) is not None
+        ]
+        if any(isinstance(op, (GeometryEdit, Closure)) for op in prefix):
+            geometry = replace(self, operations=prefix, future=[]).geometry()
+            records = {}
+            for op in prefix:
+                if isinstance(op, (GeometryEdit, Closure)):
+                    for record in (*getattr(op, "ancestry", ()), *op.lineage):
+                        records[record.id] = record
+            records.update({r.id: r for r in (*geometry.ancestry, *geometry.lineage)})
+            live = {r.id for r in geometry.lineage}
+            baseline.append(
+                replace(
+                    geometry,
+                    ancestry=tuple(r for i, r in records.items() if i not in live),
+                    raster=None,
+                )
+            )
+        self.operations[:] = [*baseline, *self.operations[cut:]]
+        self.history_floor = len(baseline)
 
     def undo(self):
-        if self.operations:
+        if len(self.operations) > self.history_floor:
             self.future.append(self.operations.pop())
 
     def redo(self):

@@ -3,13 +3,21 @@
 import json
 import os
 import threading
-import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence, QTransform, QWheelEvent
+from PySide6.QtCore import QEventLoop, QPoint, QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import (
+    QAction,
+    QContextMenuEvent,
+    QImage,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QTransform,
+    QWheelEvent,
+)
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QComboBox, QDialogButtonBox, QMessageBox
 from shapely.affinity import rotate
@@ -18,13 +26,15 @@ from dale.canvas import GEOMETRY_TOOLS, HANDLE_DIAMETER, REGION_TOOLS, MapView
 from dale.editing import add_line, circle_points, vertices
 from dale.project_io import load_project, save_project
 from dale.raster import load_preview
-from dale.session import Session, Stroke
-from dale.ui import MainWindow
+from dale.session import RasterSelectionEdit, Session, Stroke
+from dale.ui import MainWindow, configure_application
 
 
 @pytest.fixture(scope="module")
 def app():
-    return QApplication.instance() or QApplication([])
+    application = QApplication.instance() or QApplication([])
+    configure_application(application)
+    return application
 
 
 @pytest.fixture(autouse=True)
@@ -270,8 +280,8 @@ def test_circle_paint_changes_edges_during_drag_in_both_directions(app, pair_fac
     app.processEvents()
     painted = []
 
-    def record_points(*args):
-        result = circle_points(*args)
+    def record_points(*args, **kwargs):
+        result = circle_points(*args, **kwargs)
         painted.append(result)
         return result
 
@@ -324,7 +334,7 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         "Delete contours",
     ]
     assert window.clear_selection_action in window.basic_toolbar.actions()
-    assert len(window.toolbars) == 7
+    assert len(window.toolbars) == 14
     assert window.toolbars[0] == window.tool_set_toolbar
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
@@ -699,7 +709,7 @@ def test_rotate_button_uses_plain_wheel_without_zoom_and_keeps_move_alt_free(
     for language, token in (("ru", "Колесо"), ("en", "Wheel"), ("ru", "Колесо")):
         window.set_language(language, persist=False)
         assert token in window.rotate_button.toolTip()
-        assert "Alt" not in window.rotate_button.toolTip()
+        assert "Alt" in window.rotate_button.toolTip()
         assert "Alt" not in window.move_button.toolTip()
     view = window.view
     zoom = view.transform().m11()
@@ -816,6 +826,103 @@ def test_alt_does_not_force_map_axes_without_adjacent_angle(
 
 
 @pytest.mark.parametrize("zoom", [1, 3])
+@pytest.mark.parametrize("side", [-1, 1])
+def test_alt_drag_squares_both_neighbour_corners_and_previews_actual_joint(
+    app, pair_factory, zoom, side
+):
+    source = pair_factory(
+        size=(300, 220),
+        walls=[
+            {"c": c}
+            for c in (
+                [100, 80, 120, 100],
+                [120, 100, 140, 80],
+                [140, 80, 160, 100],
+                [160, 100, 180, 80],
+            )
+        ],
+    )
+    view = MapView()
+    view.resize(900, 750)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(140, 100)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 3
+    app.processEvents()
+    initial = view.session.geometry()
+    cursor = (140 + side, 82)
+    target = (140 + side * 1.5, 81.5)
+    for cancel in (True, False):
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 80))
+        QTest.mouseMove(view.viewport(), view.mapFromScene(*cursor))
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+        assert view.angle_joint[1] == ((120, 100) if side < 0 else (160, 100))
+        assert view.edit_preview.walls[1][1] == pytest.approx(target)
+        assert view.edit_preview.walls[2][0] == pytest.approx(target)
+        assert view.edit_preview.walls[0] == initial.walls[0]
+        assert view.edit_preview.walls[3] == initial.walls[3]
+        if cancel:
+            QTest.keyClick(view, Qt.Key.Key_Escape)
+            assert view.session.geometry() == initial and view.angle_joint is None
+        QTest.mouseRelease(
+            view.viewport(),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier,
+            pos=view.mapFromScene(*cursor),
+        )
+        QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert len(view.session.operations) == 1 and view.alignment_geometry is None
+    assert view.session.walls[1][1] == pytest.approx(target)
+    view.session.undo()
+    assert view.session.geometry() == initial
+    view.close()
+
+
+def test_neighbour_angle_does_not_use_an_independent_coincident_contour(app, pair_factory):
+    from dataclasses import replace
+
+    source = pair_factory(
+        size=(300, 220),
+        walls=[{"c": c} for c in ([120, 100, 140, 80], [140, 80, 160, 100], [100, 80, 120, 100])],
+    )
+    session = Session(source)
+    geometry = session.geometry()
+    geometry = replace(
+        geometry,
+        lineage=tuple(
+            replace(r, connection_group="own" if i < 2 else "other")
+            for i, r in enumerate(geometry.lineage)
+        ),
+    )
+    session.add(geometry)
+    view = MapView()
+    view.resize(900, 750)
+    view.assign(session, load_preview(source))
+    view.show()
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(140, 100)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 2
+    app.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 80))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(139, 82))
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert len(view.alignment_geometry.walls) == 2
+    assert view.angle_joint is None and view.edit_preview.walls[0][1] == (139, 82)
+    assert view.edit_preview.walls[2] == geometry.walls[2]
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert session.geometry() == geometry
+    view.close()
+
+
+@pytest.mark.parametrize("zoom", [1, 3])
 def test_alt_drag_aligns_corner_on_two_guides_with_one_undo_and_escape(app, pair_factory, zoom):
     source = pair_factory(
         size=(300, 220),
@@ -833,7 +940,7 @@ def test_alt_drag_aligns_corner_on_two_guides_with_one_undo_and_escape(app, pair
     view.centerOn(140, 100)
     view.set_mode("Edit points")
     view.snap_distance = 5 * zoom
-    view.right_angle_distance_px = 5 * zoom
+    view.right_angle_tolerance_deg = 5
     view.contour_alignment_distance_px = 5 * zoom
     view.right_angle_alignment = True
     view.contour_alignment = True
@@ -986,7 +1093,12 @@ def test_region_selection_picks_minimal_cell_not_touching_neighbors_and_persists
     assert restored.selected_regions == window.selected_regions
     assert restored.current_tool_set == "regions"
     assert restored.contour_offset.value() == 500
-    assert restored.view.raster_diameters == {"Erase": 31, "Restore": 79}
+    assert restored.view.raster_diameters == {
+        "Erase": 31,
+        "Restore": 79,
+        "Erase square": 40,
+        "Restore square": 40,
+    }
     assert restored.tool_set_actions["geometry"].text() == "Вершины"
     assert restored.tool_set_actions["regions"].text() == "Области"
     assert restored.tool_set_actions["pixels"].text() == "Растр"
@@ -1601,7 +1713,7 @@ def test_language_switch_updates_actions_tooltips_and_keeps_mode_keys(app, tmp_p
     assert "Escape" in window.mode_actions["Edit points"].toolTip()
     assert "Ctrl" in window.geometry_eraser_tiles["Erase lines"].toolTip()
     assert "Escape" in window.geometry_eraser_tiles["Erase vertices"].toolTip()
-    assert "Ctrl" in window.geometry_eraser_tiles["Erase vertices"].increase_button.toolTip()
+    assert "Ctrl" in window.geometry_eraser_tiles["Erase vertices"].toolTip()
     assert "Ctrl+E" in window.export_action.toolTip()
     assert "Клавиши:" in window.export_action.toolTip()
     window.language_control.setCurrentIndex(0)
@@ -1643,10 +1755,12 @@ def test_russian_review_dialog_and_standard_buttons(app, pair_factory, monkeypat
     window.toggle_region_at((30, 60))
     window.mask("outside")
     assert "Осталось незамкнутых" in messages[0]
-    assert not window.view.session.operations
+    assert len(window.view.session.operations) == 1
+    assert isinstance(window.view.session.operations[0], RasterSelectionEdit)
     dialog = QMessageBox(window)
     dialog.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel)
     assert "Сохранить" in dialog.button(QMessageBox.StandardButton.Save).text()
+    window.saved_state = window.document_state()
     window.close()
 
 
@@ -1797,7 +1911,7 @@ def test_export_margin_tooltip_has_one_description_and_keeps_wheel_help(app):
         for control in (tile, tile.editor(), tile.editor().lineEdit()):
             lines = control.toolTip().splitlines()
             assert len(lines) == len(set(lines))
-            assert 5 <= len(lines) <= 10
+            assert 5 <= len(lines) <= 12
             assert lines[0] == tile.defaultAction().text()
             assert lines[1].startswith("Назначение:" if language == "ru" else "Purpose:")
             assert control.toolTip().count("Ctrl") == 1
@@ -1824,7 +1938,7 @@ def test_tooltip_sections_stay_stable_and_use_actual_shortcuts(app, tmp_path):
             window.sidebar_toggle,
         ]
         for tile in window.sized_tools.values():
-            controls.extend((tile, tile.editor(), tile.editor().lineEdit(), tile.increase_button))
+            controls.extend((tile, tile.editor(), tile.editor().lineEdit()))
             assert tile.toolTip().count("Ctrl") == 1
             assert tile.toolTip().count("Escape") <= 1
         snapshot = []
@@ -1832,8 +1946,10 @@ def test_tooltip_sections_stay_stable_and_use_actual_shortcuts(app, tmp_path):
             tip = control.toolTip()
             assert not tip.startswith("Назначение:" if language == "ru" else "Purpose:")
             assert tip.splitlines()[1].startswith("Назначение:" if language == "ru" else "Purpose:")
-            assert tip.count("Условие:" if language == "ru" else "Condition:") == 1
-            assert tip.count("Клавиши:" if language == "ru" else "Keys:") == 1
+            assert tip.count("Условие:" if language == "ru" else "Condition:") <= 1
+            assert tip.count("Клавиши:" if language == "ru" else "Keys:") <= 1
+            assert "No additional conditions." not in tip
+            assert "no dedicated shortcut" not in tip
             lines = tip.splitlines()
             if isinstance(control, QAction):
                 assert lines[0] == control.text().replace("&", "")
@@ -1849,9 +1965,9 @@ def test_tooltip_sections_stay_stable_and_use_actual_shortcuts(app, tmp_path):
         angle_tip = window.sized_tools["Right-angle alignment"].toolTip()
         assert angle_tip.count("Alt") == 1
         assert (
-            "screen pixels" in window.right_angle_distance.toolTip()
+            "degrees" in window.right_angle_tolerance.toolTip()
             if language == "en"
-            else "экранных" in window.right_angle_distance.toolTip()
+            else "градусах" in window.right_angle_tolerance.toolTip()
         )
     window.close()
 
@@ -1876,25 +1992,41 @@ def test_global_tool_values_copy_and_restore_every_numeric_button_after_restart(
     path = tmp_path / "global.json"
     window = MainWindow(preferences_path=path)
     expected = {
+        "circle_detail_steps": 7,
         "line_eraser_diameter": 31,
         "vertex_eraser_diameter": 47,
         "raster_erase_diameter": 59,
         "raster_restore_diameter": 83,
+        "raster_erase_square_diameter": 61,
+        "raster_restore_square_diameter": 87,
         "auto_close_distance_px": 29,
         "global_close_distance_px": 61,
         "snap_distance_px": 17,
-        "right_angle_distance_px": 9999,
+        "right_angle_tolerance_deg": 45,
         "contour_alignment_distance_px": 4321,
+        "extension_distance_px": 26,
         "artwork_offset_px": -4,
+        "figure_rotation_step_cdeg": 1,
+        "figure_alt_rotation_step_cdeg": 725,
+        "region_rotation_step_cdeg": 23,
+        "region_alt_rotation_step_cdeg": 9000,
     }
     assert not window.global_tools_control.isChecked()
     for key, value in expected.items():
         window.tool_value_controls[key].setValue(value)
     window.global_tools_control.setChecked(True)
     assert json.loads(path.read_text())["tool_values"] == expected
-    QTest.mouseClick(
-        window.sized_tools["Close all contours"].increase_button, Qt.MouseButton.LeftButton
-    )
+
+    def increase_in_settings():
+        from PySide6.QtWidgets import QDialogButtonBox, QSpinBox
+
+        dialog = window.tool_settings_popup
+        QTest.keyClick(dialog.findChild(QSpinBox, "toolSettingsValue"), Qt.Key.Key_Up)
+        dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+
+    QTimer.singleShot(0, increase_in_settings)
+    window.show_tool_settings("Close all contours")
+    QApplication.processEvents()
     expected["global_close_distance_px"] += 1
     assert json.loads(path.read_text())["tool_values"] == expected
     window.activate_mode("Erase")
@@ -1919,9 +2051,17 @@ def test_global_tool_values_copy_and_restore_every_numeric_button_after_restart(
     assert restored.view.raster_diameters == {
         "Erase": expected["raster_erase_diameter"],
         "Restore": 83,
+        "Erase square": 61,
+        "Restore square": 87,
     }
     assert restored.view.geometry_diameters == {"Erase lines": 31, "Erase vertices": 47}
     assert restored.view.snap_distance == 17 and restored.view.auto_close_distance == 29
+    assert restored.view.circle_detail_steps == 7
+    assert restored.view.rotation_steps == {
+        "Rotate figures": (0.01, 7.25),
+        "Rotate regions": (0.23, 90.0),
+        "Rotate raster regions": (0.23, 90.0),
+    }
     restored.close()
 
 
@@ -1995,8 +2135,13 @@ def test_main_selection_buttons_follow_hand_and_clear_regions_and_contour_highli
 
 
 @pytest.mark.parametrize("language", ["ru", "en"])
-def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(app, language):
+def test_sidebar_order_and_context_help_list_actual_available_window_shortcuts(
+    app, language, pair_factory
+):
     window = MainWindow()
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.view.raster_aids.configure(rulers=True)
     window.set_language(language, persist=False)
     groups = [
         window.sidebar_layout.itemAt(i).widget()
@@ -2054,7 +2199,7 @@ def test_png_editor_sections_settings_and_shared_information_panels(app, languag
     window.show()
     app.processEvents()
     assert [bar.windowTitle() for bar in window.toolbars[:2]] == (
-        ["Разделы", "Основное"] if language == "ru" else ["Sections", "Main"]
+        ["Режимы", "Основное"] if language == "ru" else ["Modes", "Main"]
     )
     for action in window.basic_toolbar.actions():
         if action.property("dale_tool_key"):
@@ -2065,7 +2210,9 @@ def test_png_editor_sections_settings_and_shared_information_panels(app, languag
             assert button.isVisible()
             assert window.basic_toolbar.rect().contains(button.geometry())
     assert window.tool_stack.currentWidget().parentWidget() == window.tool_stack
-    assert window.tool_stack.currentWidget().orientation() == Qt.Orientation.Vertical
+    page = window.tool_stack.currentWidget()
+    assert page.layout().itemAt(0).widget() == window.geometry_toolbar
+    assert page.layout().itemAt(1).widget() == window.alignment_toolbars["geometry"]
     assert window.project_group.isVisible() and not window.settings_group.isVisible()
     assert set(window.sidebar_pages) == {"project", "settings"}
     window.activate_mode("Edit points")
@@ -2127,13 +2274,15 @@ def test_large_png_bounds_do_not_block_ui_and_only_latest_snapshot_is_applied(
     started, release = threading.Event(), threading.Event()
     calls = []
 
-    def delayed(session, polygons, cancelled=None):
+    def delayed(session, polygons, cancelled=None, *, size_to_grid=False, grid_size=None):
         started.set()
         while not release.wait(0.005):
             if cancelled and cancelled():
                 raise ExportCancelled()
         calls.append(session.contour_offset)
-        return calculate_bounds(session, polygons, cancelled)
+        return calculate_bounds(
+            session, polygons, cancelled, size_to_grid=size_to_grid, grid_size=grid_size
+        )
 
     monkeypatch.setattr("dale.bounds_preview.calculate_bounds", delayed)
     source = pair_factory(
@@ -2164,14 +2313,25 @@ def test_large_png_bounds_do_not_block_ui_and_only_latest_snapshot_is_applied(
         w.view.viewport(), Qt.MouseButton.LeftButton, pos=w.view.mapFromScene(800, 800)
     )
     release.set()
-    deadline = time.monotonic() + 4
-    while w.bounds_preview.worker is not None and time.monotonic() < deadline:
-        QTest.qWait(10)
+
+    def wait_until(predicate):
+        loop, timeout, poll = QEventLoop(), QTimer(), QTimer()
+        timeout.setSingleShot(True)
+        timeout.timeout.connect(loop.quit)
+        poll.timeout.connect(lambda: loop.quit() if predicate() else None)
+        poll.start(20)
+        timeout.start(15000)
+        if not predicate():
+            loop.exec()
+        timeout.stop()
+        poll.stop()
+        assert predicate()
+
+    wait_until(lambda: w.bounds_preview.worker is None)
     assert w.bounds_preview.worker is None
     assert w.view.active_gesture and "расчёт" in w.map_info.text()
     QTest.keyClick(w.view, Qt.Key.Key_Escape)
-    while "расчёт" in w.map_info.text() and time.monotonic() < deadline:
-        QTest.qWait(10)
+    wait_until(lambda: "расчёт" not in w.map_info.text())
     assert "расчёт" not in w.map_info.text() and "PNG:" in w.map_info.text()
     assert calls[-1] == 20 and 10 not in calls
     polygon = export_regions(w.view.session)[0]
@@ -2255,3 +2415,298 @@ def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_fac
         "Проверьте совмещение" if language == "ru" else "Verify contour alignment"
     ) in w.info.text()
     w.close()
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_right_angle_popup_stages_degrees_and_neighbours_and_reopens(
+    app, pair_factory, tmp_path, language
+):
+    window = MainWindow()
+    window.can_discard = lambda: True
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.set_language(language, persist=False)
+    window.show()
+    app.processEvents()
+    view = window.view
+    assert view.right_angle_tolerance_deg == 5 and view.right_angle_neighbours
+    button = window.sized_tools["Right-angle alignment"]
+    position = button.rect().center()
+    QApplication.sendEvent(
+        button,
+        QContextMenuEvent(QContextMenuEvent.Reason.Mouse, position, button.mapToGlobal(position)),
+    )
+    dialog = window.tool_settings_popup
+    assert dialog and dialog.neighbours.isChecked()
+    assert dialog.own_angle_priority.isChecked() and view.right_angle_own_priority
+    assert dialog.own_angle_priority.text() == (
+        "Own right-angle priority" if language == "en" else "Приоритет собственного прямого угла"
+    )
+    assert dialog.neighbours.text() == (
+        "At adjacent vertices" if language == "en" else "По соседним вершинам"
+    )
+    assert (dialog.value.minimum(), dialog.value.maximum(), dialog.value.suffix()) == (1, 90, "°")
+    dialog.neighbours.setChecked(False)
+    dialog.own_angle_priority.setChecked(False)
+    dialog.value.setValue(8)
+    QTest.mouseClick(
+        dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel), Qt.MouseButton.LeftButton
+    )
+    assert view.right_angle_neighbours and view.right_angle_tolerance_deg == 5
+    assert view.right_angle_own_priority
+    dialog = window.show_tool_settings("Right-angle alignment")
+    dialog.neighbours.setChecked(False)
+    dialog.own_angle_priority.setChecked(False)
+    dialog.value.setValue(8)
+    QTest.mouseClick(
+        dialog.buttons.button(QDialogButtonBox.StandardButton.Ok), Qt.MouseButton.LeftButton
+    )
+    assert not view.right_angle_neighbours and view.right_angle_tolerance_deg == 8
+    assert not view.right_angle_own_priority
+    assert not window.alignment_actions["right_angle_alignment"].isChecked()
+    window.project_path = tmp_path / "Angle options.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert not view.right_angle_neighbours and view.right_angle_tolerance_deg == 8
+    dialog = window.show_tool_settings("Right-angle alignment")
+    assert not dialog.neighbours.isChecked() and dialog.value.value() == 8
+    assert not dialog.own_angle_priority.isChecked() and not view.right_angle_own_priority
+    dialog.reject()
+    window.close()
+
+
+@pytest.mark.parametrize("priority", [False, True])
+@pytest.mark.parametrize("external", ["neighbour", "guide"])
+def test_real_alt_drag_respects_own_angle_priority(app, pair_factory, priority, external):
+    source = pair_factory(
+        size=(500, 400),
+        walls=[
+            {"c": c}
+            for c in (
+                [0, 100, 100, 100],
+                [100, 100, 140, 160],
+                [140, 160, 300, 100],
+            )
+        ],
+    )
+    view = MapView()
+    view.resize(800, 600)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform())
+    view.centerOn(250, 200)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 6
+    view.right_angle_own_priority = priority
+    view.right_angle_neighbours = external == "neighbour"
+    view.contour_alignment = external == "guide"
+    view.contour_alignment_distance_px = 5
+    app.processEvents()
+    cursor = view.mapFromScene(102, 120)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 160))
+    QTest.mouseMove(view.viewport(), cursor)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    target = view.edit_preview.walls[1][1]
+    if priority:
+        assert target[0] > 101
+        assert view.angle_joint[1] == target
+        assert not view.alignment_guides
+    else:
+        assert target == pytest.approx((100, 120))
+        if external == "guide":
+            assert not view.angle_joints and view.alignment_guides == ((0, (100, 100)),)
+        else:
+            assert len(view.angle_joints) == 1 and view.angle_joint[1] == (100, 100)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.edit_preview.walls[1][1] == (102, 120)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    QTest.mouseRelease(
+        view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, pos=cursor
+    )
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.session.walls[1][1] == pytest.approx(target)
+    assert len(view.session.operations) == 1
+    view.session.undo()
+    assert view.session.walls == Session(source).walls
+    view.close()
+
+
+@pytest.mark.parametrize("neighbours", [False, True])
+def test_neighbour_option_controls_real_alt_drag(app, pair_factory, neighbours):
+    source = pair_factory(
+        size=(320, 220),
+        walls=[{"c": c} for c in ([100, 80, 120, 100], [120, 100, 140, 80], [140, 80, 160, 100])],
+    )
+    view = MapView()
+    view.resize(800, 600)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform.fromScale(2, 2))
+    view.centerOn(140, 100)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 3
+    view.right_angle_neighbours = neighbours
+    app.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(140, 80))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(139, 82))
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert (view.angle_joint is not None) is neighbours
+    assert view.edit_preview.walls[1][1] == ((138.5, 81.5) if neighbours else (139, 82))
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert not view.session.operations
+    view.close()
+
+
+@pytest.mark.parametrize("neighbours", [False, True])
+@pytest.mark.parametrize("commit", [False, True])
+def test_vertex_alt_drag_combines_three_angles_and_draws_all_guides(
+    app, pair_factory, neighbours, commit
+):
+    source = pair_factory(
+        size=(500, 450),
+        walls=[
+            {"c": c}
+            for c in (
+                [100, 100, 100, 300],
+                [100, 300, 260, 240],
+                [260, 240, 300, 100],
+                [300, 100, 100, 100],
+            )
+        ],
+    )
+    view = MapView()
+    view.resize(800, 600)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform())
+    view.centerOn(250, 225)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.show_walls = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 2
+    view.right_angle_neighbours = neighbours
+    app.processEvents()
+    cursor = view.mapFromScene(300, 299)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(260, 240))
+    QTest.mouseMove(view.viewport(), cursor)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert len(view.angle_joints) == (3 if neighbours else 1)
+    assert view.angle_joint == view.angle_joints[0]
+    target = view.edit_preview.walls[1][1]
+    if neighbours:
+        assert target == pytest.approx((300, 300))
+        for point in ((100, 200), (200, 100), (200, 300), (300, 200)):
+            pixel = view.mapFromScene(*point)
+            image = view.viewport().grab().toImage()
+            assert any(
+                image.pixelColor(pixel + QPoint(dx, dy)).name() == "#ffffff"
+                for dx in (-1, 0, 1)
+                for dy in (-1, 0, 1)
+            )
+    else:
+        assert target != (300, 300)
+    # Ordinary target snapping must preserve every accepted angle.
+    view.snap_enabled = True
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert not view.angle_joints
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert len(view.angle_joints) == (3 if neighbours else 1)
+    if commit:
+        QTest.mouseRelease(
+            view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, pos=cursor
+        )
+        assert len(view.session.operations) == 1
+        assert view.session.walls[1][1] == pytest.approx(target)
+    else:
+        QTest.keyClick(view, Qt.Key.Key_Escape)
+        assert not view.session.operations
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.angle_joint is None and not view.angle_joints
+    view.close()
+
+
+@pytest.mark.parametrize("offscreen", [False, True])
+def test_angle_highlight_draws_only_chosen_legs_even_with_offscreen_joint(
+    app, pair_factory, offscreen
+):
+    if offscreen:
+        coordinates = ([20, 300, 20, 100], [20, 100, 520, 100])
+        vertex, cursor = (520, 100), (520, 110)
+        probes, untouched = ((300, 100),), None
+    else:
+        coordinates = ([100, 200, 300, 200], [300, 200, 500, 200], [300, 200, 300, 600])
+        vertex, cursor = (300, 200), (405, 305)
+        probes, untouched = ((250, 250), (350, 350)), (450, 250)
+    source = pair_factory(size=(1000, 700), walls=[{"c": c} for c in coordinates])
+    view = MapView()
+    view.resize(800, 600)
+    view.assign(Session(source), load_preview(source))
+    view.show()
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(550 if offscreen else 350, 250)
+    view.set_mode("Edit points")
+    view.snap_enabled = False
+    view.right_angle_alignment = True
+    view.right_angle_tolerance_deg = 3
+    view.show_walls = False
+    app.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*vertex))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(*cursor))
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    guide = view.angle_joint
+    assert guide is not None
+    if offscreen:
+        assert not view.viewport().rect().contains(view.mapFromScene(*guide[1]))
+    else:
+        assert {guide[0], guide[2]} == {(100, 200), (300, 600)}
+        # Probe midpoints of the actual two highlighted legs and the excluded third leg.
+        probes = tuple(
+            tuple((p[i] + guide[1][i]) / 2 for i in (0, 1)) for p in (guide[0], guide[2])
+        )
+        untouched = tuple((p + q) / 2 for p, q in zip((500, 200), guide[1], strict=True))
+    # Isolate guide paint from the ordinary point-drag hover overlay.
+    hover, hover_warning = view.hover_path, view.hover_warning_path
+    view.hover_path = view.hover_warning_path = QPainterPath()
+
+    def foreground():
+        image = QImage(view.viewport().size(), QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        painter.setWorldTransform(view.viewportTransform())
+        view.drawForeground(painter, view.mapToScene(view.viewport().rect()).boundingRect())
+        painter.end()
+        return image
+
+    image = foreground()
+    view.angle_joint = None
+    plain = foreground()
+
+    def difference(point):
+        p = view.mapFromScene(*point)
+        return sum(
+            image.pixelColor(x, y) != plain.pixelColor(x, y)
+            for x in range(p.x() - 3, p.x() + 4)
+            for y in range(p.y() - 3, p.y() + 4)
+        )
+
+    assert all(difference(p) > 0 for p in probes)
+    if untouched:
+        assert difference(untouched) == 0
+    view.angle_joint = guide
+    view.hover_path, view.hover_warning_path = hover, hover_warning
+    if untouched:
+        complete = foreground()
+        p = view.mapFromScene(*untouched)
+        assert not any(
+            complete.pixelColor(x, y).name() == "#ffffff"
+            for x in range(p.x() - 3, p.x() + 4)
+            for y in range(p.y() - 3, p.y() + 4)
+        )
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    view.close()

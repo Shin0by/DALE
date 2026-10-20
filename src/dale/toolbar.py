@@ -1,22 +1,63 @@
 """Native, code-drawn toolbar icons and consistent visible tool button styling."""
 
-from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
+    QFrame,
     QLabel,
+    QScrollArea,
     QSpinBox,
-    QStyle,
-    QStyleOptionToolButton,
-    QStylePainter,
     QToolBar,
     QToolButton,
+    QWidget,
 )
 
 from dale.localization import format_tooltip
 
 
+class TopPanelScrollArea(QScrollArea):
+    """A single row of complete panels, with a quiet horizontal scrollbar."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName("topPanelScrollArea")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setStyleSheet(
+            "QScrollArea#topPanelScrollArea { background: transparent; border: 0; }"
+            "QScrollBar:horizontal { height: 3px; background: transparent; margin: 0; }"
+            "QScrollBar::handle:horizontal { background: #505050; min-width: 24px; }"
+            "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
+            "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }"
+        )
+
+    def scroll_wheel(self, event):
+        pixels = event.pixelDelta()
+        delta = (
+            (pixels.x() or pixels.y())
+            if not pixels.isNull()
+            else (event.angleDelta().y() or event.angleDelta().x())
+        )
+        bar = self.horizontalScrollBar()
+        bar.setValue(bar.value() - round(delta))
+        event.accept()
+
+    def wheelEvent(self, event):
+        self.scroll_wheel(event)
+
+
 def tool_icon(name):
+    name = {
+        "Move raster regions": "Move regions",
+        "Rotate raster regions": "Rotate regions",
+        "Preview selected regions": "Show contours",
+        "Raster artwork offset": "Artwork offset (px)",
+    }.get(name, name)
+    square_brush = name in ("Erase square", "Restore square")
+    name = {"Erase square": "Erase", "Restore square": "Restore"}.get(name, name)
     name = {
         "Contours": "Select regions",
         "Select figures": "Select regions",
@@ -50,7 +91,67 @@ def tool_icon(name):
     def circle(x, y, r=2):
         painter.drawEllipse(QPointF(x, y), r, r)
 
-    if name == "Select all contour lines":
+    if name in ("Copy region contours", "Copy contours"):
+        painter.drawRect(QRectF(3, 3, 12, 14))
+        painter.setBrush(QColor("#383838"))
+        painter.drawRect(QRectF(8, 7, 13, 15))
+        line((11, 11), (18, 11))
+        line((11, 15), (18, 15))
+    elif name in ("Delete region", "Delete contours"):
+        line((4, 6), (20, 6))
+        line((9, 3), (15, 3))
+        painter.drawRect(QRectF(6, 6, 12, 15))
+        line((10, 10), (10, 17))
+        line((14, 10), (14, 17))
+    elif name == "Figure extension alignment":
+        line((2, 20), (10, 13))
+        painter.setPen(QPen(QColor("#f1f6ff"), 1, Qt.PenStyle.DashLine))
+        line((10, 13), (22, 3))
+        painter.setPen(QPen(QColor("#58d9ec"), 1.8))
+        circle(18, 6.3, 2.5)
+    elif name == "Native raster resolution":
+        painter.drawRect(QRectF(2, 3, 20, 18))
+        font = painter.font()
+        font.setPixelSize(11)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(QRectF(2, 3, 20, 18), Qt.AlignmentFlag.AlignCenter, "1:1")
+    elif name == "Raster crosshair":
+        line((12, 1), (12, 23))
+        line((1, 12), (23, 12))
+        painter.setBrush(QColor("#58d9ec"))
+        circle(12, 12, 2)
+    elif name == "Raster rulers":
+        painter.drawRect(QRectF(2, 2, 20, 5))
+        painter.drawRect(QRectF(2, 7, 5, 15))
+        for value in (7, 12, 17):
+            line((value, 2), (value, 5))
+            line((2, value), (5, value))
+    elif name == "Scene grid":
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.5))
+        for value in (3, 9, 15, 21):
+            line((value, 3), (value, 21))
+            line((3, value), (21, value))
+    elif name == "Canvas background":
+        painter.drawRect(QRectF(2, 2, 20, 20))
+        painter.fillRect(QRectF(3, 3, 9, 9), QColor("#f1f6ff"))
+        painter.fillRect(QRectF(12, 12, 9, 9), QColor("#f1f6ff"))
+    elif name == "Move guides":
+        painter.setPen(QPen(QColor("#73baff"), 1, Qt.PenStyle.DashLine))
+        line((8, 2), (8, 22))
+        line((2, 16), (22, 16))
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.5))
+        line((3, 8), (20, 8))
+        line((3, 8), (6, 5))
+        line((3, 8), (6, 11))
+        line((20, 8), (17, 5))
+        line((20, 8), (17, 11))
+    elif name == "Scale raster regions":
+        painter.drawRect(QRectF(3, 10, 11, 11))
+        line((9, 15), (21, 3))
+        line((15, 3), (21, 3))
+        line((21, 3), (21, 9))
+    elif name == "Select all contour lines":
         painter.drawRect(QRectF(2, 2, 20, 20))
         for y in (7, 12, 17):
             line((6, y), (18, y))
@@ -58,6 +159,9 @@ def tool_icon(name):
         for y in (7, 12, 17):
             circle(6, y, 1.4)
             circle(18, y, 1.4)
+    elif name == "Group manager":
+        for x, y in ((4, 4), (13, 4), (4, 13), (13, 13)):
+            painter.drawRoundedRect(QRectF(x, y, 7, 7), 1, 1)
     elif name == "Dataset manager":
         painter.drawRect(QRectF(3, 5, 13, 15))
         painter.drawRect(QRectF(7, 2, 13, 15))
@@ -101,7 +205,34 @@ def tool_icon(name):
         line((20, 12), (20, 19))
         line((4, 9), (9, 4))
         line((4, 9), (9, 14))
-    elif name in ("Pan", "Move regions"):
+    elif name == "Pan":
+        painter.setPen(
+            QPen(
+                QColor("#f1f6ff"),
+                1.5,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap,
+                Qt.PenJoinStyle.RoundJoin,
+            )
+        )
+        hand = QPainterPath(QPointF(9, 16.5))
+        hand.lineTo(5.7, 12)
+        hand.cubicTo(4, 9.4, 6, 7.6, 8.8, 10.7)
+        hand.lineTo(8.8, 3.2)
+        hand.cubicTo(8.8, 0.6, 12.3, 0.6, 12.3, 3.2)
+        hand.lineTo(12.3, 8.8)
+        hand.cubicTo(12.7, 6.8, 15.1, 7.1, 15.1, 9)
+        hand.cubicTo(15.8, 7.4, 18, 8.1, 17.9, 10)
+        hand.cubicTo(19, 8.6, 20.5, 9.7, 20.3, 11.4)
+        hand.lineTo(19.8, 14)
+        hand.quadTo(19.5, 15.3, 17.5, 16.5)
+        hand.closeSubpath()
+        painter.drawPath(hand)
+        line((3, 21), (21, 21))
+        for x, dx in ((3, 3), (21, -3)):
+            line((x, 21), (x + dx, 18.5))
+            line((x, 21), (x + dx, 23))
+    elif name == "Move regions":
         line((12, 3), (12, 21))
         line((3, 12), (21, 12))
         for a, b in [
@@ -115,6 +246,16 @@ def tool_icon(name):
             ((12, 21), (15, 18)),
         ]:
             line(a, b)
+    elif name in ("Mirror contours about vertical axis", "Mirror contours about horizontal axis"):
+        if name == "Mirror contours about horizontal axis":
+            painter.translate(12, 12)
+            painter.rotate(90)
+            painter.translate(-12, -12)
+        painter.setPen(QPen(QColor("#58d9ec"), 1.2, Qt.PenStyle.DashLine))
+        line((12, 2), (12, 22))
+        painter.setPen(QPen(QColor("#f1f6ff"), 1.5))
+        painter.drawPolygon(QPolygonF([QPointF(8, 5), QPointF(8, 19), QPointF(2, 15)]))
+        painter.drawPolygon(QPolygonF([QPointF(16, 5), QPointF(16, 19), QPointF(22, 15)]))
     elif name == "Rotate regions":
         painter.drawArc(QRectF(4, 4, 16, 16), 40 * 16, 280 * 16)
         line((18, 17), (18, 12))
@@ -257,12 +398,17 @@ def tool_icon(name):
         line((19, 12), (16, 15))
     else:
         painter.drawRect(QRectF(5, 5, 14, 14))
+    if square_brush:
+        painter.setPen(QPen(QColor("#58d9ec"), 1))
+        painter.setBrush(QColor("#303030"))
+        painter.drawRect(QRectF(15, 15, 7, 7))
     painter.end()
     return QIcon(canvas)
 
 
 STYLE = """
-QToolBar { background: #303030; border: 1px solid #494949; spacing: 4px; padding: 4px; }
+QToolBar { background: #353535; border: 1px solid #494949;
+           spacing: 4px; padding: 5px; margin-right: 2px; }
 QToolBar QLabel { color: #dedede; background: transparent; padding: 0 3px; }
 QToolBar QToolButton { background: #3b3b3b; color: #ededed; border: 1px solid #606060;
     border-radius: 2px; padding: 4px 7px; }
@@ -300,48 +446,61 @@ class ToolSpinBox(QSpinBox):
         self.fit_editor()
 
     def fit_editor(self):
+        if self.property("dale_compact"):
+            self.lineEdit().setGeometry(1, 0, max(1, self.width() - 2), self.height())
+            return
         self.lineEdit().setGeometry(3, 2, max(1, self.width() - 6), self.height() - 4)
 
 
 class SizedToolButton(QToolButton):
-    """A 48 x 72 tool button with its diameter caption and small side arrows inside."""
+    """A square icon tool with its numeric state edited in a settings dialog."""
 
-    def __init__(self, editor, action):
+    def __init__(self, editor, action, *, inline=False, activation_hint=None):
         super().__init__()
         self.editor_widget = editor
         self.setDefaultAction(action)
-        self.setFixedSize(48, 72)
+        self.setFixedSize(48, 48)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setIconSize(QSize(24, 24))
         editor.setParent(self)
-        editor.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        editor.lineEdit().setTextMargins(0, 0, 0, 0)
-        editor.setStyleSheet("""
-            QSpinBox { background: transparent; color: #dedede; border: 0; padding: 0;
-                font-size: 10px; min-height: 0; }
-            QLineEdit { background: transparent; border: 0; padding: 0; font-size: 10px; }
-        """)
-        editor.ensurePolished()
-        editor.setFixedSize(34, 18)
-        editor.move(7, 49)
-        self.decrease_button, self.increase_button = QToolButton(self), QToolButton(self)
-        for button, x, arrow, amount in (
-            (self.decrease_button, 0, Qt.ArrowType.LeftArrow, -1),
-            (self.increase_button, 41, Qt.ArrowType.RightArrow, 1),
-        ):
-            button.setArrowType(arrow)
-            button.setFixedSize(7, 18)
-            button.move(x, 49)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setStyleSheet("""
-                QToolButton { color: #969696; background: transparent; border: 0; padding: 0; }
-                QToolButton:hover { color: #cccccc; background: #505050; }
-                QToolButton:pressed { background: #252525; }
-            """)
-            button.clicked.connect(lambda checked=False, amount=amount: editor.stepBy(amount))
+        editor.hide()
+        self.activation_hint = activation_hint
+        if activation_hint is not None:
+            self.setFixedSize(48, 60)
+            self.setStyleSheet("QToolButton { padding-bottom: 20px; }")
+        if inline:
+            self.setFixedSize(48, 60)
+            self.setStyleSheet("QToolButton { padding-bottom: 20px; }")
+            editor.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            editor.setProperty("dale_compact", True)
+            editor.setStyleSheet("QSpinBox { min-height: 0; padding: 0; font-size: 11px; }")
+            editor.lineEdit().setFrame(False)
+            editor.lineEdit().setTextMargins(0, 0, 0, 0)
+            editor.setFixedSize(30, 16)
+            editor.move(9, 41)
+            editor.show()
         self.help_language = None
         action.changed.connect(self.refresh_help)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.activation_hint:
+            painter = QPainter(self)
+            font = self.font()
+            font.setPixelSize(11)
+            painter.setFont(font)
+            painter.setPen(
+                self.palette().color(
+                    QPalette.ColorGroup.Active
+                    if self.isEnabled()
+                    else QPalette.ColorGroup.Disabled,
+                    QPalette.ColorRole.ButtonText,
+                )
+            )
+            painter.drawText(
+                QRectF(9, 41, 30, 16), Qt.AlignmentFlag.AlignCenter, self.activation_hint
+            )
 
     def refresh_help(self):
         if self.help_language and self.defaultAction().property("dale_tooltip_parts"):
@@ -350,30 +509,19 @@ class SizedToolButton(QToolButton):
     def editor(self):
         return self.editor_widget
 
-    def paintEvent(self, event):
-        option = QStyleOptionToolButton()
-        self.initStyleOption(option)
-        option.icon = QIcon()
-        option.text = ""
-        painter = QStylePainter(self)
-        painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, option)
-        self.icon().paint(
-            painter,
-            QRect(12, 12, 24, 24),
-            Qt.AlignmentFlag.AlignCenter,
-            QIcon.Mode.Normal if self.isEnabled() else QIcon.Mode.Disabled,
-            QIcon.State.On if self.isChecked() else QIcon.State.Off,
-        )
-
     def set_help(self, language):
         self.help_language = language
         tool_name = self.defaultAction().property("dale_tool_key")
         tool_name = {
             "Figure point alignment": "Region point alignment",
             "Figure guide alignment": "Region guide alignment",
+            "Raster artwork offset": "Artwork offset (px)",
         }.get(tool_name, tool_name)
         value_help = {
-            "Right-angle alignment": "Number: snap distance to a right angle, in screen pixels.",
+            "Figure extension alignment": (
+                "Number: perpendicular distance to a virtual line, in screen pixels."
+            ),
+            "Right-angle alignment": "Number: angular deviation from 90 degrees, in degrees.",
             "Contour alignment": (
                 "Number: snap distance to horizontal/vertical guides, in screen pixels."
             ),
@@ -389,16 +537,30 @@ class SizedToolButton(QToolButton):
             "Close all contours": "Number: maximum endpoint movement, in screen pixels.",
             "Erase": "Number: brush diameter in original image pixels.",
             "Restore": "Number: brush diameter in original image pixels.",
+            "Erase square": "Number: brush diameter in original image pixels.",
+            "Restore square": "Number: brush diameter in original image pixels.",
             "Snapping (px)": "Number: snap distance in screen pixels; 0 disables snapping.",
             "Artwork offset (px)": (
                 "Number: original image pixels; positive expands, negative cuts inward."
             ),
         }[tool_name]
-        modifier = "Ctrl+wheel: change this value."
+        modifier = (
+            "Ctrl+wheel: change brush diameter."
+            if tool_name in ("Erase", "Restore", "Erase square", "Restore square")
+            else "Ctrl+wheel: change this value."
+        )
         editor_parts = [value_help]
         action = self.defaultAction()
-        parts = [*action.property("dale_tooltip_parts"), value_help]
-        keys = [*(action.property("dale_tooltip_keys") or []), modifier]
+        parts = list(action.property("dale_tooltip_parts"))
+        keys = list(
+            dict.fromkeys(
+                [
+                    *(action.property("dale_tooltip_keys") or []),
+                    "Right-click: open tool settings.",
+                    modifier,
+                ]
+            )
+        )
         condition = action.property("dale_tooltip_condition")
         self.setProperty("dale_tooltip_parts", parts)
         self.setProperty("dale_tooltip_condition", condition)
@@ -415,22 +577,86 @@ class SizedToolButton(QToolButton):
             control.setToolTip(
                 format_tooltip(editor_parts, language, keys=[modifier], title=action.text())
             )
-        for button, description in (
-            (self.decrease_button, "Decrease by 1 px."),
-            (self.increase_button, "Increase by 1 px."),
-        ):
-            parts = [description]
-            button.setProperty("dale_tooltip_parts", parts)
-            button.setProperty("dale_tooltip_keys", [modifier])
-            title = "Decrease value" if button is self.decrease_button else "Increase value"
-            button.setProperty("dale_tooltip_title", title)
-            button.setToolTip(format_tooltip(parts, language, keys=[modifier], title=title))
+
+
+class ToolSettingsCorner(QWidget):
+    """Mouse-transparent corner mark for buttons with a settings context action."""
+
+    def __init__(self, button):
+        super().__init__(button)
+        self.setObjectName("toolSettingsCorner")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFixedSize(9, 9)
+        self.move(button.width() - self.width(), button.height() - self.height())
+        self.show()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.palette().color(QPalette.ColorRole.ButtonText))
+        painter.drawPolygon(QPolygonF([QPointF(9, 0), QPointF(0, 9), QPointF(9, 9)]))
+
+
+class ModeTabButton(QToolButton):
+    """Self-contained tab painting, including a clipped circular active accent."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        bounds = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        left, top, right, bottom = bounds.getCoords()
+        path = QPainterPath(QPointF(left, bottom))
+        path.lineTo(left, top + 4)
+        path.quadTo(left, top, left + 4, top)
+        path.lineTo(right - 4, top)
+        path.quadTo(right, top, right, top + 4)
+        path.lineTo(right, bottom)
+        path.closeSubpath()
+        active = self.isChecked()
+        background = QColor("#4f718c" if active else "#454545" if self.underMouse() else "#383838")
+        painter.fillPath(path, background)
+        if active:
+            # The circle passes through both lower corners; its apex clears the text.
+            text_bottom = (self.height() + self.fontMetrics().height()) / 2
+            apex = min(bottom - 2, text_bottom + 2)
+            cap_height = bottom - apex
+            half_width = bounds.width() / 2
+            radius = (half_width * half_width + cap_height * cap_height) / (2 * cap_height)
+            painter.save()
+            painter.setClipPath(path)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 24))
+            painter.drawEllipse(QPointF(bounds.center().x(), apex + radius), radius, radius)
+            painter.restore()
+        painter.setPen(QPen(QColor("#6f91aa" if active else "#555555"), 1))
+        painter.drawPath(path)
+        painter.setPen(self.palette().color(QPalette.ColorRole.ButtonText))
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+
+
+class ModesToolbar(QToolBar):
+    """Bottom-aligned tabs within the same panel frame as the other toolbars."""
+
+    def refresh_tabs(self):
+        for action in self.actions():
+            button = self.widgetForAction(action)
+            if isinstance(button, QToolButton):
+                button.setFixedHeight(36 if action.isChecked() else 32)
+                self.layout().setAlignment(button, Qt.AlignmentFlag.AlignBottom)
+                button.update()
+        self.update()
 
 
 PANEL_HELP = {
+    "Vertices alignment": "Configure alignment while editing contour vertices and lines.",
+    "Contours alignment": "Configure alignment while moving or pasting contours.",
+    "Regions alignment": "Configure alignment while moving or pasting regions.",
+    "Groups": "Manage dataset selection groups and choose a group to select.",
     "General": "Open, save, close, export, and navigate projects.",
     "Sections": "Choose which tools appear to the left of the scene image.",
-    "Main": "Common navigation, selection, visibility, and settings controls.",
+    "Modes": "Choose which tools appear to the left of the scene image.",
+    "Main": "Navigate, select, copy, delete and configure the current editing mode.",
+    "View": "Fit the scene and configure contours, guides, background and image resolution.",
     "Tool size": "Size of the geometry eraser or pixel brush. Ctrl+wheel adjusts sizes.",
     "Snapping": "Configure snapping to existing vertices and line interiors.",
 }
@@ -459,13 +685,14 @@ def apply_theme(app):
     app.setPalette(palette)
     app.setStyleSheet(
         "QToolTip { color: #eeeeee; background: #444444; border: 1px solid #777777; padding: 5px; }"
+        "QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; left: 6px; }"
     )
 
 
 def make_toolbar(window, title, new_row=False, vertical=False):
     if new_row and not vertical:
         window.addToolBarBreak()
-    bar = QToolBar(title, window)
+    bar = ModesToolbar(title, window) if title == "Modes" else QToolBar(title, window)
     bar.setObjectName(title)
     bar.setMovable(False)
     bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
@@ -478,7 +705,8 @@ def make_toolbar(window, title, new_row=False, vertical=False):
         bar.setIconSize(QSize(24, 24))
         bar.setFixedWidth(60)
         bar.setStyleSheet(
-            STYLE + "QToolBar { spacing: 3px; } QToolBar::separator { height: 1px; width: 38px; }"
+            STYLE + "QToolBar { spacing: 3px; margin: 0; } "
+            "QToolBar::separator { height: 1px; width: 38px; }"
         )
     elif title == "General":
         bar.setStyleSheet(COMMAND_STYLE)
@@ -489,4 +717,12 @@ def make_toolbar(window, title, new_row=False, vertical=False):
         bar.addWidget(heading)
     if not vertical:
         window.addToolBar(bar)
+        if title in ("Main", "View"):
+            bar.setStyleSheet(STYLE + "QToolBar { spacing: 1px; }")
+        elif title == "Modes":
+            bar.setStyleSheet(
+                STYLE + "QToolBar { spacing: 1px; }"
+                "QToolBar QToolButton { padding: 4px 3px; }"
+                "QToolBar QToolButton:checked { padding: 3px 2px; }"
+            )
     return bar

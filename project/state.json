@@ -1,11 +1,58 @@
 {
   "schema_version": 1,
-  "updated": "2026-10-18",
-  "phase": "independent_alignment_portable_ready",
+  "updated": "2026-10-20",
+  "phase": "release_1_03_083_validated",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
+    "Owner release promotion2026-10-20: promote major/minor to1.03 and retain current revision083 exactly. Repack with PyInstaller directly, without invoking the normal revision-incrementing build_windows.ps1. Prepare a clean portable ZIP without UserData/cache/private projects, commit all accumulated editor work, perform one authorized development push, then request the required separate confirmation of the exact release commit/archive/publication plan. No force or automatic push retries.",
+    "ADR-099 / FR-161: owner requests a white Scene grid icon and configurable transparency/thickness. Add staged synchronized0..100% transparency slider/spin and1..16 cosmetic screen-pixel width, dataset-local and shared across modes. Default56%/1px preserves prior112/255 appearance. Keep existing RGB/shared project Custom Colors and current schema7 with strictly validated optional fields. Only the export-grid overlay pen changes; other guide pens, source pixels, PNG/placement, geometry/history remain. No push or user-process control.",
+    "ADR-098 / NFR-007, FR-039/149/158: owner restores minimum1024px window width because the top row now scrolls. Keep768px minimum height and initial1280x860 size. Existing bilingual responsive and wheel tests cover all modes at1024x768; all top panels/controls remain reachable without wrapping. No source/data/editing/schema/settings changes, process termination or push.",
+    "ADR-097 / FR-160 with FR-134: owner adds grid color settings and reiterates shared saved Custom Colors for all color pickers. Stage dataset-local grid RGB in View Scene grid, preserve the existing translucent1px display across every mode, and keep PNG/source/grid placement unchanged. Grid/background share one settings color control through the existing project palette service; all group pickers already use it. Preserve all16 project Custom Colors across picker/popup Cancel, datasets and project save/reopen, isolated between projects/windows. Optional validated color metadata retains schema7. No push or private-file repair.",
+    "ADR-094..096 / FR-157..159: owner freezes copied contour attachment at the chosen vertex/common center, reorganizes Main into Hand/Select all/Clear/Copy/Delete/Settings, and moves remaining display controls to View. All top containers remain on one horizontal wheel-scroll row with a quiet3px scrollbar. Latest owner scope moves cell-size editing into View Scene grid: one grid shared by every mode, export and preview, independently per dataset. Export/Preview retain padding checkboxes and report the current grid, with no duplicate size editors. Preserve editing commands, application clipboard, native sources, current schema7, UserData and running editors. No push.",
+    "ADR-091..093 / FR-153..156: owner adds Contours-only arbitrary-angle supporting-line Alt snapping with independent screen tolerance and optional frozen touching-chain filter. Existing X/Y guides remain; one virtual logical center serves each combined selection in Contours/Regions/Raster, including move/copy anchors. Main guide editing becomes exclusive with all left tools. Owner then reports Raster duplicates/broken contours and explicitly chooses independent Raster image/region transforms leaving all scene contours unchanged. Stable cell identities replace original Raster objects, including groups and undo/redo, with optional strictly validated metadata in schema7. Preserve sources/UserData/processes; no private-file repair or push.",
+    "ADR-090 / FR-152 final owner scope: relocate only existing Vertices/Contours/Regions alignment buttons into dedicated panels directly below primary tools, before output tools. Common order angles/guides/snapping, unavailable buttons omitted; no angles outside Vertices. Paint plain Alt in the lower brush-style row of Alt-gated48x60 tiles; Vertices ordinary snapping retains an empty row and works without Alt. Raster toolbars stay unchanged; remove its hidden effective Alt point/axis alignment rather than adding controls. Retain Raster Alt parameter modifiers, checked states in other sections, tolerances, popups and schema7. No geometry/source/native/raster/history edits or push.",
+    "ADR-087/088/089 / FR-144/149/151: owner replaces tab connector and endpoint with an ordinary framed Modes panel, upper-only4px corners and a clipped subtle circular cap below the active label. Raster click/marquee/group/dropdown/all/clear selection joins the dataset ordered bounded undo/redo history, with immutable validated normal/detached snapshots saved in current schema7. Empty Raster selection clicks ask before clearing, default No; rejection/no-op/cancelled previews add no step. Sources, geometry, alpha, other sections and archive members stay intact; no migration or push. Native resolution moves to Main for all four modes, preserving per-dataset state and exact tile behavior; compact internal tab/Main gaps retain all minimum-width controls.",
+    "ADR-082..086 / FR-145..150: owner final scope since0.3.74: centered larger30x16 brush fields inside48x60 tiles; dedicated global guide editing/double-click delete/live integer coordinates; Raster cut/move/rotate/scale with immutable native RGBA and existing geometry history; independent export-style Raster preview/offset values confirmed by owner; separate lower containers; unframed Modes tabs with a horizontal center-circle baseline, no vertical connector; symmetric lighter panels; mode-scoped S/M/R; omit empty tooltip sections; per-dataset checkerboard/solid canvas background. Shared native/PNG compositor and globally anchored alpha sampling preserve preview/output equality. Schema7 unchanged, sources/private files untouched; source and portable regressions verified, no push.",
+    "ADR-080/081 / FR-143/144/145: owner reports native resolution RAM gate and oversized inline fields, requests shared top Main aids and explicitly portable cleaned cache. Replace whole Pillow source/copy with sequential pyvips lossless disk cache and bounded visible crops/LOD, retained during geometry-only gestures. Owned OS-lock leases in executable Cache protect live instances; project/source/exit cleanup and stale recovery never target source/project/UserData. Native16200px PNG/JPEG memory samples36.2/60.2MiB growth,750.8MiB temporary disk, removed on close. Main crosshair/rulers work in every section with per-dataset settings; dataset selector flexes120..230px. Brush fields42x10 inside48x72 tiles, normal popups retained. New dependency/runtime bundled; schema7 unchanged, no push.",
+    "ADR-079 / FR-142: owner reports group manager scrolling down after clicks. Reproduce13 failures in24 synthetic row/action cases. Retain row widgets by stable group ID, refresh captions/colors/help/checks and callbacks in place; structural list changes preserve the first pre-layout scrollbar value with a parent-owned coalesced zero-delay timer and clamp only to a shortened range. No source, geometry, raster, camera, archive format or push changes.",
+    "ADR-074/075/076/077/078 / FR-137..141: exact ID-based group cells preserve explicit nested holes without shared-wall deletion or private-file repair; Raster gets per-dataset top/left px/game-ft/cm/mm rulers, source guides, crosshair and automatic grid; round/square erase and restore profiles have inline size, Ctrl wheel size, Alt wheel feather, staged pressure/shape settings and shared stripe alpha. Cache exact analysis/layer/group dependencies after read-only 253-cell15-group profiling (12 synchronous click/repaints8.268s ->2.91s). Native-resolution toggle uses latest-only cancellable visible tiles with current edits and stale/gesture/source guards. Optional validated fields retain schema7, source/native assets and existing groups. No push.",
+    "ADR-073 / FR-135/136: owner reports silent Regions group PNG action and excessive map gutters. Read-only current-project route reaches folder but11/13 groups lose names because outer-union equality drops internal dividers. Match complete minimum-cell boundaries bidirectionally at existing1e-7 contact tolerance, including disconnected whole selections; preserve active/assignment order, negative branches/extra/missing rejection and remembered naming choices. Common group prefixes cover all PNG parts/folder/optional JSONs; stable numbers/exact PNG dimensions/native internals unchanged. Catch preflight exceptions with visible Export failed and usable controls. Zero central gutters;60px tool strip plus10px only for active scrollbar. No stored-group/source/geometry/raster/schema edits or push; owner silent interaction itself not reproduced.",
+    "ADR-071 / FR-133: owner clarifies unstable closure while a snapped vertex slides on an angled wall, with/without Alt. Reproduce60 open states among161 projected contacts at about1e-12 source-pixel error. Spatially reconcile endpoint/interior contacts at existing1e-7 tolerance in temporary analysis linework before GEOS noding; keep stored walls/source/lineage/snap distances/Alt rules unchanged. Distinct endpoint gaps remain open. Defer separate collapse experiments; no collapse/deletion behavior change.",
+    "ADR-072 / FR-134: project-wide16-slot Custom Colors palette shared by all datasets/color pickers, isolated between projects/windows. Apply before each Qt color dialog and capture afterward, including Cancel while retaining object color. Optional validated manifest custom_colors stores16 #aarrggbb values in current schema7, absent white defaults. Include palette in dirty state, Save/Save As/reopen, target-dataset export preservation; reset on new/closed documents. No global preferences, history/source/native/raster edits or migration.",
+    "ADR-070 / FR-132: display only active-section selection, including Hand/show-contours/group rendering. Regions/Raster keep independent retained cell snapshots; Clear affects only the current section. Optional validated section_region_selections stores both cell choices in existing schema7; detached Regions shapes survive saving from Raster/other sections. Reset transient snapshots on dataset/project loads and reject stale topology. Preserve FR-130's committed-Vertices reset, source/native/raster/history/groups and application clipboard.",
+    "ADR-069 / FR-131: owner requests Own right-angle priority in every angle settings popup. Default true prefers eligible own angles; false prioritizes adjacent angles/acquired X/Y guides while retaining every compatible constraint. New-line angles share the option versus guides. Standard staged bilingual checkbox, strict optional per-dataset right_angle_own_priority bool default true, independent from global numeric settings; schema7/source/native/raster/history unchanged by settings.",
+    "ADR-066 / FR-128: preserve continuous right-angle arc/line movement and also snap to compatible affected-angle intersections. Keep the closest primary rule, rank nearby valid line/line, line/circle and circle/circle intersections by simultaneous exact guides. Existing angular tolerance/neighbor checkbox apply; reject remote/degenerate intersections, preserve every accepted angle during ordinary snapping, paint every affected pair and square.",
+    "ADR-067 / FR-129: contour copying must be shared across datasets/projects throughout the running app. Own immutable contours/source/required-JSON bytes in a QApplication clipboard; broadcast to all windows, retain after source extraction/project/window closure and selection resets. Ctrl+V in Vertices/Raster enters the copied section before preview. Keep editor-root copies, properties/provenance, native catalog limits, undo and group exclusion; do not replace the system text clipboard or serialize this runtime buffer.",
+    "ADR-068 / FR-130: after committed geometry changes in Vertices, clear Contours/Regions selections, detached snapshots and transform pivots in the active dataset. Cover pointer creations/edits/erasers, confirmed closure and geometry undo/redo. No-op/cancel/refusal preserves selection. Clipboard/groups/inactive datasets remain untouched.",
+    "ADR-065 / FR-127: owner reports marquee-selected blue cells missing group fill after +. Local read-only evidence finds59 failures among182 already-closed cells. Replace fragile exact intersection-length and thin-buffer coverage with STRtree collinear interval comparisons at existing1e-7 tolerance. Check complete exterior/interior rings, excluding crossings/contacts/separate parallel lines/real gaps. All182 cells pass; actual roof marquee/+ fills17 selected cells including the large cell. No geometry/source/native/raster/schema changes or automatic stored-group repair.",
+    "Owner confirms after the arc explanation: retain continuous exact90-degree vertex movement and free movement along a single X/Y guide. Do not add a first-position latch. Later ADR-066 adds simultaneous compatible affected-angle intersections without removing that continuous motion. Group membership/centerline updates remain independent.",
+    "ADR-064 / FR-126: owner replaces outer group colors with centerline colors. Paint1px group centers after ordinary/selected/hover geometry, retain3px total width and black/white side edges; remove5px group strokes. Opaque grouped fills and show-contours rules remain; closing restores open red/closed cyan. Eight real pixel regressions at1x/2x cover ordinary/selected/hovered/hidden geometry. Temporary gesture/angle diagnostics retain contextual colors. No data/export changes.",
+    "ADR-063 / FR-125 final owner scope: selection plus + is the only new-object addition. Actual village-port Captain group exposes42 explicit IDs resolving66 live lines including24 old remote derived copies. On + freeze previous live members, union only current selected IDs, exclude unintended inherited extras using existing metadata. Explicit + overrides exclusion, existing splits inherit. Owner explicitly declines automatic group/file repair and will recreate old groups; no read/render/export/save rewriting. Reserve ancestral IDs on JSON append and give incoming derived contours independent editor identity; both native-safe and general append regressions reproduce/fix implicit membership. Actual local GUI reassignment produces42 lines/30 cells with both main interiors and zero remote additions. No geometry/native/schema changes or push.",
+    "ADR-062 / FR-124: independent group lists/members/colors/active choices for each dataset section. Owner explicitly assigns existing unscoped groups to Regions. Optional validated group_sections and section_active_groups preserve exact existing records and IDs; all-section capture, scoped controls/rendering/export matching, ownership dirty detection and all-scope JSON replacement reset. Keep schema7/member layout, bounded metadata, explicit ancestry/copy behavior and viewport overlay rules. No geometry/native/raster changes or push.",
+    "ADR-061 / FR-086/090: owner now wants the last selected dataset on reopening, superseding first-set defaults. Reuse datasets.json default for active stable ID while keeping first physical root. Local bounded100 canonical-path project_datasets memory restores successful visits without saving/rewriting archives or dirtying navigation. Stored managed IDs remain exact; existing current-schema pair selections derive stable managed IDs instead of random per-open identities. Restore ordinary per-set camera/settings; stale cache falls back to saved valid choice/first after deletion. Save As scoped independently, target append preserves selection, failed preferences nonfatal/failed opening unchanged. No schema/member changes, migrations, source/geometry/raster edits or push.",
+    "ADR-060 / FR-040/105: owner confirms circle segment count, not radius; extends multiplier to20.0. Standard staged New circle right-click popup gains a horizontal1.0..20.0 slider in0.2 increments. Multiply current radius/grid base, round upward to even counts, cap4096. Base4/20 become80/400 at20.0. Shared preview/ordinary/native math, radius/source/raster/native non-walls/one-undo preserved; existing geometry untouched. Optional circle_detail_steps integer0..95 default0 follows project/dataset/global numeric scope (fifteen values) without schema change or migration. No push.",
+    "ADR-059 / FR-084: New line now applies enabled Alt angle/axis rules against a frozen visible-height snapshot. Fixed-start/connected axes plus acquired external vertices; start-vertex priority. One fixed-start corner against all incident legs, including interior starts; shared pure angular solver and compatible exact target intersections. Extra-neighbour checkbox remains specific to dragged points. No preview edits/fabricated reference lineage, schema or settings changes. Existing native defaults, ancestry, one undo/source/raster/non-wall preservation and cancelled group scope remain.",
+    "ADR-058 / FR-084: owner confirms Vertices point dragging; reproduce Alt bypass of ordinary snapping when no guide/angle matches. Screenshot follow-up also reproduces accepted horizontal guide suppressing compatible vertical target, and guide projections collapsing a valid right-angle circle candidate. Reuse ordinary fallback when no rule matches; otherwise snap only to exact compatible vertex/finite-segment intersections with accepted axes/neighbour perpendicular/corner circle, preserving all active constraints and marker legs. Vertex priority, screen tolerance, disabled/zero behavior, own-edge exclusion and visible-height scope remain. Invalid preferred circle center/endpoint uses raw-cursor candidate; no changes to valid angle ranking. No settings/schema/group changes; cancelled partial group-boundary request stays cancelled.",
+    "Owner cancels the last partial group-boundary request after declining automatic line splitting. No product code or geometry changes for that request; current whole-line group membership remains. Synthetic200px outside-boundary reproduction is evidence only, not an active task.",
+    "ADR-057 / FR-091/122/123: occupied JSON transfer offers Merge contours, appending current working edges with exact property deduplication and unchanged source/target raster/native non-wall data. Current property ownership supports edited/manual/copied edges; canonical source-only append and general geometry export preserve provenance. Exact complete group-boundary matches prompt Dataset name/Group name/Cancel with one nullable portable remembered choice, mirrored by the standard export-settings dropdown. Active group wins, otherwise assignment/creation priority. Safe physical names retain stable IDs/dimensions/placement; one-part packages use the group prefix, mixed package JSONs keep dataset prefix, native internal values unchanged. Clipboard copies were derived children and inherited groups; new editor-owned children retain exact ancestry/styles but require explicit group assignment. Derived splits still inherit. No schema/migration/push.",
+    "ADR-056 / FR-121: reproduced37/29px manager drift from Qt scrolling viewport children. Reparent to map view frame and keep viewport-pixel anchors; header moves only manager and camera navigation leaves it fixed. Only explicit header drag creates docks; free panels move left on frame shrink, not scrollbar appearance. Intentional eight side/corner docks follow bounds and panel size. Standard-painted16px corner grip targets only the overlay, remains visible maximized, minimum250x112 and initial318px width; custom size survives rebuild/hide/reopen in-session. Prevent pointer/wheel background propagation to map tools. No data/schema/preference change.",
+    "ADR-053 / FR-117: dataset-local overlapping persistent selection groups, active color priority otherwise latest positive assignment. Compact bordered blocks in a318px map-contained draggable persistent manager, standalone create +, confirmed group-only deletion, RGB/name/add/exclude and top Groups dropdown after Main. Extra1px outer color and opaque selected grouped cells only while open. Strict optional schema7 UI metadata; native/raster/geometry unchanged.",
+    "ADR-054 / FR-118: first-target/pre-click baseline double-click toggles the complete connected component, preserving unrelated selection and crossing-jitter guards.",
+    "ADR-055 / FR-119/120: owner requests100-action limit after catalog64MiB failure, retaining schema7. Existing typed geometry checkpoint plus ordered raster state/explicit ancestry, optional undo_floor default0; validate old archives before trimming. Atomic bounded-copy catalog saving with adaptive shorter undo tails, rollback on failure. Project chooser suggests stem and adds .dale.",
+    "ADR-050 / FR-086: owner replaces forced dataset centering with restoration of each saved center/zoom on dropdown/manager/project routes. Existing schema7 fields; floating viewport midpoint prevents cumulative pixel drift. Initial fit remains for unstored views; source/history/raster unaffected and navigation never writes archives.",
+    "ADR-051 / FR-113/114: confirmed Qt6.12 Windows Alt wheel remapping to X from primary source; previous Y-only decoder was a no-op. Shared Alt-aware event decode fixes all rotation routes. Two contextual48px left Contours mirror commands reflect frozen selected IDs about the logical common center, preserving properties/source/raster/stationary data and undo/archive.",
+    "ADR-052 / FR-115/116: signed cumulative series-angle overlay to hundredths, white14px text and exactly one physical-pixel black shadow left/down. Both Rotate buttons gain staged ordinary/Alt decimal settings0.01..360.00 degrees default0.10/45.00. Four validated integer centidegree fields extend project/dataset/global numeric scope to fourteen values without schema migration. Series/caption transient; no push.",
+    "ADR-048 / FR-111/112: deterministic29-digit region-set/part numbers shared by physical PNG/Scene JSON/placement JSON; exact geometry canonicalization independent of selection order/raster/grid/offset/archive extraction. Named manifest and current full-dataset native JSON join the atomic PNG transaction, with catalog source documents frozen. Strict portable include_json defaults true; standard staged selected-export checkbox controls both JSONs, off PNG-only. Native names/paths/non-wall bytes/source protections preserved; no semantic generation/schema change or push.",
+    "ADR-049 / FR-113: Alt+wheel uses45-degree increments in Contours and Regions, plain wheel0.1, shared canvas/window path, stable pivots and mixed-series single undo. Owner Contours guide-toggle report investigated: routine editing/settings/undo/section changes do not toggle it in reproduced cases; per-dataset restoration can restore false. Specific owner trigger still requested, no speculative fix or state-scope change.",
+    "ADR-047 / FR-110: shared Qt-independent GuideTargets freezes visible-height stationary vertices per gesture, spatial cursor acquisition and sorted acquired-axis lookup. Enabled section guide button remembers multiple exact vertices under the actual cursor, even before Alt and with a nonzero grabbed-vertex offset. Acquired X/Y references have priority within existing tolerance; Alt applies, release retains references but resumes raw placement. Ordinary point hits retain placement priority; angle legs stay editing-connected. Hollow gold target markers, consistent point/Contours/Regions/copy/line/rectangle paths, one undo and exact source/raster/native stationary preservation. Commit/cancel/Clear/tool/dataset/project changes drop transient references; no persistence/schema/new numeric settings or push.",
+    "ADR-046 / FR-084: all incident pairs at the dragged vertex plus optional direct-neighbour stationary continuations (right_angle_neighbours strict project/dataset bool, default true). Integer1..90-degree angular tolerance default5, independent of zoom/line length; new right_angle_tolerance_deg numeric field follows project/global scope, never reinterpret retired pixel values. Nearest eligible exact projection, frozen visible editing-connected reference graph, chosen two-leg white highlighting/square marker, carrying segment visible with offscreen joint, other incident legs retain ordinary backing. Standard staged bilingual popup checkbox; Apply commits, Cancel discards. Preserve source/raster/history/height scope and Alt gating; no push.",
+    "ADR-045 / FR-097/101: reproduce pasted opposite-corner rotation anchors in four Regions/Contours cases, then derive paste pivot from selected-edge bounds plus translation. Logical common bounds midpoint for multiple/open/disconnected Contours; associate stable affine pivot with transient exact selected-edge snapshot. Geometry/selection/undo changes invalidate it; restore recomputes derived figure_pivot without schema migration. Preserve exact membership/ancestry/properties/stationary lines/raster and one history edit per rotation series; no push.",
+    "ADR-044 / FR-108/109: PNG folder browser starts at the shared remembered output parent with a free dataset-overlays name. Typed/new/selected/entered folders are final output destinations, no nested folder; remember the browsing parent. Owner follow-up adds per-file Overwrite/Create copy/Cancel for PNGs/placement manifests/exported JSON, showing only filename and containing-folder basename. Suppress native JSON duplicate prompts. Preserve dimension suffixes in free copy names. Immutable worker signals GUI questions with cancellable event waiting; stage all PNG decisions/rendering before publication. New-directory rename, existing-directory exclusive additions and backed-up overwrites with in-process rollback; protect original inputs/projects/hardlinks and retain unrelated assets. No geometry/archive/grid/raster-rendering change or push.",
+    "ADR-042/043 / FR-105/039: tool settings become nonmodal frameless Qt.Popup containers with actual title/small X,416px initial width (20% narrower), vertical standard groups without separators, and shared6px QGroupBox title inset. Prefer the button's right side inside the map and clamp upward at its bottom; screen fallback if needed. One common equal-size Apply/Cancel footer in that order. Apply alone commits; Cancel/X/Escape/outside/replacement discard staged edits. Preserve child combo popup interactions, native fields/default choices/grid option, automatic question dialogs, project/global scope and section flags. No geometry/archive/source/export-calculation change or push.",
+    "ADR-040 / FR-105/107: replace inline numeric tiles with48x48 icon buttons and ordinary resizable settings dialogs. Standard numeric field/arrows, question label plus Ask every time/explicit Yes/explicit No dropdown and applicable PNG options stack vertically without extra separator lines (ADR-042); window presentation superseded by ADR-043. Apply writes the existing numeric/preference paths; Cancel/Escape changes nothing. Automatic Yes/No/Cancel plus remember checkbox remain and share nullable defaults. Every one of16 settings-enabled buttons has a mouse-transparent lower-right9px filled foreground triangle with a45-degree inner edge. Preserve Ctrl+wheel, project/global values and independent section flags.",
+    "ADR-041 / FR-106: optional portable size_to_grid defaults false, independent of the merge default. Exact nonzero alpha after signed Artwork offset/masks/brushes/source alpha/bicubic halos is computed first; then expand the PNG canvas to declared square-grid boundaries using working origin/background offset and independent X/Y scene scaling. Transparent padding may extend beyond the source without resampling or retaining extra artwork. Share bounds with sidebar/worker/filenames/source offsets/placement.json; keep original content_bounds. Require valid whole-source-pixel square cell/phase; no guessed drawing fallback, hex/gridless/subpixel or legacy-shift claim. No source/geometry/history/archive schema change or live Foundry claim.",
     "ADR-039 / FR-104: point and guide alignment switches are independent in Vertices, Contours and Regions. Apply active section flags to MapView and persist all inactive flags independently in current schema7 root/dataset UI. Existing snap_enabled/right_angle_alignment/contour_alignment store Vertices state; four optional strictly boolean figure/region point/guide fields default true/false. Numeric tolerances retain existing shared project/global rules. No geometry, source, history, clipboard or Alt-rule change.",
     "ADR-038 / FR-097: reproduce extra contour selection from the complete native first-click/double-click sequence with1px crossing jitter. Lock the original target ID and apply its component to the pre-click baseline, retaining intentional prior selections. One bounded transient record validates platform interval/distance and session/geometry/scope/transform/selection/pivot, and resets on press/cancel/context changes. No geometry/IDs/raster/history/copy edits occurred in the reproduced9-line cases, including a populated clipboard. No schema change or general claim about every owner scenario.",
     "ADR-036/037 / FR-097/103: rename visible geometry/Contours to Vertices and figures/Figures to Contours, with matching bilingual tool/clipboard/sidebar/Information names and help. Retain internal IDs/modes/schema7. Del/Edit > Delete contours removes exact selected visible line IDs, retaining all unselected edges/properties/raster and native non-wall bytes, one undo/redo. Right-click settings for both contour connection tools and adjacent-region PNG export show the actual question first and instructions below. No push or live Foundry claim.",
@@ -47,6 +94,198 @@
     "Every packaging invocation advances revision once; complete portable folder refresh preserves user processes/preferences/projects and supplied ICO bytes. No push without a fresh explicit owner request."
   ],
   "validated": [
+    {
+      "check": "owner_version1_03_current_revision083_portable_release_candidate",
+      "date": "2026-10-20",
+      "result": "Owner-promoted1.03.083 keeps revision083. 1645 full source tests and279 actual compiled regressions pass. Normal revision-incrementing build_windows.ps1 is not invoked for this explicit version promotion. A fresh PyInstaller onedir runtime preserves exact Qt/PE ICO/artwork and existing UserData. Bilingual executable launches and16 mode/width screenshots verify title v.1.03.083,1024px minimum, clipboard and grid settings. Five camera assertions now compare the floating viewport midpoint, removing QRect integer-center bias while retaining the2px tolerance and20-cycle drift checks. The portable archive is generated only from fresh runtime output plus startup notes/provenance; no UserData/cache/projects/private examples. Extracted-archive smoke validation and archive checksum/publication receipts live in ignored artifacts. Source archive schema7 remains unchanged; release publication uses the separately confirmed pinned commit.",
+      "evidence": "artifacts/release-1.03.083/full-tests-final.log",
+      "portable_evidence": "artifacts/release-1.03.083/portable/validation.json"
+    },
+    {
+      "check": "white_grid_icon_configurable_transparency_cosmetic_width",
+      "date": "2026-10-20",
+      "result": "276 source and276 actual compiled regressions pass. Two hidden RU/EN EXEs restore synthetic grid transparency35%/width3px without project writes or Python/PATH dependency. Compiled bilingual popup and16 mode/width/language screenshots verify a white icon, synchronized percentage slider/spin and separate thickness field. Rasterized stroke spans/alpha match width1/4 at zoom0.5/2 in all four modes, including transparency0/56/100%. Apply/Cancel, independent datasets, save/reopen and strict malformed archive rejection pass; existing Custom Colors/color pickers remain shared. Source images, grid phase/size, PNG content/bounds, other guide pens, geometry/history remain unchanged. One complete build increments to0.3.83, preserving UserData/startup notes/source fingerprints/original Qt+PE icons/artwork/cache. No user process controlled, source/private-file repair or push. Current schema7 retains validated optional appearance fields.",
+      "evidence": "artifacts/grid-appearance/source-tests.log",
+      "portable_evidence": "artifacts/grid-appearance/portable/validation.json"
+    },
+    {
+      "check": "minimum1024px_window_with_scrolling_top_panels",
+      "date": "2026-10-20",
+      "result": "23 source and23 actual compiled layout/clipboard/command regressions pass. Bilingual tests resize every mode1024/1224/1800/back1024 at768px height, assert exact width,36px buttons and one3px horizontal scrollbar. Wheel over buttons/closed selectors/viewport scrolls without changing groups/datasets/geometry. Compiled bilingual1024px/scrolled/wide screenshots and16 mode/width states inspected. Two hidden RU/EN EXEs reopen a synthetic schema7 project without archive writes or Python/PATH dependency. One complete build increments to0.3.82, preserving UserData/source hashes/startup notes/original ICO/artwork/PE resources/cache. The preexisting owner editor was never controlled. Minimum height768px and initial1280x860 remain. No source/data/schema/editing changes or push.",
+      "evidence": "artifacts/window-1024/source-tests.log",
+      "portable_evidence": "artifacts/window-1024/portable/validation.json"
+    },
+    {
+      "check": "configurable_grid_color_and_shared_project_custom_colors",
+      "date": "2026-10-20",
+      "result": "257 source regressions and17 final color/swatch checks pass; 257 regressions pass against actual0.3.81 executable bytecode. Two hidden RU/EN EXEs reopen a synthetic current-schema project with custom grid RGB and16-slot palette restored, without archive writes or Python/PATH dependency. Compiled bilingual settings/color-picker screenshots and16 all-mode/width states inspected. Grid/background/group real Qt dialogs share the project palette through accept/cancel and popup Apply/Cancel, across datasets and save/reopen; separate projects/windows retain independent palettes. Configured grid RGB renders in every mode at the existing112/255 alpha without image/PNG/bounds/source/geometry/history changes. Invalid persisted RGB values are rejected. Color buttons display actual standard Qt swatches. Complete build increments once to0.3.81 and preserves UserData, startup notes, source fingerprints, original ICO/artwork/PE resources and cache. Current schema7 remains with optional validated dataset color field; no push or private-file repair.",
+      "evidence": "artifacts/grid-color/source-tests.log",
+      "portable_evidence": "artifacts/grid-color/portable/validation.json"
+    },
+    {
+      "check": "main_view_horizontal_scroll_frozen_copy_anchor_shared_scene_grid",
+      "date": "2026-10-20",
+      "result": "952 distinct source checks pass across core/catalog/UI runs; 352 checks pass against actual0.3.80 executable bytecode. Two fresh hidden RU/EN EXEs reopen a synthetic grid-enabled schema7 project without archive writes or Python/PATH dependency. Compiled bilingual QA verifies16 mode/width/language states,4 copied vertex/common-center placements and4 grid/export settings views. Main has the requested six commands, View has display controls and one all-mode Scene grid button. Ordinary wheel scrolls the single row without changing closed selectors or geometry;3px scrollbar remains reachable. Copy freezes the selected anchor across toolbar focus/camera changes; existing application clipboard/provenance and undo remain. Per-dataset grid Apply/cancel/switch/save/reopen, current export labels, exact offset/source-scaled phase, alpha-derived padding, latest background cache keys and frozen worker size match actual PNG dimensions. Pointing-hand icon has a horizontal bidirectional arrow. Complete build increments once to0.3.80, preserving sources/UserData/Qt+PE ICO/artwork/cache and live owner editor152208. Current schema7 retained with optional validated grid UI fields. No source/private project repair or push.",
+      "evidence": "artifacts/main-view/source-final.log",
+      "portable_evidence": "artifacts/main-view/portable/validation.json"
+    },
+    {
+      "check": "angled_guides_common_centers_exclusive_guide_mode_independent_raster",
+      "date": "2026-10-19",
+      "result": "900 distinct source checks pass across final core/UI/catalog and added image-less guide guard;70 final center/panel checks pass.326 regressions pass against actual0.3.79 executable bytecode. Two fresh isolated RU/EN EXEs open a synthetic independent-Raster schema7 project without source archive writes. Compiled bilingual screenshots verify inclined supporting-line continuation and settings, common selection center and a single rotated Raster object without original contour copies. Existing X/Y guides, Alt switching, point priority, screen tolerance, connection chains/independence, rigid move/paste, asymmetric copied pivots, exclusive guide tools across every left tool, history/redo, numeric/global/project settings, stable Raster cells/groups, shared-wall/corridor scenes, native/PNG equivalence and strict metadata/reference validation pass. Complete portable runtime/startup notes/source fingerprints/original ICO/PNG/PE payloads/UserData and QA cache cleanup verified. Build increments once to0.3.79. New Raster transforms leave all scene lines/IDs/styles intact; existing recorded edits/private projects are not rewritten. No owner process controlled or push.",
+      "evidence": "artifacts/extension-guides/source-final.log",
+      "portable_evidence": "artifacts/extension-guides/portable/validation.json"
+    },
+    {
+      "check": "existing_alignment_panels_alt_captions_and_raster_isolation",
+      "date": "2026-10-19",
+      "result": "735 clean final UI/native/gesture regressions pass; 176 checks pass against actual0.3.78 executable bytecode. Two fresh isolated RU/EN EXEs open synthetic current-schema projects without source archive writes or Python/PATH dependency. Compiled bilingual screenshots verify three separate alignment panels after primary tools, before output panels; uniform angles/guides/snapping order with unavailable buttons omitted; six plain Alt captions inside48x60 tiles, hidden editors, retained lower-right settings corners and ordinary caption clicks. Vertices ordinary snapping remains unlabelled and works without Alt. Actual Raster drags near stationary vertices remain unsnapped with Alt pressed mid-gesture across all four stored Vertices point/guide combinations; section switches restore original toggles. Raster toolbars and Alt rotation/brush modifiers remain intact. Existing settings, tolerances, serialization/schema7, geometry, native/source bytes, image data, history and other mode behavior preserved. Build increments once to0.3.78; complete runtime/startup notes/source fingerprints/original ICO/PNG/PE icons/UserData and QA cache cleanup verified. No owner process controlled, source/private-file repair or push.",
+      "evidence": "artifacts/alignment-panels/source-regressions.log",
+      "portable_evidence": "artifacts/alignment-panels/portable/validation.json"
+    },
+    {
+      "check": "framed_tabs_ordered_raster_selection_global_native_resolution",
+      "date": "2026-10-19",
+      "result": "1505 final full-suite tests pass after updating prior no-selection-history assertions;126 focused source checks and34 final selection/group/review cases pass. 185 history/project/native/UI checks pass against actual0.3.77 executable bytecode. Two isolated fresh RU/EN EXEs reopen current-schema projects containing applied and redo Raster selection steps without Python/PATH dependencies or archive writes. Compiled bilingual GUI verifies all eight tab states, clipped active circular cap, no connector/endpoint ghosts, both clear-question answers, exact100-step undo/redo, normal/detached selection persistence and minimum1224px top controls. Native resolution36px Main button is available in all four modes, with exact RGB/alpha/camera checks. Complete portable build increments once to0.3.77; source fingerprints/startup notes/original ICO/PNG/PE icons/UserData verified, owned QA caches cleaned and live editor/cache preserved. Schema7 retained with strictly validated raster_selection history entries; source geometry/raster/native JSON and other section selections unchanged by selection actions. No source/private-file repair or push.",
+      "evidence": "artifacts/tabs-selection/full-tests-verified.log",
+      "portable_evidence": "artifacts/tabs-selection/portable/validation.json"
+    },
+    {
+      "check": "editor_polish_raster_transforms_guides_independent_preview",
+      "date": "2026-10-19",
+      "result": "1483 full-suite tests pass;371 later persistence/UI checks,105 source Raster/aid checks, 28 last control/help checks and24 final Raster/overlay tests pass.294 regressions run against actual0.3.76 executable bytecode; six fresh isolated RU/EN EXEs open ordinary/group and raster-transformed current-schema projects without Python/PATH dependency or archive writes. Native preview and PNG RGBA compare exactly for rotated crops, offsets -4/0/4 and grid padding. Global guide creation/movement/whole-value snapping/cancel/delete, mode-scoped S/M/R, staged independent Raster preview/offset, detached Raster selection save/reopen, Ctrl-wheel isolation, real project color picker, per-dataset background and600 retained cancellable raster transforms verified. Compiled GUI inspected: centered30x16 fields with11px text inside48x60 tools, separate lower containers, all minimum-width top controls, taller unframed active tab and a full2.5px-radius endpoint overlay centered on the horizontal baseline. Complete portable builds incremented once each to0.3.75 and final0.3.76; the second corrects tab-background occlusion of the endpoint marker. Original source assets/ICO/PNG/PE resources/UserData remain exact; all fresh-test image caches removed and the preexisting live editor cache retained. Owner editor process142484 remains running. Existing schema7 retained; no source/private-file repair or push."
+    },
+    {
+      "check": "portable_native_cache_global_aids_compact_controls",
+      "date": "2026-10-19",
+      "result": "1419 full tests pass after replacing a flaky five-second QTest export polling loop with a bounded real Qt event loop; isolated actual export also passes.54 final source cache/aid tests and61 cache/aid/group-export checks pass.228 regressions pass against executable bytecode. Four fresh isolated0.3.74 EXEs run without Python/PATH dependency. Bundled libvips DLL/PYD and license metadata verified; native images removed from executable Cache after all launches. Bilingual compiled GUI confirms global Main aids, adaptive dataset selector,42x10 inline fields within48x72 tools and ordinary full-size popups. Synthetic16200px PNG/JPEG native-source tests sample36.2/60.2MiB incremental RSS,750.8MiB lossless cache, exact PNG crops and source-preserving deletion. Coverage includes exact RGBA/palette/gray16/CMYK/JPEG/PNG/WebP/BMP/TIFF crops, cancellation/partial/disk-full cleanup, crash recovery, live OS-lock isolation, bounded32-tile batches, stale zoom restart, geometry-gesture retention and project/source cleanup. Source/UserData/ICO/PNG/PE resources preserved; running owner editor left intact. Cache contains no image directories after verification; one-byte root lock remains control metadata. Schema7 unchanged; no push."
+    },
+    {
+      "check": "stationary_group_manager_scroll",
+      "date": "2026-10-19",
+      "result": "Reproduced13 failures across24 list-position/action cases with24 groups. All24 new regressions now pass in Vertices/Contours/Regions/Raster at top/middle/bottom.148 group/cell tests and33 catalog group/layout tests pass. Two isolated fresh0.3.73 EXEs and148 actual compiled group tests pass; six compiled RU/EN list-position screenshots inspected. Surviving buttons retain identity/focus targets, structural changes preserve and clamp scroll; metadata/camera/geometry/raster/source untouched by refresh. UserData and original ICO/PNG/PE resources preserved, build source hashes verified. Running owner editor left active; restart uses new executable. No push or schema change."
+    },
+    {
+      "check": "raster_aids_exact_cells_and_native_preview",
+      "date": "2026-10-19",
+      "result": "1378 full-suite tests pass;94 final focused checks after visual polish;187 checks against actual executable bytecode. Four fresh isolated EXEs open new Raster and existing group projects in RU/EN without Python/PATH dependency; no archive writes. Synthetic compiled GUI verifies four48x72 inline brushes, staged ruler/brush popups, guide/profile reopening and four visible native tiles with alpha edits. Source and compiled screenshots inspected. Portable UserData, original ICO/PNG and PE icon payloads remain exact; all build source hashes match. Read-only private-project profiling12 clicks:8.268s ->2.905s including synchronous repaint. The observed Python desktop error came from an invalid synthetic empty-dataset test preview during failed teardown; corrected fixture and Windows test error mode prevent automated WER desktop dialogs. New/full/compiled runs close normally. No source/private project repair, schema migration, user-process termination or push."
+    },
+    {
+      "check": "complete_region_group_png_export_and_tight_editor",
+      "date": "2026-10-18",
+      "result": "1299 full-suite tests pass, including28 added regressions.13 baseline failures reproduce naming/preflight/gutter gaps. Source and actual compiled UI cover RU/EN, group/dataset names, merged/separate multi-part groups, all four sections and sidebar states. Six isolated fresh EXE launches and28 compiled regressions pass. Actual +/group/export/naming/folder buttons create4 PNGs and4 package JSONs in each bilingual QA run; stable numbers/dimensions, source/native/geometry/raster and settings preserved. Read-only owner-project routing names13/13 groups instead of2/13; actual silent click not reproduced, tracked as NEXT-019. Portable0.3.71 built once; source hashes/startup notes/original Qt/PE icons/artwork/UserData pass, owner process115092 preserved. No source project rewrite or push.",
+      "evidence": "artifacts/group-png/full-tests.log",
+      "portable_evidence": "artifacts/group-png/portable/validation.json"
+    },
+    {
+      "check": "vertex_alt_ordinary_and_constrained_snapping",
+      "date": "2026-10-18",
+      "result": "992 full-suite tests and76 focused regressions pass. Original1x/2x UI mid-drag Alt regressions reproduce lost ordinary snapping. Final Vertices UI covers vertex/projection targets, Alt before/during drag, on/off and angle/axis/both toggles, Escape/commit, undo/redo and native/source preservation. Screenshot case combines a horizontal guide and vertical finite target; neighbouring perpendicular and dragged-corner circle constraints retain90-degree legs. Degenerate preferred circle center/endpoint falls back to raw cursor only when needed. Pure math rejects incompatible vertices, out-of-range/extended targets and own edges, preserving compatible-vertex priority. Synthetic screenshot inspected. Portable0.3.61 rebuilt once;8 fresh isolated executable launches pass. Actual compiled dale.canvas/dale.editing extracted from delivered EXE verify ordinary Alt vertex/segment snaps, disabled toggle, accepted-guide priority, horizontal-guide/vertical-line intersection and90-degree corner-circle/line intersection. Source fingerprints/startup notes/original icons/UserData verified and owner process106060 remains running; no schema/settings/group changes or push.",
+      "evidence": "artifacts/vertex-alt-snapping-full-tests.log",
+      "focused_evidence": "artifacts/vertex-alt-combined-regressions.log",
+      "source_evidence": "artifacts/vertex-alt-snapping/source-validation.json",
+      "portable_evidence": "artifacts/vertex-alt-snapping/portable/validation.json"
+    },
+    {
+      "check": "dataset_json_transfer_merge_group_png_naming_clipboard_membership",
+      "date": "2026-10-18",
+      "result": "914 full-suite tests pass plus2 supplemental current split/manual JSON merge regressions. Exact group matching, active/priority ambiguity, pre-grid/artwork identity, point-touch components, safe names and mixed package names verified. RU/EN questions/settings, remember/restart/reset/Cancel, actual tree-drop merge, independent source/target raster and exact target native non-wall data, undo/redo/archive retention pass. Clipboard Contours/Regions copies retain ancestry/properties without automatic groups, including split/assignment/undo/reopen. Source CLI smoke verifies actual staged transfer dialog adds1 current authored line, naming options and copy isolation. Synthetic RU/EN screenshots inspected. Portable0.3.60 rebuilt once;8 fresh isolated executable launches pass actual current-JSON merge (one appended authored line, source unchanged), all three naming settings, clipboard group isolation, viewport-only resizing/fixed scrolling,100-action current-schema histories, source fingerprints/startup notes/original icons and UserData preservation. Owner process106060 remains running. No push.",
+      "evidence": "artifacts/merge-group-naming-full-tests.log",
+      "supplemental": "artifacts/dataset-current-merge-tests.log",
+      "source_evidence": "artifacts/merge-group-naming/source-validation.json",
+      "source_smoke": "artifacts/merge-group-naming/smoke-source.json",
+      "portable_evidence": "artifacts/merge-group-naming/portable/validation.json"
+    },
+    {
+      "check": "group_manager_viewport_docks_and_resize_grip",
+      "date": "2026-10-18",
+      "result": "876 full-suite tests pass,46 targeted UI/group checks pass and39 final isolated group regressions pass after final scrollbar/input safeguards and explicit deferred fixture cleanup. Three original regressions reproduce37/29px manager movement with viewport-child scrolling; final cases preserve viewport pixels for camera pan/zoom/fit, window movement and dataset switching. Nine free/side/corner profiles, real header/grip drags, custom size across rebuild/reopen, bounds/minimum, maximized grip and scrollbar/input isolation verified. Synthetic RU/EN screenshots inspected; native geometry/history/group/archive bytes unchanged. Portable0.3.59 rebuilt once; eight fresh isolated executable launches verify fixed viewport position, visible overlay-only resize grip, current-schema histories/groups, icons/source hashes/startup notes/UserData. Owner process106060 remains running. No push.",
+      "evidence": "artifacts/group-viewport-full-tests.log",
+      "focused_evidence": [
+        "artifacts/group-viewport-final-checks.log",
+        "artifacts/group-viewport-final-group-tests.log"
+      ],
+      "source_evidence": "artifacts/group-viewport/source-validation.json",
+      "portable_evidence": "artifacts/group-viewport/portable/validation.json"
+    },
+    {
+      "check": "selection_groups_toggle_bounded_history_source",
+      "date": "2026-10-18",
+      "result": "Portable0.3.58 rebuilt once.860 full-suite tests and79 final core/archive/dataset/Qt checks pass, including the two later group-only and filtered-raster checkpoint regressions. Eight fresh isolated executable launches pass: actual RU/EN empty/grouped views,100-action long-history archive, existing current-schema camera/grid/export projects. Group metadata/multiple membership/opaque fills/nonmodal map-child manager/checked button/no footer/318px width/140x36 selector and18 settings buttons/14 values verified. Real64MiB failure reproduction reduces84012814-byte catalog to40214899 bytes with100 undo actions, one protected checkpoint, schema7 and exact native JSON. Source hashes/startup notes/original PE+Qt ICO/shin0by/UserData verified. Owner process7664 (15:23:00) remains running; no process termination, source/project overwrite, push or live Foundry claim.",
+      "evidence": "artifacts/groups-final-tests.log",
+      "final_focused": "artifacts/groups-final-core.log",
+      "source_evidence": [
+        "artifacts/groups/source-validation.json",
+        "artifacts/groups/history-validation.json"
+      ],
+      "portable_evidence": "artifacts/groups/portable/validation.json"
+    },
+    {
+      "check": "dataset_camera_windows_alt_mirrors_cumulative_caption_rotation_steps",
+      "result": "834 full-suite tests pass without warnings. Five camera cases cover repeated/latest views, manager routes, inactive archive settings, viewport resizing and global numeric scope; twenty-cycle synthetic evidence has no accumulating drift. Twelve Alt/plain wheel cases include the Windows horizontal Alt event through both modes and canvas/sidebar/direct routes. Ten mirror cases preserve exact IDs/properties/stationary/native nonwall/raster data, undo and archive. Four caption cases prove cumulative signed hundredths, pivot placement and exact one-device-pixel shadow at DPR1/2. Thirteen step-setting/validation cases plus updated all-fourteen-global restart regression verify Apply/Cancel, independent decimal values, archive, strict centidegrees and project/global separation. Bilingual toolbar/popup/negative-total screenshots inspected. Portable0.3.57 rebuilt once;8 fresh isolated executable launches pass, including saved camera, independent centidegree settings,18 marked settings buttons/14 numeric values, optional-field current-schema archives and earlier grid/guide/export fixtures. All source hashes/startup notes/original PE+Qt icons/artwork/UserData verified; owner process123388 remains running.",
+      "evidence": "artifacts/camera-rotation-final-tests.log",
+      "source_evidence": [
+        "artifacts/camera-restore/source-validation.json",
+        "artifacts/rotation-tools/source-validation.json"
+      ],
+      "command": "pytest -q; synthetic camera/rotation QA; ruff check/format; repository/text policy; git diff --check",
+      "portable_evidence": "artifacts/camera-restore/portable/validation.json"
+    },
+    {
+      "check": "stable_export_families_json_option_alt_rotation",
+      "result": "799 tests passed; 3 final popup/manager checks passed after explicit Apply caption preservation on queued Qt language changes. New cases cover deterministic exact set identities, both JSONs/PNG-only, native/source safety, grid/offset/raster/archive invariance, equal-sized inward split crops, source transaction failure, real checkbox worker/picker and six mixed Alt/plain rotation routes. Guide toggle retained through routine actions; separate dataset profiles restore independently, spontaneous owner trigger not reproduced. Synthetic bilingual popup/browser inspected at minimum window. Portable0.3.56 rebuilt once and11 isolated executable launches passed, including both JSON option states. All source hashes/startup notes/original PE and Qt icons/artwork/UserData verified. Existing owner process86324 preserved.",
+      "command": "python -m pytest -q; focused popup/manager regression; python artifacts/validate_stable_export.py; ruff check/format; repository/text policy; git diff --check",
+      "evidence": "artifacts/stable-export-final-tests.log",
+      "portable_evidence": "artifacts/stable-export/portable/validation.json"
+    },
+    {
+      "check": "cursor_acquired_axis_guides",
+      "result": "765 tests pass, including18 new cases covering two acquired axes, radial frozen reference queries, real seven-mode placements at1x/3x, nonzero cursor/grab offset, Alt toggle, Escape/commit/undo, source/non-wall/raster preservation and hidden-floor/self exclusion. Existing57 focused alignment cases pass with owner-requested acquired-reference priority. Synthetic two-reference gesture and bilingual UI inspected; archive drops transient references. Portable0.3.55 rebuilt once;9 isolated executable launches passed, including the new tracking archive and earlier current-schema fixtures. Source hashes/startup notes/original Qt and PE icons/artwork/UserData verified; owner process123148 preserved.",
+      "command": "python -m pytest -q; python artifacts/validate_guide_tracking.py; ruff check/format; repository index/text policy; git diff --check",
+      "evidence": "artifacts/guide-tracking-tests.log"
+    },
+    {
+      "check": "contour_centers_and_angular_adjacent_alignment",
+      "result": "747 tests pass, including40 new regression cases. Eight rotation cases cover opposite paste anchors, stable asymmetric/disconnected selection, undo and project reopening. Angle cases cover all three rotated quadrilateral corners, branch pairs/continuations, independent coincident reference exclusion, degrees at different scales/zooms, checkbox staging/real gestures/project roundtrip, strict optional settings and actual offscreen/two-leg paint. Six source QA gestures and bilingual popup screenshots inspected; independent dataset options verified. Exact source/raster/native non-wall data preserved in synthetic evidence. Portable0.3.54 built once and8 isolated launches passed, including centered-rotation and angular-options archives. Source hashes, exact startup notes, original Qt/PE icons/artwork and UserData verified; existing owner process67524 preserved.",
+      "command": "python -m pytest -q; python artifacts/validate_contour_center.py; python artifacts/validate_adjacent_angles.py; ruff check/format; repository index/text policy; git diff --check",
+      "evidence": "artifacts/centers-angular-settings-tests.log"
+    },
+    {
+      "check": "final_export_destination_portable_0_3_53",
+      "date": "2026-10-18",
+      "result": "One complete0.3.53 build after707 full-suite tests, including35 new destination/conflict/rollback cases. Six isolated hidden executable launches pass: RU/EN empty, merged-grid, separate-grid, tight Ask and current-schema independent-alignment archive. New export_directory/export_files modules, all16 square settings buttons and14 hidden inline controls, exact grid/sidebar bounds and native non-wall bytes retained. All source fingerprints/startup notes/original ICO PE/Qt/shin0by/UserData verified. Source evidence contains actual new-folder chooser plus2 bilingual overwrite runs with3 direct worker exports,4 basename-only questions and exact unrelated/source assets. No owner editor was running before deployment; no user processes terminated. No source/project overwrite, push or live Foundry claim.",
+      "details": "artifacts/export-destination/portable/validation.json"
+    },
+    {
+      "check": "final_export_destination_source",
+      "date": "2026-10-18",
+      "result": "707 full-suite tests pass, including35 new cases:14 RU/EN real chooser default/new/existing/single-click/double-click/empty/cancel,12 real GUI worker/JSON conflict choices,6 direct-folder/append/exclusive publication/cancel cases,2 overwrite rollback cases and1 imported-source hardlink protection case. Four existing selected/grid/grouped worker cases use the final folder directly. Synthetic actual new-folder chooser plus2 bilingual overwrite runs confirm3 direct worker exports,4 basename-only questions and exact unrelated/source bytes. Dialog screenshots inspected. Ruff/format/index/ASCII/whitespace pass. Portable build pending; no push or live Foundry claim.",
+      "details": "artifacts/export-destination/source-validation.json"
+    },
+    {
+      "check": "popup_tool_settings_portable_0_3_52",
+      "date": "2026-10-18",
+      "result": "One complete0.3.52 build after672 passing full-suite tests. Six isolated hidden executable launches pass: RU/EN empty, merged-grid, separate-grid, tight Ask and current-schema independent-alignment project. All16 settings buttons/corners/right-click actions and14 hidden inline values retained. Exact PNG sidebar dimensions and non-wall bytes preserved. New popup module/source fingerprints/startup notes/original ICO PE/Qt/shin0by and UserData pass. Six RU/EN source popup views verify common equal-size Apply/Cancel footer, custom X,416px width, native controls and map placement;8 new lifecycle cases verify nested combo/Cancel/X/Escape/outside/replacement. No owner editor was running before deployment; no user processes terminated. No source/project overwrite, push or live Foundry claim.",
+      "details": "artifacts/popup-settings/portable/validation.json"
+    },
+    {
+      "check": "popup_tool_settings_source",
+      "date": "2026-10-18",
+      "result": "672 full-suite tests pass, including8 new RU/EN actual nested-combo and Cancel/X/Escape/outside/replacement cases. Six source popup views plus8 toolbar views inspected:416px width, custom header/X, no extra separators,6px group-title inset, equal-size common Apply/Cancel footer and map containment. Synthetic native PNG worker still exports exact300x250 grid canvas, retaining alpha1/native RGB/source/geometry/history and archive reopening. Ruff/format/index/ASCII/whitespace pass. Portable build pending; no push or live Foundry claim.",
+      "details": "artifacts/popup-settings/source-validation.json"
+    },
+    {
+      "check": "standard_tool_settings_grid_export_portable_0_3_51",
+      "date": "2026-10-18",
+      "result": "One complete0.3.51 build after664 passing full-suite tests. Six isolated hidden executable launches pass: RU/EN empty, merged-grid, separate-grid, tight Ask and previous current-schema independent-alignment project. All16 settings buttons are48x48 with right-click actions/corners; all14 value fields are hidden in toolbars. Exact sidebar bounds300x250 merged and200x250 maximum separate match padded PNG output; native non-wall bytes and prior section flags retained. New tool_settings/export_grid modules, all source fingerprints/startup notes, original ICO PE/Qt/shin0by and UserData pass. No owner editor was running before deployment; no user processes terminated. No source/project overwrite, push or live Foundry claim.",
+      "details": "artifacts/settings-grid/portable/validation.json"
+    },
+    {
+      "check": "standard_tool_settings_grid_export_source",
+      "date": "2026-10-18",
+      "result": "664 full-suite tests pass (647 application/core/Qt and17 isolated Git push-policy cases), with47 added cases covering14 real numeric-setting buttons,6 bilingual default-action combinations,24 grid/RGBA/frame/error/cache cases,2 added immutable-worker/grid grouping cases and1 preference case. Six standard settings dialogs and8 toolbar screenshots inspected;16 corners, vertical groups/dividers, standard arrows, Cancel/Apply and preserved automatic questions verified. Synthetic worker exports a300x250 canvas at source(-10,-45), scene(0,-50), retaining every original alpha/RGB pixel and source/geometry/history. Archive reopening and exact sidebar match pass. Ruff/format/index/ASCII/whitespace pass. No push or live Foundry claim; portable build pending.",
+      "details": "artifacts/settings-grid/source-validation.json"
+    },
     {
       "check": "independent_section_alignment_portable_0_3_50",
       "date": "2026-10-18",
@@ -630,6 +869,16 @@
       "check": "sections_scene_settings_recent_projects_and_single_left_frame",
       "result": "254 tests pass; ruff check/format and repository index pass. Actual Qt tests verify three top panels, visible36px square icon-only common controls in RU/EN at1024x768, mutually exclusive Project/Scene/Settings pages, common contextual help copies, Levels-to-Pan without editing, return navigation and a direct left-toolbar stack without nested wrapper. Recent projects persist/reorder after successful saves/opens, honor cancellation, disable missing files with path help, and clear without deleting files. Preferences validate absolute .dale paths/deduplication/ten-entry limit and preserve other settings. Synthetic screenshots of every section plus scene/settings/recent menu inspected; localized control-help audit passed through RU/EN/RU. Levels remains an empty future-control group, not semantic floor generation.",
       "command": "python -m pytest -q; python -m ruff check .; python -m ruff format --check .; python tools/check_repository.py; python artifacts/verify_section_panels.py"
+    },
+    {
+      "check": "section_local_groups_exact_explicit_assignment_and_center_colors",
+      "date": "2026-10-18",
+      "result": "1123 full-suite tests pass. Two supplemental native/general derived-import regressions reproduce/fix implicit ancestry membership; final106 targeted group/dataset tests pass. Eight bilingual synthetic views verify independent lists, membership, active choices and persistence; eight1x/2x pixel cases prove1px group centers within unchanged3px backing including hover/selection/hidden geometry. Read-only actual village-port inspection finds24 inherited remote copy lines; explicit reassignment via + yields42 intended lines and30 cells including both main interior areas. Existing groups and original archive remain untouched until owner reassignment. Portable0.3.65 rebuilt once;10 fresh isolated executable launches plus delivered compiled UI/canvas verify scoped groups, colors, exact reassignment, preserved last dataset, source hashes/icons/startup notes and UserData. Owner process137476 preserved; concurrent owner preferences retained. Angle/axis behavior explicitly confirmed unchanged. No schema change or push.",
+      "evidence": "artifacts/section-groups-release-tests.log",
+      "supplemental_evidence": "artifacts/section-groups-import-final-tests.log",
+      "source_evidence": "artifacts/section-groups/source-validation.json",
+      "private_local_evidence": "artifacts/section-groups/private-gui-validation.json",
+      "portable_evidence": "artifacts/section-groups/portable/validation.json"
     }
   ],
   "completed": [
@@ -652,9 +901,41 @@
     {
       "id": "NEXT-016",
       "result": "ADR-021 implemented: shared canonical source walls, all-band validation/conflict retention, typed repair history/redo, standalone Scene JSON input and byte-preserving coordinate-only atomic export. Updated378-wall and earlier368-wall private regressions pass; no live Foundry import claim."
+    },
+    {
+      "id": "NEXT-017",
+      "result": "Owner confirmed both current Scene JSON and PNG placement manifest. Implemented stable shared selection/part numbers and optional JSON payloads; validation/build recorded separately."
+    },
+    {
+      "id": "FR-137..141",
+      "result": "1378 full-suite tests pass;94 final focused checks after visual polish;187 checks against actual executable bytecode. Four fresh isolated EXEs open new Raster and existing group projects in RU/EN without Python/PATH dependency; no archive writes. Synthetic compiled GUI verifies four48x72 inline brushes, staged ruler/brush popups, guide/profile reopening and four visible native tiles with alpha edits. Source and compiled screenshots inspected. Portable UserData, original ICO/PNG and PE icon payloads remain exact; all build source hashes match. Read-only private-project profiling12 clicks:8.268s ->2.905s including synchronous repaint. The observed Python desktop error came from an invalid synthetic empty-dataset test preview during failed teardown; corrected fixture and Windows test error mode prevent automated WER desktop dialogs. New/full/compiled runs close normally. No source/private project repair, schema migration, user-process termination or push."
+    },
+    {
+      "id": "FR-142",
+      "result": "Reproduced13 failures across24 list-position/action cases with24 groups. All24 new regressions now pass in Vertices/Contours/Regions/Raster at top/middle/bottom.148 group/cell tests and33 catalog group/layout tests pass. Two isolated fresh0.3.73 EXEs and148 actual compiled group tests pass; six compiled RU/EN list-position screenshots inspected. Surviving buttons retain identity/focus targets, structural changes preserve and clamp scroll; metadata/camera/geometry/raster/source untouched by refresh. UserData and original ICO/PNG/PE resources preserved, build source hashes verified. Running owner editor left active; restart uses new executable. No push or schema change."
+    },
+    {
+      "id": "FR-143/144/145",
+      "result": "1419 full tests pass after replacing a flaky five-second QTest export polling loop with a bounded real Qt event loop; isolated actual export also passes.54 final source cache/aid tests and61 cache/aid/group-export checks pass.228 regressions pass against executable bytecode. Four fresh isolated0.3.74 EXEs run without Python/PATH dependency. Bundled libvips DLL/PYD and license metadata verified; native images removed from executable Cache after all launches. Bilingual compiled GUI confirms global Main aids, adaptive dataset selector,42x10 inline fields within48x72 tools and ordinary full-size popups. Synthetic16200px PNG/JPEG native-source tests sample36.2/60.2MiB incremental RSS,750.8MiB lossless cache, exact PNG crops and source-preserving deletion. Coverage includes exact RGBA/palette/gray16/CMYK/JPEG/PNG/WebP/BMP/TIFF crops, cancellation/partial/disk-full cleanup, crash recovery, live OS-lock isolation, bounded32-tile batches, stale zoom restart, geometry-gesture retention and project/source cleanup. Source/UserData/ICO/PNG/PE resources preserved; running owner editor left intact. Cache contains no image directories after verification; one-byte root lock remains control metadata. Schema7 unchanged; no push."
+    },
+    {
+      "id": "FR-145/146/147/148/149/150",
+      "result": "1483 full-suite tests pass;371 later persistence/UI checks,105 source Raster/aid checks, 28 last control/help checks and24 final Raster/overlay tests pass.294 regressions run against actual0.3.76 executable bytecode; six fresh isolated RU/EN EXEs open ordinary/group and raster-transformed current-schema projects without Python/PATH dependency or archive writes. Native preview and PNG RGBA compare exactly for rotated crops, offsets -4/0/4 and grid padding. Global guide creation/movement/whole-value snapping/cancel/delete, mode-scoped S/M/R, staged independent Raster preview/offset, detached Raster selection save/reopen, Ctrl-wheel isolation, real project color picker, per-dataset background and600 retained cancellable raster transforms verified. Compiled GUI inspected: centered30x16 fields with11px text inside48x60 tools, separate lower containers, all minimum-width top controls, taller unframed active tab and a full2.5px-radius endpoint overlay centered on the horizontal baseline. Complete portable builds incremented once each to0.3.75 and final0.3.76; the second corrects tab-background occlusion of the endpoint marker. Original source assets/ICO/PNG/PE resources/UserData remain exact; all fresh-test image caches removed and the preexisting live editor cache retained. Owner editor process142484 remains running. Existing schema7 retained; no source/private-file repair or push."
     }
   ],
-  "pending": [],
+  "pending": [
+    {
+      "id": "NEXT-018",
+      "status": "awaiting_reproduction_trigger",
+      "task": "Owner reports Contours guide switch sometimes turns off. Routine action regression does not reproduce; project/dataset restoration deliberately restores stored independent flags. Asked whether checked state changes or snapping stops, and the last triggering action. Do not claim fixed.",
+      "question_channel": "request_user_input_async"
+    },
+    {
+      "id": "NEXT-019",
+      "status": "awaiting_owner_retest_on_0.3.71",
+      "task": "Owner clarifies old0.3.69 shows the no-selection prompt, but selected Regions/group export shows no window. Current source/read-only project and compiled button/dialog/worker tests do not reproduce silence. Group naming with internal dividers is corrected and preparation exceptions now show an error. Keep this remaining trigger open until the owner retests the rebuilt executable; do not claim the specific silent cause was reproduced."
+    }
+  ],
   "limitations": [
     "No levels, presets, lights, portals or native Foundry Scene/settings generation. The owner assembles/configures assets manually in Foundry.",
     "Current .dale schema7 only; older/unknown schemas rejected without migration.",
@@ -674,7 +955,7 @@
     "decision": "ADR-020",
     "resumption_authorized": false
   },
-  "current_version": "0.3.50",
+  "current_version": "1.3.83",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -1265,12 +1546,13 @@
     "decision": "docs/architecture.md ADR-026",
     "evidence": "artifacts/dataset-catalog/validation.json",
     "common_clipboard": "contours only, across source/project/set changes",
-    "creation_pair_default": true,
+    "creation_pair_default": false,
     "first_set_replacement": "rebase reopening defaults and remove unreferenced old inputs",
     "tests": 381,
     "source_evidence": "artifacts/dataset-catalog/validation.json",
     "portable_build": "0.3.32",
-    "portable_evidence": "artifacts/dataset-catalog-portable/validation.json"
+    "portable_evidence": "artifacts/dataset-catalog-portable/validation.json",
+    "reopening_selection": "Last visited valid dataset; ADR-061 supersedes the creation-pair default."
   },
   "dataset_toolbar_layout": {
     "status": "implemented_portable_ready",
@@ -1416,14 +1698,21 @@
       "FR-086",
       "FR-090"
     ],
-    "tests": 442,
-    "new_regressions": 4,
-    "source_evidence": "artifacts/dataset-camera/source-validation.json",
-    "camera": "scene-frame center, stored zoom retained; Apply-current preserves pan",
+    "tests": 834,
+    "new_regressions": 2,
+    "source_evidence": "artifacts/camera-restore/source-validation.json",
+    "camera": "independent saved scene-space center and zoom, restored after refresh; floating midpoint prevents accumulated drift",
     "eraser_policy": "Superseded by ADR-028: all geometry tools available with height filtering; native preservation always applies when source JSON exists.",
     "schema": 7,
-    "portable_build": "0.3.40",
-    "portable_evidence": "artifacts/dataset-camera-portable/validation.json"
+    "portable_build": "0.3.57",
+    "portable_evidence": "artifacts/camera-restore/portable/validation.json",
+    "decision": "ADR-050",
+    "test_log": "artifacts/dataset-camera-restore-tests.log",
+    "source_regressions": 5,
+    "changed_camera_regressions": 3,
+    "portable_cases": 8,
+    "owner_process_preserved": 123388,
+    "UserData_preserved": true
   },
   "native_wall_editing": {
     "status": "implemented_portable_ready",
@@ -1690,5 +1979,1204 @@
     "portable_cases": 6,
     "portable_evidence": "artifacts/independent-alignment/portable/validation.json",
     "owner_process_preserved": 98444
+  },
+  "tool_settings_grid_export": {
+    "status": "implemented_portable_ready",
+    "decisions": [
+      "ADR-040",
+      "ADR-041"
+    ],
+    "requirements": [
+      "FR-105",
+      "FR-106",
+      "FR-107"
+    ],
+    "tests": 664,
+    "new_tests": 47,
+    "application_core_qt_tests": 647,
+    "isolated_push_policy_tests": 17,
+    "test_log": "artifacts/settings-grid-tests.log",
+    "source_evidence": "artifacts/settings-grid/source-validation.json",
+    "standard_dialog_cases": 6,
+    "toolbar_views": 8,
+    "settings_buttons": 16,
+    "numeric_buttons": 14,
+    "square_size": 48,
+    "corner_size": 9,
+    "vertical_standard_groups": true,
+    "automatic_questions_preserved": true,
+    "grid_default": false,
+    "grid_portable_field": "size_to_grid",
+    "grid_canvas_size": [
+      300,
+      250
+    ],
+    "grid_source_origin": [
+      -10,
+      -45
+    ],
+    "exact_original_pixels_preserved": true,
+    "project_reopen": true,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "portable_build": "0.3.51",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/settings-grid/portable/validation.json",
+    "owner_processes_running_before_build": []
+  },
+  "tool_settings_popup": {
+    "status": "implemented_portable_ready",
+    "decisions": [
+      "ADR-042",
+      "ADR-043"
+    ],
+    "requirements": [
+      "FR-105",
+      "FR-039"
+    ],
+    "tests": 672,
+    "new_lifecycle_cases": 8,
+    "test_log": "artifacts/popup-settings-tests.log",
+    "source_evidence": "artifacts/popup-settings/source-validation.json",
+    "bilingual_popup_views": 6,
+    "toolbar_views": 8,
+    "initial_width": 416,
+    "previous_width": 520,
+    "group_title_inset": 6,
+    "nonmodal": true,
+    "custom_header_small_x": true,
+    "footer": [
+      "Apply",
+      "Cancel"
+    ],
+    "footer_equal_size": true,
+    "dismiss_without_commit": [
+      "Cancel",
+      "X",
+      "Escape",
+      "outside click",
+      "replacement"
+    ],
+    "nested_combo_preserved": true,
+    "map_preferred": true,
+    "automatic_questions_preserved": true,
+    "source_geometry_history_raster_unchanged": true,
+    "owner_processes_running_before_build": [],
+    "live_foundry_tested": false,
+    "portable_build": "0.3.52",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/popup-settings/portable/validation.json"
+  },
+  "export_destination": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-044",
+    "requirements": [
+      "FR-108",
+      "FR-109"
+    ],
+    "tests": 707,
+    "new_tests": 35,
+    "test_log": "artifacts/export-destination-tests.log",
+    "source_evidence": "artifacts/export-destination/source-validation.json",
+    "chooser_cases": 14,
+    "conflict_cases": 12,
+    "publication_cases": 9,
+    "direct_destination": true,
+    "remember_browsing_parent": true,
+    "conflict_choices": [
+      "overwrite",
+      "copy",
+      "cancel"
+    ],
+    "question_basename_only": true,
+    "json_picker_duplicate_prompt": false,
+    "worker_questions_in_gui_thread": true,
+    "cancelled_wait": true,
+    "existing_asset_rollback": true,
+    "sources_and_hardlinks_protected": true,
+    "geometry_raster_history_grid_unchanged": true,
+    "owner_processes_running_before_build": [],
+    "live_foundry_tested": false,
+    "portable_build": "0.3.53",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/export-destination/portable/validation.json"
+  },
+  "contour_rotation_center": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-045",
+    "requirements": [
+      "FR-097",
+      "FR-101"
+    ],
+    "tests": 747,
+    "new_rotation_cases": 8,
+    "source_evidence": "artifacts/contour-center/source-validation.json",
+    "pivot": "selected total-bounds midpoint; stable through affine series; recompute after changed selection/geometry/undo/archive restore",
+    "placement_anchor_separate": true,
+    "stationary_source_raster_preserved": true,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "owner_process_before_build": 67524,
+    "portable_build": "0.3.54",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/centers-angles/portable/validation.json",
+    "owner_process_preserved": 67524,
+    "UserData_preserved": true
+  },
+  "adjacent_right_angles": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-046",
+    "requirement": "FR-084",
+    "tests": 747,
+    "new_angle_cases": 32,
+    "source_evidence": "artifacts/centers-angles/source-validation.json",
+    "test_log": "artifacts/centers-angular-settings-tests.log",
+    "angular_field": "right_angle_tolerance_deg",
+    "angular_range": [
+      1,
+      90
+    ],
+    "angular_default": 5,
+    "units": "degrees",
+    "neighbour_field": "right_angle_neighbours",
+    "neighbour_default": true,
+    "neighbour_scope": "project and dataset; independent of numeric global overrides",
+    "neighbour_checkbox_ru": "По соседним вершинам",
+    "highlight": "only chosen two reference legs; full carrying segment even with offscreen joint",
+    "visible_connected_references_only": true,
+    "zoom_and_length_independent": true,
+    "staged_apply_cancel": true,
+    "independent_dataset_roundtrip": true,
+    "source_gestures": 6,
+    "bilingual_popup_views": 2,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "owner_process_before_build": 67524,
+    "portable_build": "0.3.54",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/centers-angles/portable/validation.json",
+    "owner_process_preserved": 67524,
+    "UserData_preserved": true
+  },
+  "cursor_acquired_guides": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-110",
+    "decision": "ADR-047",
+    "tests": 765,
+    "new_tests": 18,
+    "source_evidence": "artifacts/guide-tracking/source-validation.json",
+    "test_log": "artifacts/guide-tracking-tests.log",
+    "modes": [
+      "vertex drag",
+      "contour drag",
+      "region drag",
+      "copied contour placement",
+      "copied region placement",
+      "line endpoint",
+      "rectangle corner"
+    ],
+    "cursor_hit_radius_screen_px": 10,
+    "temporary_multiple_references": true,
+    "constraint_requires_alt_and_guide_button": true,
+    "reference_marker": "hollow gold circle",
+    "acquired_before_alt": true,
+    "rigid_grab_offset_preserved": true,
+    "stationary_height_filtered_targets_only": true,
+    "point_snap_priority_preserved": true,
+    "one_undo": true,
+    "source_raster_native_nonwalls_preserved": true,
+    "transient_state_not_serialized": true,
+    "owner_process_before_build": 123148,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "portable_build": "0.3.55",
+    "portable_cases": 9,
+    "portable_evidence": "artifacts/guide-tracking/portable/validation.json",
+    "owner_process_preserved": 123148,
+    "UserData_preserved": true
+  },
+  "export_naming_request": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-048",
+    "requirements": [
+      "FR-111",
+      "FR-112"
+    ],
+    "json_scope": "both Scene JSON and placement manifest",
+    "selection_number": "29 decimal digits of SHA256/96 normalized exact unordered regions",
+    "portable_field": "include_json",
+    "include_json_default": true,
+    "scene_json": "all current dataset walls; native non-wall bytes/internal name/paths preserved",
+    "schema": 7,
+    "test_log": "artifacts/stable-export-final-tests.log",
+    "source_evidence": "artifacts/stable-export/source-validation.json",
+    "live_foundry_tested": false,
+    "tests": 799,
+    "new_export_cases": 27,
+    "portable_build": "0.3.56",
+    "portable_cases": 11,
+    "portable_evidence": "artifacts/stable-export/portable/validation.json",
+    "owner_process_preserved": 86324,
+    "UserData_preserved": true
+  },
+  "coarse_rotation": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-051",
+    "requirement": "FR-113",
+    "alt_step_degrees": 45,
+    "plain_step_degrees": 0.1,
+    "modes": [
+      "Rotate figures",
+      "Rotate regions"
+    ],
+    "one_undo_per_mixed_series": true,
+    "schema": 7,
+    "tests": 834,
+    "new_rotation_cases": 6,
+    "guide_investigation_cases": 1,
+    "portable_build": "0.3.57",
+    "portable_evidence": "artifacts/camera-restore/portable/validation.json",
+    "windows_alt_axis_fix": true,
+    "primary_qt_source": "https://raw.githubusercontent.com/qt/qtbase/6.12/src/plugins/platforms/windows/qwindowspointerhandler.cpp",
+    "source_evidence": "artifacts/rotation-tools/source-validation.json",
+    "windows_shaped_event_cases": 6,
+    "portable_cases": 8,
+    "owner_process_preserved": 123388,
+    "UserData_preserved": true
+  },
+  "guide_toggle_investigation": {
+    "status": "not_reproduced_awaiting_trigger",
+    "requirement": "FR-104",
+    "regression_log": "artifacts/rotation-guide-check.log",
+    "routine_actions_do_not_toggle": true,
+    "per_dataset_restoration_is_expected": true,
+    "state_scope_unchanged": true
+  },
+  "contour_mirrors": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-114",
+    "decision": "ADR-051",
+    "source_evidence": "artifacts/rotation-tools/source-validation.json",
+    "test_log": "artifacts/camera-rotation-final-focused.log",
+    "axes": [
+      "vertical",
+      "horizontal"
+    ],
+    "one_undo_per_click": true,
+    "schema": 7,
+    "tests": 834,
+    "new_cases": 10,
+    "portable_build": "0.3.57",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/camera-restore/portable/validation.json",
+    "owner_process_preserved": 123388,
+    "UserData_preserved": true
+  },
+  "rotation_caption_and_steps": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-052",
+    "requirements": [
+      "FR-115",
+      "FR-116"
+    ],
+    "source_evidence": "artifacts/rotation-tools/source-validation.json",
+    "test_log": "artifacts/camera-rotation-full-tests.log",
+    "numeric_fields": [
+      "figure_rotation_step_cdeg",
+      "figure_alt_rotation_step_cdeg",
+      "region_rotation_step_cdeg",
+      "region_alt_rotation_step_cdeg"
+    ],
+    "normal_default_degrees": 0.1,
+    "alt_default_degrees": 45,
+    "range_degrees": [
+      0.01,
+      360
+    ],
+    "signed_cumulative_caption_decimals": 2,
+    "shadow_device_pixels": [
+      -1,
+      1
+    ],
+    "schema": 7,
+    "overlay_not_serialized": true,
+    "tests": 834,
+    "new_caption_cases": 4,
+    "new_settings_validation_cases": 13,
+    "settings_buttons": 18,
+    "numeric_values": 14,
+    "portable_build": "0.3.57",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/camera-restore/portable/validation.json",
+    "owner_process_preserved": 123388,
+    "UserData_preserved": true
+  },
+  "selection_groups": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-117",
+      "FR-118"
+    ],
+    "decisions": [
+      "ADR-053",
+      "ADR-054"
+    ],
+    "schema": 7,
+    "source_evidence": "artifacts/groups/source-validation.json",
+    "scope": "per dataset",
+    "multiple_membership": true,
+    "color_priority": "active group, otherwise latest positive assignment",
+    "manager_width": 318,
+    "ordinary_colors_when_closed": true,
+    "full_suite_tests": 860,
+    "final_focused_tests": 79,
+    "source_test_log": "artifacts/groups-final-tests.log",
+    "portable_build": "0.3.58",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/groups/portable/validation.json",
+    "owner_process_preserved": 7664,
+    "UserData_preserved": true
+  },
+  "bounded_history": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-119",
+      "FR-120"
+    ],
+    "decision": "ADR-055",
+    "schema": 7,
+    "max_actions": 100,
+    "source_test_log": "artifacts/groups-final-core.log",
+    "source_assets_unchanged": true,
+    "full_suite_tests": 860,
+    "final_focused_tests": 79,
+    "source_evidence": "artifacts/groups/history-validation.json",
+    "old_catalog_bytes": 84012814,
+    "new_catalog_bytes": 40214899,
+    "checkpoint_operations": 1,
+    "portable_build": "0.3.58",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/groups/portable/validation.json"
+  },
+  "group_viewport": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-121",
+    "decision": "ADR-056",
+    "before_regression": "artifacts/group-viewport-before.log",
+    "source_evidence": "artifacts/group-viewport/source-validation.json",
+    "full_test_log": "artifacts/group-viewport-full-tests.log",
+    "focused_test_log": "artifacts/group-viewport-final-group-tests.log",
+    "coordinate_frame": "viewport pixels, parented to map view frame",
+    "dock_scope": "explicit header drag only",
+    "free_panel_shrink": "move left on frame shrink, not scrollbar visibility",
+    "initial_width": 318,
+    "minimum_size": [
+      250,
+      112
+    ],
+    "native_geometry_history_groups_archive_unchanged": true,
+    "full_suite_tests": 876,
+    "final_group_tests": 39,
+    "focused_ui_tests": 46,
+    "portable_build": "0.3.59",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/group-viewport/portable/validation.json"
+  },
+  "dataset_merge_group_naming": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-091",
+      "FR-122",
+      "FR-123"
+    ],
+    "decision": "ADR-057",
+    "schema": 7,
+    "source_evidence": "artifacts/merge-group-naming/source-validation.json",
+    "full_test_log": "artifacts/merge-group-naming-full-tests.log",
+    "focused_test_logs": [
+      "artifacts/group-naming-focused.log",
+      "artifacts/group-naming-dialog-tests.log"
+    ],
+    "focused_group_cases": 56,
+    "focused_dialog_cases": 16,
+    "group_match": "complete live boundary, pre-artwork offset and grid padding; active then assignment/creation priority",
+    "copy_groups": "explicit assignment only, exact ancestry/properties retained",
+    "portable_preference": "export_group_naming: null/dataset/group",
+    "source_and_native_data_unchanged": true,
+    "full_suite_tests": 914,
+    "supplemental_current_merge_tests": 2,
+    "source_smoke": "artifacts/merge-group-naming/smoke-source.json",
+    "source_smoke_log": "artifacts/merge-group-naming-smoke-source.log",
+    "portable_build": "0.3.60",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/merge-group-naming/portable/validation.json",
+    "build_log": "artifacts/merge-group-naming-build.log",
+    "owner_running_process_preserved": 106060
+  },
+  "cancelled_group_boundary_scope": {
+    "date": "2026-10-18",
+    "owner_choice": "cancel request; do not change geometry based on selection",
+    "product_changes": false,
+    "evidence_only": "artifacts/group-boundary-scope/before-validation.json"
+  },
+  "vertex_alt_snapping": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-084",
+    "decision": "ADR-058",
+    "before_regression": "artifacts/vertex-alt-snapping-before.log",
+    "focused_regressions": "artifacts/vertex-alt-combined-regressions.log",
+    "focused_cases": 76,
+    "source_evidence": "artifacts/vertex-alt-snapping/source-validation.json",
+    "full_test_log": "artifacts/vertex-alt-snapping-full-tests.log",
+    "reproduced_cases": [
+      "unmatched Alt rules bypass ordinary snapping",
+      "horizontal guide blocks compatible vertical line target",
+      "axis projection collapses corner angle candidate"
+    ],
+    "no_schema_or_preference_change": true,
+    "full_suite_tests": 992,
+    "source_screenshot": "artifacts/vertex-alt-snapping/alt-guide-and-line.png",
+    "portable_build": "0.3.61",
+    "portable_cases": 8,
+    "portable_evidence": "artifacts/vertex-alt-snapping/portable/validation.json",
+    "compiled_behavior_probe": [
+      "dale.canvas",
+      "dale.editing"
+    ],
+    "build_log": "artifacts/vertex-alt-snapping-build.log",
+    "owner_running_process_preserved": 106060
+  },
+  "new_line_alt_alignment": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-059",
+    "requirement": "FR-084",
+    "before_regression": "artifacts/new-line-alignment-before.log",
+    "focused_regressions": "artifacts/new-line-alignment-final-focused.log",
+    "new_ui_cases": 21,
+    "no_schema_or_preference_change": true,
+    "live_foundry_tested": false,
+    "focused_cases": 99,
+    "source_evidence": "artifacts/new-line-alignment/source-validation.json",
+    "full_test_log": "artifacts/new-line-alignment-full-tests.log",
+    "full_suite_tests": 1013,
+    "bilingual_preview_cases": 4,
+    "owner_running_process_before_build": 130364,
+    "portable_build": "0.3.62",
+    "portable_cases": 10,
+    "portable_evidence": "artifacts/new-line-alignment/portable/validation.json",
+    "compiled_behavior_probe": [
+      "dale.canvas",
+      "dale.editing"
+    ],
+    "build_log": "artifacts/new-line-alignment-build.log",
+    "owner_running_process_preserved": 130364,
+    "UserData_preserved": true
+  },
+  "circle_detail": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-060",
+    "requirements": [
+      "FR-040",
+      "FR-105"
+    ],
+    "multiplier_range": [
+      1.0,
+      20.0
+    ],
+    "multiplier_step": 0.2,
+    "default_multiplier": 1.0,
+    "segment_cap": 4096,
+    "field": "circle_detail_steps",
+    "field_range": [
+      0,
+      95
+    ],
+    "focused_test_log": "artifacts/circle-detail-focused.log",
+    "focused_cases": 70,
+    "new_cases": 49,
+    "schema": 7,
+    "live_foundry_tested": false,
+    "full_test_log": "artifacts/circle-detail-final-full-tests.log",
+    "full_suite_tests": 1062,
+    "source_evidence": "artifacts/circle-detail/source-validation.json",
+    "bilingual_preview_cases": 4,
+    "numeric_values": 15,
+    "settings_buttons": 19,
+    "extra_focused_log": "artifacts/circle-detail-final-focused.log",
+    "extra_focused_cases": 32,
+    "owner_running_process_before_build": 137476,
+    "portable_build": "0.3.63",
+    "portable_cases": 10,
+    "portable_evidence": "artifacts/circle-detail/portable/validation.json",
+    "compiled_behavior_probe": [
+      "dale.canvas",
+      "dale.editing",
+      "dale.tool_settings",
+      "dale.ui"
+    ],
+    "build_log": "artifacts/circle-detail-build.log",
+    "owner_running_process_preserved": 137476,
+    "UserData_preserved": true
+  },
+  "last_dataset": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-061",
+    "requirements": [
+      "FR-086",
+      "FR-090"
+    ],
+    "archive_field": "datasets.json/default",
+    "portable_field": "project_datasets",
+    "portable_limit": 100,
+    "schema": 7,
+    "focused_test_log": "artifacts/last-dataset-focused.log",
+    "focused_cases": 89,
+    "new_cases": 24,
+    "navigation_rewrites_archive": false,
+    "live_foundry_tested": false,
+    "full_test_log": "artifacts/last-dataset-full-tests.log",
+    "full_suite_tests": 1086,
+    "source_evidence": "artifacts/last-dataset/source-validation.json",
+    "source_gui_cases": 4,
+    "owner_running_process_before_build": 137476,
+    "portable_build": "0.3.64",
+    "portable_cases": 10,
+    "portable_evidence": "artifacts/last-dataset/portable/validation.json",
+    "build_log": "artifacts/last-dataset-build.log",
+    "compiled_modules": [
+      "dale.datasets",
+      "dale.preferences",
+      "dale.ui"
+    ],
+    "owner_process_preserved": 137476,
+    "userdata_preserved": true
+  },
+  "section_groups": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-062",
+    "requirements": [
+      "FR-124",
+      "FR-125",
+      "FR-126"
+    ],
+    "sections": [
+      "geometry",
+      "figures",
+      "regions",
+      "pixels"
+    ],
+    "existing_groups_section": "regions",
+    "owner_confirmed": true,
+    "schema": 7,
+    "changes_geometry": false,
+    "push": false,
+    "new_cases": 39,
+    "source_evidence": "artifacts/section-groups/source-validation.json",
+    "private_local_evidence": "artifacts/section-groups/private-gui-validation.json",
+    "focused_log": "artifacts/section-groups-import-final-tests.log",
+    "full_test_log": "artifacts/section-groups-release-tests.log",
+    "private_archive_rewritten": false,
+    "focused_cases": 81,
+    "automatic_existing_group_repair": false,
+    "private_proof": "explicit reassignment only",
+    "line_total_width_px": 3,
+    "group_center_width_px": 1,
+    "full_suite_tests": 1123,
+    "focused_cases_including_datasets": 106,
+    "supplemental_import_cases": 2,
+    "full_suite_before_derived_import_supplement": true,
+    "portable_build": "0.3.65",
+    "portable_cases": 10,
+    "portable_evidence": "artifacts/section-groups/portable/validation.json",
+    "build_log": "artifacts/section-groups-build.log",
+    "compiled_modules": [
+      "dale.ui",
+      "dale.selection_groups",
+      "dale.group_manager",
+      "dale.canvas"
+    ],
+    "owner_process_preserved": 137476,
+    "userdata_preserved": true,
+    "concurrent_owner_preference_change": true
+  },
+  "group_region_fill": {
+    "status": "implemented_portable_ready",
+    "decision": "ADR-065",
+    "requirement": "FR-127",
+    "schema": 7,
+    "numeric_tolerance": 1e-07,
+    "new_cases": 16,
+    "focused_cases": 97,
+    "focused_log": "artifacts/group-region-fill/focused-tests.log",
+    "full_test_log": "artifacts/group-region-fill/full-tests.log",
+    "full_suite_tests": 1141,
+    "source_evidence": "artifacts/group-region-fill/source-validation.json",
+    "private_before_evidence": "artifacts/group-region-fill/private-reproduction.json",
+    "private_after_evidence": "artifacts/group-region-fill/private-fixed.json",
+    "private_cells": 182,
+    "private_failures_before": 59,
+    "private_failures_after": 0,
+    "private_roof_marquee_selected": 17,
+    "private_roof_marquee_fills": 17,
+    "private_archive_rewritten": false,
+    "automatic_existing_group_repair": false,
+    "geometry_or_source_changes": false,
+    "angle_behavior_changes": false,
+    "portable_build": "0.3.66",
+    "verified_again_in_portable": "0.3.67",
+    "portable_cases": 6,
+    "portable_evidence": "artifacts/group-region-fill/portable/validation.json",
+    "compiled_gui_cases": 3,
+    "build_log": "artifacts/group-region-fill/build.log",
+    "owner_process_preserved": 110176,
+    "userdata_preserved": true,
+    "push": false
+  },
+  "combined_angles_clipboard_selection": {
+    "status": "implemented_portable_ready",
+    "decisions": [
+      "ADR-066",
+      "ADR-067",
+      "ADR-068"
+    ],
+    "requirements": [
+      "FR-128",
+      "FR-129",
+      "FR-130"
+    ],
+    "schema": 7,
+    "new_tests": 36,
+    "full_suite_tests": 1177,
+    "angle_core_log": "artifacts/group-region-fill/angle-focused-core.log",
+    "clipboard_new_log": "artifacts/group-region-fill/clipboard-new-tests.log",
+    "selection_new_log": "artifacts/group-region-fill/vertex-selection-new-tests.log",
+    "combined_test_log": "artifacts/group-region-fill/final-full-tests.log",
+    "final_full_test_log": "artifacts/group-region-fill/final-full-tests.log",
+    "final_angle_log": "artifacts/group-region-fill/final-angle-regressions.log",
+    "final_core_log": "artifacts/group-region-fill/final-core-editing-tests.log",
+    "final_clipboard_selection_log": "artifacts/group-region-fill/final-clipboard-selection-tests.log",
+    "source_evidence": "artifacts/combined-editing/source-validation.json",
+    "source_bilingual_cases": 2,
+    "core_editing_tests": 124,
+    "angle_focused_tests": 63,
+    "final_clipboard_selection_tests": 23,
+    "final_clipboard_labels_log": "artifacts/group-region-fill/final-clipboard-labels.log",
+    "final_clipboard_labels_cases": 6,
+    "closed_windows_receive_clipboard_updates": false,
+    "free_angle_arc_retained": true,
+    "single_axis_free_motion_retained": true,
+    "clipboard_scope": "QApplication lifetime, all datasets/projects/windows in this process",
+    "runtime_clipboard_serialized": false,
+    "existing_group_repair": false,
+    "source_archive_rewritten": false,
+    "portable_build": "0.3.67",
+    "portable_evidence": "artifacts/combined-editing/portable/validation.json",
+    "portable_fresh_launches": 6,
+    "compiled_new_regressions": 36,
+    "compiled_bilingual_gui_cases": 2,
+    "compiled_modules": [
+      "dale.editing",
+      "dale.selection_groups",
+      "dale.group_manager",
+      "dale.canvas",
+      "dale.ui"
+    ],
+    "build_log": "artifacts/combined-editing/build.log",
+    "owner_process_preserved": 110176,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "push": false
+  },
+  "own_angle_priority": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-131",
+    "decision": "ADR-069",
+    "field": "right_angle_own_priority",
+    "default": true,
+    "scope": "dataset UI, independent of numeric global overrides",
+    "schema": 7,
+    "new_tests": 23,
+    "full_suite_tests": 1200,
+    "existing_angle_tests": 66,
+    "existing_angle_log": "artifacts/own-angle-existing-tests.log",
+    "focused_log": "artifacts/own-angle-new-tests.log",
+    "focused_ui_log": "artifacts/own-angle-ui-tests.log",
+    "initial_full_test_log": "artifacts/own-angle-full-tests.log",
+    "full_test_log": "artifacts/own-angle-final-full-tests.log",
+    "initial_regression": "Two zoom cases exposed checked-priority axis intersections displacing the existing two-guide corner. Preserve the checked projection/fallback path; use explicit guide loci only when own priority is off.",
+    "final_angle_tests": 89,
+    "final_angle_log": "artifacts/own-angle-final-regressions.log",
+    "source_evidence": "artifacts/own-angle/source-validation.json",
+    "source_bilingual_gestures": 8,
+    "settings_alter_geometry": false,
+    "portable_build": "0.3.68",
+    "portable_evidence": "artifacts/own-angle/portable/validation.json",
+    "portable_fresh_launches": 6,
+    "compiled_focused_tests": 32,
+    "compiled_bilingual_gui_cases": 8,
+    "compiled_modules": [
+      "dale.editing",
+      "dale.project_io",
+      "dale.tool_settings",
+      "dale.canvas",
+      "dale.ui"
+    ],
+    "build_log": "artifacts/own-angle/build.log",
+    "owner_process_preserved": 134412,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "push": false
+  },
+  "section_selection": {
+    "status": "implemented_portable_ready",
+    "requirement": "FR-132",
+    "decision": "ADR-070",
+    "schema": 7,
+    "field": "section_region_selections",
+    "source_evidence": "artifacts/section-selection/source-validation.json",
+    "source_bilingual_frames": 8,
+    "initial_full_test_log": "artifacts/section-selection-full-tests.log",
+    "initial_regression": "JSON-only diagnostic combobox clear emitted currentIndexChanged and erased the hidden Regions selection. Block signals during that diagnostic refresh; the regression now passes.",
+    "full_test_log": "artifacts/section-selection-final-full-tests.log",
+    "focused_test_log": "artifacts/section-selection-final-focused.log",
+    "new_tests": 27,
+    "full_suite_tests": 1227,
+    "build_log": "artifacts/section-selection/build.log",
+    "portable_evidence": "artifacts/section-selection/portable/validation.json",
+    "portable_build": "0.3.69",
+    "portable_fresh_launches": 6,
+    "compiled_focused_tests": 27,
+    "compiled_bilingual_frames": 8,
+    "compiled_modules": [
+      "dale.localization",
+      "dale.project_io",
+      "dale.canvas",
+      "dale.ui"
+    ],
+    "owner_process_preserved": 133948,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "source_geometry_raster_changes": false,
+    "push": false
+  },
+  "snap_contact_and_palette": {
+    "status": "implemented_portable_ready",
+    "requirements": [
+      "FR-133",
+      "FR-134"
+    ],
+    "decisions": [
+      "ADR-071",
+      "ADR-072"
+    ],
+    "schema": 7,
+    "reproduction": "60 open states among161 projected angled-wall contacts; approximately1e-12 source-pixel line distance.",
+    "reproduction_log": "artifacts/snapping-report/flicker-reproduction.log",
+    "initial_snapping_tests": 139,
+    "initial_snapping_log": "artifacts/snapping-report-initial-tests.log",
+    "source_focused_log": "artifacts/snapping-report/slide-ui.log",
+    "palette_focused_log": "artifacts/snapping-report/final-palette-tests.log",
+    "full_test_log": "artifacts/snapping-report/final-full-tests.log",
+    "source_evidence": "artifacts/snap-palette/source-validation.json",
+    "source_slide_frames": 284,
+    "source_bilingual_cases": 4,
+    "new_tests": 44,
+    "full_suite_tests": 1271,
+    "portable_build": "0.3.70",
+    "build_log": "artifacts/snap-palette/build.log",
+    "portable_evidence": "artifacts/snap-palette/portable/validation.json",
+    "portable_fresh_launches": 6,
+    "compiled_focused_tests": 44,
+    "compiled_bilingual_cases": 4,
+    "compiled_slide_frames": 284,
+    "compiled_modules": [
+      "dale.geometry",
+      "dale.project_io",
+      "dale.datasets",
+      "dale.canvas",
+      "dale.ui"
+    ],
+    "real_custom_color_add_button_verified": true,
+    "owner_process_preserved": 115092,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "custom_color_field": "manifest.custom_colors",
+    "custom_color_scope": "project, shared across datasets and isolated between windows",
+    "source_or_stored_geometry_rewritten": false,
+    "snap_distance_changed": false,
+    "collapse_behavior_changed": false,
+    "push": false
+  },
+  "angle_snap_feedback": {
+    "status": "continuous_motion_confirmed_plus_combined_angles_ADR_066",
+    "section": "geometry",
+    "existing_behavior": "A dragged right-angle vertex may move along its exact diameter circle; one axis guide constrains one coordinate.",
+    "proposed_choice": "Hold first accepted angle point until leaving tolerance or releasing Alt; independently decide free movement along a single axis.",
+    "owner_latest_message": "Asks whether the circled right-angle vertex moves along an arc. Answered yes.",
+    "product_changes": false,
+    "choice_angle": "Keep continuous movement along the exact right-angle circle.",
+    "choice_single_axis": "Keep free movement along the guide.",
+    "additional_position_lock": false
+  },
+  "group_png_export": {
+    "status": "implemented_verified_owner_retest_pending",
+    "schema": 7,
+    "baseline_log": "artifacts/group-png/baseline-tests.log",
+    "baseline_failures": 13,
+    "private_read_only_route_log": "artifacts/group-png/private-read-only-route.log",
+    "private_saved_groups": 13,
+    "incorrect_group_names_before": 11,
+    "group_names_after": 13,
+    "silent_owner_interaction_reproduced": false,
+    "preflight_failure_regression": true,
+    "source_group_button_log": "artifacts/group-png/group-route-tests.log",
+    "full_test_log": "artifacts/group-png/full-tests.log",
+    "new_tests": 28,
+    "source_or_stored_geometry_rewritten": false,
+    "push": false,
+    "source_evidence": "artifacts/group-png/source-verified/validation.json",
+    "source_bilingual_cases": 2,
+    "source_actual_png_files": 4,
+    "source_actual_json_files": 4,
+    "source_dialogs_verified": true,
+    "source_visual_gutters": 0,
+    "portable_build": "0.3.71",
+    "full_suite_tests": 1299,
+    "full_suite_seconds": 310.75,
+    "build_log": "artifacts/group-png/build.log",
+    "portable_evidence": "artifacts/group-png/portable/validation.json",
+    "portable_fresh_launches": 6,
+    "compiled_focused_tests": 28,
+    "compiled_bilingual_cases": 2,
+    "compiled_actual_png_files": 4,
+    "compiled_actual_json_files": 4,
+    "compiled_modules": [
+      "dale.selection_groups",
+      "dale.overlay_export",
+      "dale.ui"
+    ],
+    "owner_process_preserved": 115092,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "owner_clarification": "In old0.3.69 an empty selection shows the correct Select at least one closed region prompt; with selection no window appears. Owner has not yet tested0.3.71."
+  },
+  "raster_aids_and_groups": {
+    "requirements": [
+      "FR-137",
+      "FR-138",
+      "FR-139",
+      "FR-140",
+      "FR-141"
+    ],
+    "owner_choices": [
+      "Top/left rulers; centimeters/millimeters are game-world distances.",
+      "Brush shape/feather/pressure apply to both erase and restore.",
+      "All aids and profiles remain separate per dataset; source project is read-only."
+    ],
+    "evidence": [
+      "artifacts/raster-aids/selection-baseline-profile.txt",
+      "artifacts/raster-aids/selection-final.json",
+      "artifacts/raster-aids/selection-final-profile.txt",
+      "artifacts/raster-aids/new-tests-final.log",
+      "artifacts/raster-aids/full-tests-final.log",
+      "artifacts/raster-aids/final-focused.log",
+      "artifacts/raster-aids/source-qa/validation.json",
+      "artifacts/raster-aids/portable/validation.json",
+      "artifacts/raster-aids/portable-check.log",
+      "artifacts/raster-aids/portable/gui/validation.json",
+      "artifacts/raster-aids/build.log"
+    ],
+    "remaining": [],
+    "version": "0.3.72",
+    "full_suite_tests": 1378,
+    "final_focused_tests": 94,
+    "compiled_tests": 187,
+    "fresh_exe_cases": 4,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "project_schema_version": 7,
+    "source_resolution_keeps_current_edits": true
+  },
+  "group_manager_scroll": {
+    "requirement": "FR-142",
+    "source_regression_tests": 24,
+    "source_group_tests": 148,
+    "catalog_group_tests": 33,
+    "source_bilingual_visual_cases": 6,
+    "evidence": [
+      "artifacts/group-scroll/baseline.log",
+      "artifacts/group-scroll/fixed.log",
+      "artifacts/group-scroll/groups.log",
+      "artifacts/group-scroll/catalog.log",
+      "artifacts/group-scroll/source/validation.json",
+      "artifacts/group-scroll/portable/validation.json",
+      "artifacts/group-scroll/portable-check.log",
+      "artifacts/group-scroll/build.log"
+    ],
+    "remaining": [],
+    "version": "0.3.73",
+    "compiled_group_tests": 148,
+    "fresh_exe_cases": 2,
+    "compiled_bilingual_visual_cases": 6,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "native_stream_cache": {
+    "requirements": [
+      "FR-143",
+      "FR-144",
+      "FR-145"
+    ],
+    "owner_cache_scope": "Cache beside DALE.exe; clean on project opening/replacement and close; preserve other live editors.",
+    "evidence": [
+      "artifacts/native-stream/large/validation.json",
+      "artifacts/native-stream/focused-final.log",
+      "artifacts/native-stream/source-qa/validation.json",
+      "artifacts/native-stream/last-focused.log",
+      "artifacts/native-stream/final-focused.log",
+      "artifacts/native-stream/full-tests-verified.log",
+      "artifacts/native-stream/portable-check.log",
+      "artifacts/native-stream/portable/validation.json",
+      "artifacts/native-stream/build.log"
+    ],
+    "remaining": [],
+    "version": "0.3.74",
+    "full_tests": 1419,
+    "compiled_tests": 228,
+    "fresh_exe_cases": 4,
+    "source_native_tests": 54,
+    "source_export_and_native_tests": 61,
+    "portable_cache_cleaned": true,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "editor_polish": {
+    "requirements": [
+      "FR-145",
+      "FR-146",
+      "FR-147",
+      "FR-148",
+      "FR-149",
+      "FR-150"
+    ],
+    "evidence": [
+      "artifacts/editor-polish/full-tests-verified.log",
+      "artifacts/editor-polish/final-source.log",
+      "artifacts/editor-polish/final-persistence-ui.log",
+      "artifacts/editor-polish/last-controls.log",
+      "artifacts/editor-polish/last-transform-final.log",
+      "artifacts/editor-polish/source/validation.json",
+      "artifacts/editor-polish/portable-final.log",
+      "artifacts/editor-polish/portable/validation.json",
+      "artifacts/editor-polish/build.log",
+      "artifacts/editor-polish/build-final.log"
+    ],
+    "remaining": [],
+    "version": "0.3.76",
+    "full_tests": 1483,
+    "final_persistence_ui_tests": 371,
+    "final_raster_tests": 24,
+    "compiled_tests": 294,
+    "fresh_exe_cases": 6,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "live_owner_cache_preserved": true
+  },
+  "mode_tabs_raster_selection": {
+    "requirements": [
+      "FR-144",
+      "FR-149",
+      "FR-151"
+    ],
+    "evidence": [
+      "artifacts/tabs-selection/source/validation.json",
+      "artifacts/tabs-selection/focused.log",
+      "artifacts/tabs-selection/final-selection-regressions.log",
+      "artifacts/tabs-selection/final-group-review.log",
+      "artifacts/tabs-selection/full-tests-verified.log",
+      "artifacts/tabs-selection/portable-check.log",
+      "artifacts/tabs-selection/portable/validation.json",
+      "artifacts/tabs-selection/build.log"
+    ],
+    "remaining": [],
+    "version": "0.3.77",
+    "full_tests": 1505,
+    "compiled_tests": 185,
+    "fresh_exe_cases": 2,
+    "bilingual_tab_states": 8,
+    "source_focused_tests": 126,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "alignment_panels": {
+    "requirement": "FR-152",
+    "evidence": [
+      "artifacts/alignment-panels/source/validation.json",
+      "artifacts/alignment-panels/source-regressions.log",
+      "artifacts/alignment-panels/portable-check.log",
+      "artifacts/alignment-panels/portable/validation.json",
+      "artifacts/alignment-panels/build.log"
+    ],
+    "remaining": [],
+    "version": "0.3.78",
+    "source_tests": 735,
+    "compiled_tests": 176,
+    "fresh_exe_cases": 2,
+    "bilingual_panel_states": 6,
+    "painted_alt_captions": 6,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "extension_guides_centers_raster": {
+    "requirements": [
+      "FR-153",
+      "FR-154",
+      "FR-155",
+      "FR-156"
+    ],
+    "decisions": [
+      "ADR-091",
+      "ADR-092",
+      "ADR-093"
+    ],
+    "remaining": [],
+    "source_tests": 900,
+    "source_followup_tests": 70,
+    "evidence": [
+      "artifacts/extension-guides/source-final.log",
+      "artifacts/extension-guides/source-catalog.log",
+      "artifacts/extension-guides/source-followup.log",
+      "artifacts/extension-guides/source/validation.json",
+      "artifacts/extension-guides/portable-check.log",
+      "artifacts/extension-guides/portable/validation.json",
+      "artifacts/extension-guides/build.log"
+    ],
+    "version": "0.3.79",
+    "compiled_tests": 326,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "main_view_copy_grid": {
+    "requirements": [
+      "FR-157",
+      "FR-158",
+      "FR-159"
+    ],
+    "decisions": [
+      "ADR-094",
+      "ADR-095",
+      "ADR-096"
+    ],
+    "remaining": [],
+    "evidence": [
+      "artifacts/main-view/source-final.log",
+      "artifacts/main-view/source-catalog.log",
+      "artifacts/main-view/source-ui.log",
+      "artifacts/main-view/source/validation.json",
+      "artifacts/main-view/build.log",
+      "artifacts/main-view/portable/validation.json",
+      "artifacts/main-view/portable-check.log"
+    ],
+    "bilingual_states": 16,
+    "copy_anchor_states": 4,
+    "version": "0.3.80",
+    "source_tests": 952,
+    "compiled_tests": 352,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "owner_process_preserved": 152208,
+    "hand_icon": "Pointing hand with horizontal bidirectional arrow"
+  },
+  "grid_color_shared_palette": {
+    "requirements": [
+      "FR-160",
+      "FR-134"
+    ],
+    "decisions": [
+      "ADR-097"
+    ],
+    "source_tests": 257,
+    "remaining": [],
+    "evidence": [
+      "artifacts/grid-color/source-tests.log",
+      "artifacts/grid-color/source/validation.json",
+      "artifacts/grid-color/build.log",
+      "artifacts/grid-color/portable-check.log",
+      "artifacts/grid-color/portable/validation.json"
+    ],
+    "version": "0.3.81",
+    "compiled_tests": 257,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "original_icons_preserved": true
+  },
+  "window_1024": {
+    "requirements": [
+      "NFR-007",
+      "FR-039",
+      "FR-149",
+      "FR-158"
+    ],
+    "decisions": [
+      "ADR-098"
+    ],
+    "source_tests": 23,
+    "minimum_size": [
+      1024,
+      768
+    ],
+    "remaining": [],
+    "evidence": [
+      "artifacts/window-1024/source-tests.log",
+      "artifacts/window-1024/source/validation.json",
+      "artifacts/window-1024/build.log",
+      "artifacts/window-1024/portable-check.log",
+      "artifacts/window-1024/portable/validation.json"
+    ],
+    "version": "0.3.82",
+    "compiled_tests": 23,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "owner_process_controlled": false
+  },
+  "grid_appearance": {
+    "requirements": [
+      "FR-161"
+    ],
+    "decisions": [
+      "ADR-099"
+    ],
+    "remaining": [],
+    "evidence": [
+      "artifacts/grid-appearance/source-tests.log",
+      "artifacts/grid-appearance/source/validation.json",
+      "artifacts/grid-appearance/build.log",
+      "artifacts/grid-appearance/portable-check.log",
+      "artifacts/grid-appearance/portable/validation.json"
+    ],
+    "version": "0.3.83",
+    "source_tests": 276,
+    "compiled_tests": 276,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "original_icons_preserved": true,
+    "owner_process_controlled": false
+  },
+  "release_1_03_083": {
+    "version": "1.3.83",
+    "display_version": "1.03.083",
+    "revision_preserved": 83,
+    "archive_name": "DALE-1.03.083-Windows-x64-portable.zip",
+    "source_tests": 1645,
+    "compiled_tests": 279,
+    "evidence": [
+      "artifacts/release-1.03.083/full-tests-final.log",
+      "artifacts/release-1.03.083/portable/validation.json",
+      "artifacts/release-1.03.083/archive-validation.json"
+    ],
+    "publication_policy": "Development is owner-authorized; release requires separate exact-commit confirmation. Publication receipts are stored with ignored artifacts."
   }
 }

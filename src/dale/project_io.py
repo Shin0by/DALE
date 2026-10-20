@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
 import tempfile
 import zipfile
+from copy import copy
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from uuid import uuid4
@@ -16,6 +18,7 @@ from uuid import uuid4
 from shapely.geometry import mapping, shape
 
 from dale import __version__
+from dale.preferences import ROTATION_VALUE_RANGES
 from dale.provenance import SourceWall, decode_record, encode_record, geometry_edges
 from dale.scene import SceneInput, load_pair, number, open_source, scene_from_json
 from dale.session import (
@@ -30,6 +33,7 @@ from dale.session import (
 
 FORMAT = "dale-project"
 SCHEMA_VERSION = 7
+DEFAULT_CUSTOM_COLORS = ("#ffffffff",) * 16
 LIMITS = {
     "manifest.json": 64 * 1024,
     "history.json": 64 * 1024 * 1024,
@@ -50,6 +54,19 @@ class JsonDocument:
     is_current: bool = False
 
 
+def _custom_colors(value):
+    if (
+        not isinstance(value, list)
+        or len(value) != 16
+        or any(
+            not isinstance(color, str) or not re.fullmatch(r"#[a-fA-F0-9]{8}", color)
+            for color in value
+        )
+    ):
+        raise ValueError("Invalid project custom colors.")
+    return tuple(color.lower() for color in value)
+
+
 def _archive_manifest(archive):
     entries = archive.infolist()
     names = [entry.filename for entry in entries]
@@ -64,6 +81,8 @@ def _archive_manifest(archive):
         raise ValueError(
             "Unsupported DALE project format or version. Older projects are not supported."
         )
+    if "custom_colors" in manifest:
+        _custom_colors(manifest["custom_colors"])
     documents = manifest.get("json_documents")
     if not isinstance(documents, list) or not 0 <= len(documents) <= 100:
         raise ValueError("A current project requires a JSON document catalog.")
@@ -414,6 +433,25 @@ def _points(values):
 
 
 def _encode(operation):
+    from shapely import from_wkb
+
+    from dale.session import RasterSelectionEdit
+
+    if isinstance(operation, RasterSelectionEdit):
+
+        def selection(state):
+            return {
+                "polygons": [mapping(from_wkb(p)) for p in state.polygons],
+                "detached": state.detached,
+                "lines": state.line_ids,
+                "all_regions": state.all_regions,
+            }
+
+        return {
+            "type": "raster_selection",
+            "before": selection(operation.before),
+            "after": selection(operation.after),
+        }
     if isinstance(operation, Closure):
         return {
             "type": "closure",
@@ -426,6 +464,15 @@ def _encode(operation):
             "points": operation.points,
             "radius": operation.radius,
             "restore": operation.restore,
+            **(
+                {
+                    "shape": operation.shape,
+                    "feather": operation.feather,
+                    "opacity": operation.opacity,
+                }
+                if (operation.shape, operation.feather, operation.opacity) != ("circle", 0, 1)
+                else {}
+            ),
         }
     if isinstance(operation, ContourMask):
         return {
@@ -447,6 +494,20 @@ def _encode(operation):
             from dale.wall_styles import encode_styles
 
             result["wall_styles"] = encode_styles(operation.wall_styles)
+        if operation.raster is not None:
+            from dale.raster_transform import area_of
+
+            result["raster_transform"] = {
+                "area": mapping(area_of(operation.raster.area_wkb)),
+                "matrix": operation.raster.matrix,
+            }
+            if operation.raster.regions:
+                result["raster_transform"]["regions"] = [
+                    mapping(area_of(data)) for data in operation.raster.regions
+                ]
+                result["raster_transform"]["cells"] = [
+                    cell.encode() for cell in operation.raster.cells
+                ]
         if isinstance(operation, SourceRepairEdit):
             result["additions"] = [
                 {
@@ -472,6 +533,51 @@ def _decode(value):
     if not isinstance(value, dict):
         raise ValueError("Invalid project operation.")
     kind = value.get("type")
+    if kind == "raster_selection":
+        from dale.session import RasterSelectionEdit, RegionSelection
+
+        def selection(state):
+            if not isinstance(state, dict) or set(state) != {
+                "polygons",
+                "detached",
+                "lines",
+                "all_regions",
+            }:
+                raise ValueError("Invalid raster selection fields.")
+            polygons, lines = state["polygons"], state["lines"]
+            if (
+                not isinstance(polygons, list)
+                or len(polygons) > 100_000
+                or not isinstance(lines, list)
+                or len(lines) > 100_000
+                or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in lines)
+                or len(set(lines)) != len(lines)
+                or type(state["detached"]) is not bool
+                or type(state["all_regions"]) is not bool
+                or (not state["detached"] and lines)
+                or (state["all_regions"] and (polygons or lines or state["detached"]))
+            ):
+                raise ValueError("Invalid raster selection values.")
+            result = []
+            for data in polygons:
+                polygon = shape(data)
+                if (
+                    polygon.geom_type != "Polygon"
+                    or polygon.is_empty
+                    or not polygon.is_valid
+                    or not all(abs(v) <= 1e9 for v in polygon.bounds)
+                    or len(polygon.exterior.coords) + sum(len(r.coords) for r in polygon.interiors)
+                    > 2_000_000
+                ):
+                    raise ValueError("Invalid raster selection polygon.")
+                result.append(polygon.wkb)
+            return RegionSelection(
+                tuple(result), state["detached"], tuple(lines), state["all_regions"]
+            )
+
+        if set(value) != {"type", "before", "after"}:
+            raise ValueError("Invalid raster selection operation.")
+        return RasterSelectionEdit(selection(value["before"]), selection(value["after"]))
     if kind == "closure":
         points = _points(value["points"])
         if len(points) < 2:
@@ -486,7 +592,16 @@ def _decode(value):
         restore = value.get("restore", False)
         if not points or not 0 < radius <= 4096 or type(restore) is not bool:
             raise ValueError("Invalid project brush stroke.")
-        return Stroke(points, radius, restore)
+        brush_shape = value.get("shape", "circle")
+        feather = number(value.get("feather", 0), "Brush feather")
+        opacity = number(value.get("opacity", 1), "Brush pressure")
+        if (
+            brush_shape not in ("circle", "square")
+            or not 0 <= feather <= 1
+            or not 0 <= opacity <= 1
+        ):
+            raise ValueError("Invalid project brush profile.")
+        return Stroke(points, radius, restore, brush_shape, feather, opacity)
     if kind == "mask":
         if value.get("mode") not in ("inside", "outside"):
             raise ValueError("Invalid project mask mode.")
@@ -521,6 +636,55 @@ def _decode(value):
             raise ValueError("Line provenance is required in the current project format.")
         operation_type = SourceRepairEdit if kind == "source_repair" else GeometryEdit
         extra = {}
+        if "raster_transform" in value:
+            from dale.session import RasterTransform
+
+            raster = value["raster_transform"]
+            if not isinstance(raster, dict) or set(raster) not in (
+                {"area", "matrix"},
+                {"area", "matrix", "regions", "cells"},
+            ):
+                raise ValueError("Invalid raster transform fields.")
+            area = shape(raster["area"])
+            matrix = raster["matrix"]
+            if (
+                area.geom_type not in ("Polygon", "MultiPolygon")
+                or area.is_empty
+                or not area.is_valid
+                or not all(abs(v) <= 1e9 for v in area.bounds)
+                or not isinstance(matrix, list)
+                or len(matrix) != 6
+            ):
+                raise ValueError("Invalid raster transform geometry.")
+            matrix = tuple(number(v, "Raster affine coefficient") for v in matrix)
+            if abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]) < 1e-12:
+                raise ValueError("Raster transform must be invertible.")
+            regions, cells = (), ()
+            if "regions" in raster:
+                from dale.region_groups import decode_cells
+
+                cells = decode_cells(raster["cells"])
+                regions = raster["regions"]
+                if not isinstance(regions, list) or not 1 <= len(regions) <= 100_000:
+                    raise ValueError("Invalid raster region objects.")
+                regions = tuple(shape(p) for p in regions)
+                if len(cells) != len(regions) or any(
+                    p.geom_type != "Polygon"
+                    or p.is_empty
+                    or not p.is_valid
+                    or not all(math.isfinite(v) and abs(v) <= 1e9 for v in p.bounds)
+                    or sum(len(r.coords) for r in (p.exterior, *p.interiors)) > 2_000_000
+                    or any(
+                        abs(matrix[0] * x + matrix[1] * y + matrix[4]) > 1e9
+                        or abs(matrix[2] * x + matrix[3] * y + matrix[5]) > 1e9
+                        for x in (p.bounds[0], p.bounds[2])
+                        for y in (p.bounds[1], p.bounds[3])
+                    )
+                    for p in regions
+                ):
+                    raise ValueError("Invalid raster region objects.")
+                regions = tuple(p.wkb for p in regions)
+            extra["raster"] = RasterTransform(area.wkb, matrix, regions, cells)
         if "wall_styles" in value:
             from dale.wall_styles import decode_styles
 
@@ -627,36 +791,75 @@ def current_contours_document(session):
 
 
 def save_project(
-    session: Session, destination: Path, ui_state: dict | None = None, *, catalog=None
+    session: Session,
+    destination: Path,
+    ui_state: dict | None = None,
+    *,
+    catalog=None,
+    custom_colors=None,
 ):
+    if custom_colors is not None:
+        custom_colors = _custom_colors(custom_colors)
+    original_session, original_catalog = session, catalog
     view_bytes = None
     if catalog is not None:
-        catalog.capture(ui_state or {})
+        catalog = copy(catalog)
+        catalog.views = {
+            key: replace(
+                view,
+                session=replace(
+                    view.session,
+                    operations=list(view.session.operations),
+                    future=list(view.session.future),
+                ),
+                ui=dict(view.ui),
+            )
+            for key, view in original_catalog.views.items()
+        }
+        if not getattr(catalog, "managed", False):
+            catalog.base_session = catalog.views[catalog.base_key].session
+        if ui_state is not None:
+            catalog.capture(ui_state)
         if getattr(catalog, "managed", False):
             catalog.prepare()
+        for keep in (100, 50, 25, 12, 6, 3, 1, 0):
+            for view in catalog.views.values():
+                view.session.trim_history(keep)
+            view_bytes = _json_bytes(catalog.encode())
+            if len(view_bytes) <= LIMITS["history.json"]:
+                break
         session = catalog.base_session
         ui_state = catalog.views[catalog.base_key].ui
         session = replace(
             session, contour_offset=ui_state.get("artwork_offset_px", session.contour_offset)
         )
-        view_bytes = _json_bytes(catalog.encode())
         if len(view_bytes) > LIMITS["history.json"]:
-            raise ValueError("Catalog editing history exceeds the project limit.")
+            raise ValueError(
+                "Current dataset data exceeds the project limit even without undo history."
+            )
+    else:
+        session = replace(session, operations=list(session.operations), future=list(session.future))
+        session.trim_history()
     destination = destination.resolve()
     sources = tuple(path for path in (session.source.image_path, session.source.json_path) if path)
     if destination in (path.resolve() for path in sources) or (
         destination.exists() and any(os.path.samefile(destination, path) for path in sources)
     ):
         raise ValueError("Saving a project cannot replace an imported source file.")
-    history = {
-        "origin": session.origin,
-        "gap_tolerance": session.gap_tolerance,
-        "contour_offset": session.contour_offset,
-        "operations": [_encode(op) for op in session.operations],
-        "redo": [_encode(op) for op in session.future],
-        "ui": ui_state or {},
-    }
-    history_bytes = _json_bytes(history)
+    for keep in (100, 50, 25, 12, 6, 3, 1, 0):
+        session.trim_history(keep)
+        history = {
+            "origin": session.origin,
+            "gap_tolerance": session.gap_tolerance,
+            "contour_offset": session.contour_offset,
+            "operations": [_encode(op) for op in session.operations],
+            "redo": [_encode(op) for op in session.future],
+            **({"undo_floor": session.history_floor} if session.history_floor else {}),
+            "ui": ui_state or {},
+        }
+        history_bytes = _json_bytes(history)
+        if len(history_bytes) <= LIMITS["history.json"]:
+            break
     if len(history_bytes) > LIMITS["history.json"]:
         raise ValueError("Editing history exceeds the 64 MiB project limit.")
     manifest = {
@@ -676,6 +879,8 @@ def save_project(
             "history.json": hashlib.sha256(history_bytes).hexdigest(),
         },
     }
+    if custom_colors is not None:
+        manifest["custom_colors"] = custom_colors
     if manifest["source_kind"] == "empty":
         manifest["empty_size"] = session.source.size
     if session.source.image_path:
@@ -786,6 +991,18 @@ def save_project(
                     raise ValueError("A source asset changed while saving the project.")
         os.replace(temporary, destination)
         temporary = None
+        targets = (
+            ((original_catalog.views[k].session, view.session) for k, view in catalog.views.items())
+            if original_catalog
+            else ((original_session, session),)
+        )
+        for target, bounded in targets:
+            target.operations[:] = bounded.operations
+            target.future[:] = bounded.future
+            target.history_floor = bounded.history_floor
+        if original_catalog:
+            for key, view in catalog.views.items():
+                original_catalog.views[key].ui = dict(view.ui)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -797,6 +1014,7 @@ class LoadedProject:
     ui_state: dict
     workspace: tempfile.TemporaryDirectory
     catalog: object = None
+    custom_colors: tuple[str, ...] = DEFAULT_CUSTOM_COLORS
 
     def close(self):
         self.workspace.cleanup()
@@ -809,6 +1027,10 @@ class LoadedProject:
 
 
 def _load_ui(value):
+    from dale.measurement import measurement_settings
+    from dale.raster_brush import brush_settings
+    from dale.selection_groups import group_ui_state
+
     if not isinstance(value, dict):
         raise ValueError("Invalid project UI settings.")
     mode = value.get("mode", "Pan")
@@ -822,18 +1044,27 @@ def _load_ui(value):
         raise ValueError("Invalid source JSON repair preference.")
     raster_erase = number(value.get("raster_erase_diameter", 40), "Raster eraser diameter")
     raster_restore = number(value.get("raster_restore_diameter", 40), "Restore brush diameter")
+    square_sizes = {}
+    for key in ("raster_erase_square_diameter", "raster_restore_square_diameter"):
+        diameter = number(value.get(key, 40), "Square brush diameter")
+        if diameter != int(diameter) or not 1 <= diameter <= 4096:
+            raise ValueError("Invalid square raster brush diameter.")
+        square_sizes[key] = int(diameter)
     line_diameter = number(value.get("line_eraser_diameter", 24), "Line eraser diameter")
     vertex_diameter = number(value.get("vertex_eraser_diameter", 24), "Vertex eraser diameter")
     snap_distance = number(value.get("snap_distance_px", 14), "Snap distance")
-    alignment_distances = {
-        key: number(value.get(key, 14), "Alignment distance")
-        for key in ("right_angle_distance_px", "contour_alignment_distance_px")
-    }
-    if any(
-        distance != int(distance) or not 1 <= distance <= 9999
-        for distance in alignment_distances.values()
-    ):
+    contour_distance = number(value.get("contour_alignment_distance_px", 14), "Alignment distance")
+    extension_distance = value.get("extension_distance_px", 14)
+    if type(extension_distance) is not int or not 1 <= extension_distance <= 9999:
+        raise ValueError("Invalid project extension guide distance.")
+    angle_tolerance = number(value.get("right_angle_tolerance_deg", 5), "Angular tolerance")
+    circle_detail = value.get("circle_detail_steps", 0)
+    if type(circle_detail) is not int or not 0 <= circle_detail <= 95:
+        raise ValueError("Invalid project circle detail.")
+    if contour_distance != int(contour_distance) or not 1 <= contour_distance <= 9999:
         raise ValueError("Invalid project alignment distance.")
+    if angle_tolerance != int(angle_tolerance) or not 1 <= angle_tolerance <= 90:
+        raise ValueError("Invalid project angular tolerance.")
     auto_distance = number(value.get("auto_close_distance_px", 14), "Auto-close distance")
     global_distance = number(
         value.get("global_close_distance_px", 14), "Whole-scene close distance"
@@ -842,12 +1073,21 @@ def _load_ui(value):
     if artwork_offset != int(artwork_offset) or not -4096 <= artwork_offset <= 4096:
         raise ValueError("Invalid artwork offset.")
     zoom = number(value.get("zoom", 1), "Viewport zoom")
+    rotation_values = {}
+    for key, (low, high, default) in ROTATION_VALUE_RANGES.items():
+        step = number(value.get(key, default), "Rotation step")
+        if step != int(step) or not low <= step <= high:
+            raise ValueError("Invalid project rotation step.")
+        rotation_values[key] = int(step)
     if mode not in (
         "Pan",
+        "Move guides",
         "Auto-close",
         "Edit points",
         "Erase",
         "Restore",
+        "Erase square",
+        "Restore square",
         "New line",
         "New circle",
         "New rectangle",
@@ -857,6 +1097,9 @@ def _load_ui(value):
         "Select raster regions",
         "Move regions",
         "Rotate regions",
+        "Move raster regions",
+        "Rotate raster regions",
+        "Scale raster regions",
         "Select figures",
         "Move figures",
         "Rotate figures",
@@ -883,15 +1126,26 @@ def _load_ui(value):
         or not 1 <= global_distance <= 256
     ):
         raise ValueError("Invalid project tool sizes or snap distance.")
-    selected_regions = value.get("export_regions")
-    if selected_regions is not None:
+
+    def region_selection(selection):
+        if selection is None:
+            return None
         if (
-            not isinstance(selected_regions, list)
-            or len(selected_regions) > 100_000
-            or any(type(i) is not int or not 0 <= i < 100_000 for i in selected_regions)
+            not isinstance(selection, list)
+            or len(selection) > 100_000
+            or any(type(i) is not int or not 0 <= i < 100_000 for i in selection)
         ):
             raise ValueError("Invalid project region selection.")
-        selected_regions = tuple(sorted(set(selected_regions)))
+        return tuple(sorted(set(selection)))
+
+    selected_regions = region_selection(value.get("export_regions"))
+    section_regions = value.get("section_region_selections")
+    if section_regions is not None:
+        if not isinstance(section_regions, dict) or set(section_regions) != {"regions", "pixels"}:
+            raise ValueError("Invalid section region selections.")
+        section_regions = {
+            key: region_selection(selection) for key, selection in section_regions.items()
+        }
     snap_enabled = value.get("snap_enabled", True)
     move_related = value.get("move_related_lines", False)
     if type(move_related) is not bool:
@@ -901,6 +1155,10 @@ def _load_ui(value):
     alignment = {
         key: value.get(key, False) for key in ("right_angle_alignment", "contour_alignment")
     }
+    alignment["right_angle_neighbours"] = value.get("right_angle_neighbours", True)
+    alignment["figure_extension_alignment"] = value.get("figure_extension_alignment", False)
+    alignment["extension_connected"] = value.get("extension_connected", False)
+    alignment["right_angle_own_priority"] = value.get("right_angle_own_priority", True)
     alignment.update(
         {
             f"{section}_{kind}_alignment": value.get(f"{section}_{kind}_alignment", kind == "point")
@@ -952,6 +1210,10 @@ def _load_ui(value):
                 raise ValueError("Invalid detached region polygon.")
         _point(detached["pivot"])
     return {
+        **group_ui_state(value),
+        "raster_aids": measurement_settings(value.get("raster_aids")),
+        "raster_brushes": brush_settings(value.get("raster_brushes")),
+        **square_sizes,
         "mode": mode,
         "figure_lines": figure_lines,
         "figure_pivot": figure_pivot,
@@ -962,10 +1224,14 @@ def _load_ui(value):
         "raster_erase_diameter": int(raster_erase),
         "raster_restore_diameter": int(raster_restore),
         "export_regions": selected_regions,
+        **({"section_region_selections": section_regions} if section_regions is not None else {}),
         "line_eraser_diameter": int(line_diameter),
         "vertex_eraser_diameter": int(vertex_diameter),
         "snap_distance_px": int(snap_distance),
-        **{key: int(distance) for key, distance in alignment_distances.items()},
+        "contour_alignment_distance_px": int(contour_distance),
+        "extension_distance_px": extension_distance,
+        "right_angle_tolerance_deg": int(angle_tolerance),
+        "circle_detail_steps": circle_detail,
         "artwork_offset_px": int(artwork_offset),
         "auto_close_distance_px": int(auto_distance),
         "global_close_distance_px": int(global_distance),
@@ -974,6 +1240,7 @@ def _load_ui(value):
         "move_related_lines": move_related,
         "show_walls": bool(value.get("show_walls", True)),
         "zoom": zoom,
+        **rotation_values,
         "center": _point(value.get("center", [0, 0])),
         "detached_region_selection": detached,
     }
@@ -986,12 +1253,15 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
         json_name=manifest.get("scene_name", source.json_name),
     )
     operations, redo = history["operations"], history["redo"]
+    undo_floor = history.get("undo_floor", 0)
     if (
         not isinstance(operations, list)
         or not isinstance(redo, list)
         or len(operations) + len(redo) > 100_000
     ):
         raise ValueError("Invalid or excessive project history.")
+    if type(undo_floor) is not int or not 0 <= undo_floor <= len(operations):
+        raise ValueError("Invalid project undo checkpoint.")
     gap = number(history.get("gap_tolerance", 0), "Gap tolerance")
     offset = number(history.get("contour_offset", 0), "Contour offset")
     if not 0 <= gap <= 4096 or not -4096 <= offset <= 4096:
@@ -1003,6 +1273,7 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
         future=[_decode(op) for op in redo],
         gap_tolerance=gap,
         contour_offset=offset,
+        history_floor=undo_floor,
         json_documents=tuple(
             d for d in documents if d.id not in ("source", manifest.get("current_contours_id"))
         ),
@@ -1045,6 +1316,23 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
                     ):
                         raise ValueError("Wall properties do not match their declared provenance.")
     known_ids = set(catalog) | set(references)
+    for operation in (*session.operations, *session.future):
+        raster = getattr(operation, "raster", None)
+        if raster is not None and any(
+            identifier not in known_ids
+            for cell in raster.cells
+            for ring in (cell.shell, *cell.holes)
+            for identifier in ring
+        ):
+            raise ValueError("Raster region references unknown lines.")
+    from dale.session import RasterSelectionEdit
+
+    for operation in (*session.operations, *session.future):
+        if isinstance(operation, RasterSelectionEdit) and any(
+            not set(state.line_ids).issubset(known_ids)
+            for state in (operation.before, operation.after)
+        ):
+            raise ValueError("Raster selection references unknown lines.")
     if any(parent not in known_ids for record in catalog.values() for parent in record.parents):
         raise ValueError("Line provenance contains an unknown parent.")
     from dale.layer_repair import canonical_geometry
@@ -1085,6 +1373,7 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
         current = _session_json_documents(session)
         if not current or current[-1].id != stored.id or current[-1].data != stored.data:
             raise ValueError("Current contours JSON does not match project history.")
+    session.trim_history()
     return session, ui
 
 
@@ -1189,7 +1478,15 @@ def load_project(path: Path) -> LoadedProject:
                 image_inputs,
                 json.loads((root / "datasets.json").read_bytes()),
             )
-        return LoadedProject(catalog.current.session, catalog.current.ui, workspace, catalog)
+        return LoadedProject(
+            catalog.current.session,
+            catalog.current.ui,
+            workspace,
+            catalog,
+            _custom_colors(manifest["custom_colors"])
+            if "custom_colors" in manifest
+            else DEFAULT_CUSTOM_COLORS,
+        )
     except Exception:
         workspace.cleanup()
         raise

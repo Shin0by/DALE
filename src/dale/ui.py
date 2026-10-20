@@ -10,10 +10,11 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QColor,
     QFont,
     QFontDatabase,
     QIcon,
@@ -24,24 +25,30 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QColorDialog,
     QComboBox,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLayout,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 from shapely.geometry import LineString, box
 from shapely.geometry import Point as ShapePoint
@@ -55,14 +62,20 @@ from dale.canvas import (
     FIGURE_TOOLS,
     GEOMETRY_ERASERS,
     MOVE_TOOLS,
+    RASTER_TRANSFORM_TOOLS,
     REGION_TOOLS,
     ROTATE_TOOLS,
     SELECTION_TOOLS,
     TRANSFORM_TOOLS,
     MapView,
+    polygon_path,
 )
 from dale.datasets import DatasetCatalog
+from dale.export_directory import choose_export_directory
+from dale.export_grid import export_grid
+from dale.export_names import export_family, group_export_stem, selection_number
 from dale.geometry import invert_regions_in_box, open_contour_count
+from dale.group_manager import GroupManager
 from dale.json_repair import repaired_json_bytes, write_json_copy
 from dale.layer_repair import infer_layers
 from dale.localization import (
@@ -72,42 +85,74 @@ from dale.localization import (
     translate,
     translate_static,
 )
-from dale.overlay_export import export_overlays, export_regions, selected_export_regions
+from dale.measurement import measurement_scale
+from dale.overlay_export import (
+    export_group_matches,
+    export_overlays,
+    export_regions,
+    overlay_region_plan,
+    selected_export_regions,
+    shared_export_group,
+)
 from dale.preferences import (
+    ROTATION_VALUE_RANGES,
     TOOL_VALUE_RANGES,
     load_connection_choice,
     load_directory,
+    load_export_group_naming,
     load_global_tool_settings,
+    load_include_json,
     load_language,
     load_merge_selected_regions,
     load_move_related,
+    load_project_dataset,
     load_recent_projects,
     load_right_panel_visible,
+    load_size_to_grid,
     load_tool_values,
     save_connection_choice,
     save_directory,
+    save_export_group_naming,
     save_global_tool_settings,
+    save_include_json,
     save_language,
     save_merge_selected_regions,
+    save_project_dataset,
     save_recent_projects,
     save_right_panel_visible,
+    save_size_to_grid,
     save_tool_value,
     settings_path,
 )
 from dale.project_io import (
+    DEFAULT_CUSTOM_COLORS,
     SCHEMA_VERSION,
     JsonDocument,
     current_contours_document,
     load_project,
     save_project,
 )
+from dale.provenance import geometry_edges
 from dale.raster import ExportCancelled, load_preview
+from dale.raster_brush import RASTER_BRUSHES, brush_settings
+from dale.region_groups import assign_region_cells, matched_cells
 from dale.region_transform import delete_figures, delete_regions
 from dale.scene import load_pair
-from dale.session import Session
+from dale.selection_groups import (
+    SelectionGroup,
+    assign_group,
+    boundary_members,
+    decode_groups,
+    group_members,
+    group_ui_state,
+)
+from dale.session import RasterSelectionEdit, RegionSelection, Session
 from dale.source_editing import source_layers
+from dale.tool_settings import ToolSettingsDialog
 from dale.toolbar import (
+    ModeTabButton,
     SizedToolButton,
+    ToolSettingsCorner,
     ToolSpinBox,
     apply_theme,
     make_toolbar,
@@ -118,6 +163,7 @@ from dale.toolbar import (
 class ExportWorker(QThread):
     progress = Signal(int)
     outcome = Signal(str, str)
+    file_conflict = Signal(object)
 
     def __init__(
         self,
@@ -127,6 +173,11 @@ class ExportWorker(QThread):
         region_indices=None,
         selected_polygons=None,
         merge_adjacent=False,
+        size_to_grid=False,
+        grid_size=None,
+        include_json=True,
+        export_groups=(),
+        active_group=None,
     ):
         super().__init__(parent)
         self.source = session.source
@@ -135,6 +186,25 @@ class ExportWorker(QThread):
         self.region_indices = tuple(region_indices) if region_indices is not None else None
         self.selected_polygons = tuple(selected_polygons) if selected_polygons is not None else None
         self.merge_adjacent = merge_adjacent
+        self.size_to_grid = size_to_grid
+        self.grid_size = grid_size
+        self.include_json = include_json
+        self.export_groups = tuple(export_groups)
+        self.active_group = active_group
+        from threading import Event
+
+        self.conflict_event = Event()
+        self.conflict_answer = None
+        self.protected_sources = [parent.project_path] if parent.project_path else []
+        if parent.catalog:
+            self.protected_sources.extend(parent.catalog.protected_inputs)
+            self.protected_sources.extend(image.path for image in parent.catalog.images.values())
+            self.protected_sources.extend(
+                path
+                for draft in parent.catalog.views.values()
+                for path in (draft.session.source.image_path, draft.session.source.json_path)
+                if path
+            )
         self.export_name = parent.catalog.name if parent.catalog else None
         self.session = Session(
             session.source,
@@ -142,13 +212,16 @@ class ExportWorker(QThread):
             list(session.operations),
             gap_tolerance=session.gap_tolerance,
             contour_offset=session.contour_offset,
+            json_documents=tuple(
+                parent.catalog.documents if parent.catalog else session.json_documents
+            ),
         )
 
     def run(self):
         try:
             destination = export_overlays(
                 self.session,
-                self.path,
+                self.path.parent,
                 self.progress.emit,
                 self.isInterruptionRequested,
                 region_indices=self.region_indices,
@@ -156,12 +229,43 @@ class ExportWorker(QThread):
                 export_name=self.export_name,
                 selected_polygons=self.selected_polygons,
                 merge_adjacent=self.merge_adjacent,
+                size_to_grid=self.size_to_grid,
+                grid_size=self.grid_size,
+                target_directory=self.path,
+                conflict=self.resolve_file_conflict,
+                protected_sources=tuple(self.protected_sources),
+                include_json=self.include_json,
+                export_groups=self.export_groups,
+                active_group=self.active_group,
             )
             self.outcome.emit("success", str(destination))
         except ExportCancelled:
             self.outcome.emit("cancelled", "PNG export cancelled; destination unchanged.")
         except Exception as exc:
             self.outcome.emit("error", str(exc))
+
+    def resolve_file_conflict(self, path):
+        self.conflict_answer = None
+        self.conflict_event.clear()
+        self.file_conflict.emit(path)
+        while not self.conflict_event.wait(0.05):
+            if self.isInterruptionRequested():
+                return None
+        return self.conflict_answer
+
+
+class ApplicationContourClipboard(QObject):
+    """One immutable outline/source snapshot shared by all windows in this process."""
+
+    changed = Signal()
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.content = None
+
+    def store(self, contours, source, documents, section):
+        self.content = contours, source, documents, section
+        self.changed.emit()
 
 
 class MainWindow(QMainWindow):
@@ -177,6 +281,9 @@ class MainWindow(QMainWindow):
         self.remembered_move_related = load_move_related(self.preferences_path)
         self.remembered_merge_selected_regions = load_merge_selected_regions(self.preferences_path)
         self.merge_selected_regions = self.remembered_merge_selected_regions is True
+        self.size_to_grid = load_size_to_grid(self.preferences_path)
+        self.include_json = load_include_json(self.preferences_path)
+        self.export_group_naming = load_export_group_naming(self.preferences_path)
         self.connection_choices = {
             tool: load_connection_choice(self.preferences_path, tool)
             for tool in ("Erase lines", "Edit points")
@@ -186,8 +293,13 @@ class MainWindow(QMainWindow):
         self.recent_projects = load_recent_projects(self.preferences_path)
         self.setWindowTitle(application_title())
         self.resize(1280, 860)
-        self.setMinimumSize(1224, 768)
+        self.setMinimumSize(1024, 768)
         self.worker = None
+        self.tool_settings_popup = None
+        self.group_manager = None
+        self._groups_value = None
+        self._groups_cache = ()
+        self._group_render_cache = None
         self.bounds_preview = BoundsPreview(self)
         self.bounds_ready_timer = QTimer(self)
         self.bounds_ready_timer.setSingleShot(True)
@@ -201,12 +313,15 @@ class MainWindow(QMainWindow):
         self.catalog = None
         self.json_workspaces = []
         self.saved_state = None
+        self.custom_colors = DEFAULT_CUSTOM_COLORS
         self.regions = ()
         self.region_key = None
         self.selected_region = None
         self.marquee_selection = None
         self.figure_marquee = None
         self.current_tool_set = "geometry"
+        self._region_selection_states = {}
+        self._region_selection_section = "regions"
         self.last_tool_modes = {
             "geometry": "Edit points",
             "figures": "Select figures",
@@ -214,17 +329,29 @@ class MainWindow(QMainWindow):
             "pixels": "Select raster regions",
         }
         self.view = MapView()
+        self.view.raster_aids.changed.connect(self.sync_raster_aids)
+        self.view.native_preview.failed.connect(self.native_preview_failed)
+        QApplication.instance().aboutToQuit.connect(self.view.native_preview.shutdown)
+        self.view.group_overlay = self.group_overlay
         self.view.connection_prompt = self.confirm_contour_connection
         self.view.move_related = self.remembered_move_related is True
-        self.view.changed.connect(self.refresh)
+        self.view.changed.connect(self.refresh_geometry_edit)
         self.view.auto_close_requested.connect(self.confirm_auto_close)
         self.view.region_clicked.connect(self.toggle_region_at)
         self.view.figure_clicked.connect(self.select_figure_at)
         self.view.region_box_selected.connect(self.select_regions_in_box)
         self.view.regions_transformed.connect(self.select_transformed_regions)
-        self.view.clipboard_changed.connect(self.update_clipboard_actions)
+        self.view.clipboard_changed.connect(self.capture_contour_clipboard)
         self.view.paste_committed.connect(self.retain_clipboard_sources)
         self._clipboard_documents = ()
+        self._clipboard_section = "regions"
+        app = QApplication.instance()
+        if not hasattr(app, "_dale_contour_clipboard"):
+            app._dale_contour_clipboard = ApplicationContourClipboard(app)
+        self.contour_clipboard = app._dale_contour_clipboard
+        self.contour_clipboard.changed.connect(self.restore_contour_clipboard)
+        self._clipboard_connected = True
+        self.restore_contour_clipboard()
         self.view.message.connect(
             lambda message: self.statusBar().showMessage(self.t(message), 7000)
         )
@@ -267,6 +394,10 @@ class MainWindow(QMainWindow):
         )
         self.gap_tolerance.valueChanged.connect(self.update_contour_settings)
         self.contour_offset.valueChanged.connect(self.update_contour_settings)
+        self.raster_contour_offset = ToolSpinBox(self)
+        self.raster_contour_offset.setRange(-4096, 4096)
+        self.raster_contour_offset.hide()
+        self.raster_contour_offset.valueChanged.connect(self.set_raster_offset)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.language_control = QComboBox()
@@ -368,20 +499,25 @@ class MainWindow(QMainWindow):
             lambda: self.set_sidebar_visible(not self.right_panel_visible)
         )
         layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         left_panel = QWidget()
         self.left_panel = left_panel
-        left_panel.setFixedWidth(76)
+        left_panel.setFixedWidth(60)
         self.tool_column = QVBoxLayout(left_panel)
         self.tool_column.setContentsMargins(0, 0, 0, 0)
         self.tool_column.setSpacing(4)
         self.tool_stack = QStackedWidget()
-        self.tool_stack.setFixedWidth(64)
+        self.tool_stack.setFixedWidth(60)
         self.tool_stack.setStyleSheet("QStackedWidget { background: transparent; border: 0; }")
         self.tool_scroll = QScrollArea()
         self.tool_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.tool_scroll.setWidgetResizable(True)
         self.tool_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.tool_scroll.setStyleSheet("QScrollBar:vertical { width: 10px; }")
+        self.tool_scroll.verticalScrollBar().rangeChanged.connect(
+            lambda low, high: left_panel.setFixedWidth(60 + (10 if high > low else 0))
+        )
         self.tool_scroll.setWidget(self.tool_stack)
         self.tool_column.addWidget(self.tool_scroll, 1)
         layout.addWidget(left_panel)
@@ -405,13 +541,41 @@ class MainWindow(QMainWindow):
         ):
             menu.setToolTipsVisible(True)
             menu.setToolTip(tip)
-        categories = make_toolbar(self, "Sections")
+        categories = make_toolbar(self, "Modes")
         self.tool_set_toolbar = categories
         self.basic_toolbar = make_toolbar(self, "Main")
+        self.view_toolbar = make_toolbar(self, "View")
+        self.groups_toolbar = make_toolbar(self, "Groups")
+        self.group_heading = self.groups_toolbar.findChild(QLabel)
+        self.group_manager_button = QToolButton(self.groups_toolbar)
+        self.group_manager_button.setIcon(tool_icon("Group manager"))
+        self.group_manager_button.setIconSize(QSize(22, 22))
+        self.group_manager_button.setFixedSize(36, 36)
+        self.group_manager_button.setCheckable(True)
+        self.group_manager_button.clicked.connect(self.toggle_group_manager)
+        self.groups_toolbar.addWidget(self.group_manager_button)
+        self.group_control = QComboBox(self.groups_toolbar)
+        self.group_control.setFixedHeight(36)
+        self.group_control.setMinimumWidth(100)
+        self.group_control.setMaximumWidth(140)
+        self.group_control.setMinimumContentsLength(8)
+        self.group_control.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.group_control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.group_control.activated.connect(self.choose_selection_group)
+        self.groups_toolbar.addWidget(self.group_control)
         self.dataset_toolbar = make_toolbar(self, "Dataset")
         self.dataset_heading = self.dataset_toolbar.findChild(QLabel)
         self.dataset_control = QComboBox()
-        self.dataset_control.setFixedSize(230, 36)
+        self.dataset_control.setFixedHeight(36)
+        self.dataset_control.setMinimumWidth(120)
+        self.dataset_control.setMaximumWidth(230)
+        self.dataset_control.setMinimumContentsLength(12)
+        self.dataset_control.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.dataset_control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.dataset_control.setToolTip("Choose a dataset with its current image and contours.")
         self.dataset_control.currentIndexChanged.connect(self.select_dataset)
         self.manager_button = QToolButton(self.dataset_toolbar)
@@ -436,6 +600,16 @@ class MainWindow(QMainWindow):
         self.figure_toolbar = figures
         region_tools = make_toolbar(self, "Regions", vertical=True)
         pixels = make_toolbar(self, "Raster", vertical=True)
+        self.region_output_toolbar = make_toolbar(self, "Region output", vertical=True)
+        self.raster_output_toolbar = make_toolbar(self, "Raster output", vertical=True)
+        self.alignment_toolbars = {
+            key: make_toolbar(self, f"{title} alignment", vertical=True)
+            for key, title in (
+                ("geometry", "Vertices"),
+                ("figures", "Contours"),
+                ("regions", "Regions"),
+            )
+        }
         self.toolbars = (
             categories,
             self.basic_toolbar,
@@ -444,14 +618,85 @@ class MainWindow(QMainWindow):
             region_tools,
             pixels,
             figures,
+            self.groups_toolbar,
+            self.region_output_toolbar,
+            self.raster_output_toolbar,
+            *self.alignment_toolbars.values(),
+            self.view_toolbar,
         )
+        from dale.toolbar import TopPanelScrollArea
+
+        self.top_panels = (
+            categories,
+            self.basic_toolbar,
+            self.view_toolbar,
+            self.groups_toolbar,
+            self.dataset_toolbar,
+        )
+        self.top_panels_host = QToolBar("Top panels", self)
+        self.top_panels_host.setObjectName("topPanelsHost")
+        self.top_panels_host.setMovable(False)
+        self.top_panels_host.setFloatable(False)
+        self.top_panels_host.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+        self.top_panels_host.setStyleSheet(
+            "QToolBar#topPanelsHost { border: 0; background: transparent; spacing: 0; "
+            "padding: 0; margin: 0; }"
+        )
+        self.top_panels_scroll = TopPanelScrollArea(self.top_panels_host)
+        self.top_panels_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        top_content = QWidget()
+        row = QHBoxLayout(top_content)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(2)
+        row.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        for bar in self.top_panels:
+            self.removeToolBar(bar)
+            row.addWidget(bar)
+            bar.show()
+        row.addStretch(1)
+        self.top_panels_scroll.setWidget(top_content)
+        self.top_panels_host.addWidget(self.top_panels_scroll)
+        self.addToolBar(self.top_panels_host)
+        self.top_panels_scroll.horizontalScrollBar().setToolTip(
+            "Scroll the top panels horizontally with the mouse wheel."
+        )
+        self.top_panels_timer = QTimer(self)
+        self.top_panels_timer.setSingleShot(True)
+        self.top_panels_timer.timeout.connect(self.update_top_toolbar_geometry)
         self.geometry_eraser_tiles = {}
         self.sized_tools = {}
-        for bar in (geometry, figures, region_tools, pixels):
-            self.tool_stack.addWidget(bar)
+        self.mode_tool_pages = {}
+        for key, bar in (
+            ("geometry", geometry),
+            ("figures", figures),
+            ("regions", region_tools),
+            ("pixels", pixels),
+        ):
+            page = QWidget()
+            column = QVBoxLayout(page)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(4)
+            column.addWidget(bar)
+            if key in self.alignment_toolbars:
+                column.addWidget(self.alignment_toolbars[key])
+            if bar in (region_tools, pixels):
+                column.addWidget(
+                    self.region_output_toolbar
+                    if bar == region_tools
+                    else self.raster_output_toolbar
+                )
+            self.mode_tool_pages[key] = page
+            self.tool_stack.addWidget(page)
 
         def action(bar, title, handler, shortcut=None):
-            item = QAction(title, self)
+            if bar == categories:
+                item = QWidgetAction(self)
+                item.setText(title)
+                button = ModeTabButton(bar)
+                button.setDefaultAction(item)
+                item.setDefaultWidget(button)
+            else:
+                item = QAction(title, self)
             item.setProperty("dale_tool_key", title)
             display = {
                 "Auto-close": "Auto-close contours",
@@ -461,6 +706,7 @@ class MainWindow(QMainWindow):
                 "Rotate figures": "Rotate contours",
                 "Figure point alignment": "Contour point alignment",
                 "Figure guide alignment": "Contour guide alignment",
+                "Figure extension alignment": "Angled contour guides",
                 "New line": "New contour line",
                 "New circle": "New circular contour",
                 "New rectangle": "New rectangular contour",
@@ -471,17 +717,19 @@ class MainWindow(QMainWindow):
                 "Artwork offset (px)": "Region artwork offset (px)",
                 "Erase": "Erase raster pixels",
                 "Restore": "Restore raster pixels",
+                "Erase square": "Square raster eraser",
+                "Restore square": "Square raster restore",
                 "Remove outside": "Erase raster outside selected regions",
                 "Remove inside": "Erase raster inside selected regions",
             }.get(title)
             if display:
                 item.setProperty("dale_display_key", display)
             vertical = isinstance(bar, QToolBar) and bar.orientation() == Qt.Orientation.Vertical
-            icon_only = vertical or bar == self.basic_toolbar
+            icon_only = vertical or bar in (self.basic_toolbar, self.view_toolbar)
             if icon_only:
                 item.setIcon(tool_icon(title))
                 item.setProperty("dale_icon_only", True)
-            if bar == categories or bar == self.basic_toolbar:
+            if bar == categories or bar in (self.basic_toolbar, self.view_toolbar):
                 item.setProperty(
                     "dale_display_key",
                     {
@@ -516,6 +764,20 @@ class MainWindow(QMainWindow):
                 ),
                 "Auto-close": (1, 256, 14, "auto_close_control", self.set_auto_close_distance),
                 "Erase": (1, 4096, 40, "brush_control", lambda v: self.set_brush("Erase", v)),
+                "Erase square": (
+                    1,
+                    4096,
+                    40,
+                    "square_brush_control",
+                    lambda v: self.set_brush("Erase square", v),
+                ),
+                "Restore square": (
+                    1,
+                    4096,
+                    40,
+                    "square_restore_control",
+                    lambda v: self.set_brush("Restore square", v),
+                ),
                 "Restore": (
                     1,
                     4096,
@@ -552,12 +814,19 @@ class MainWindow(QMainWindow):
                     "figure_guide_distance",
                     lambda v: self.contour_alignment_distance.setValue(v),
                 ),
-                "Right-angle alignment": (
+                "Figure extension alignment": (
                     1,
                     9999,
                     14,
-                    "right_angle_distance",
-                    lambda value: self.set_alignment_distance("right_angle_distance_px", value),
+                    "extension_distance",
+                    lambda value: self.set_alignment_distance("extension_distance_px", value),
+                ),
+                "Right-angle alignment": (
+                    1,
+                    90,
+                    5,
+                    "right_angle_tolerance",
+                    lambda value: self.set_alignment_distance("right_angle_tolerance_deg", value),
                 ),
                 "Contour alignment": (
                     1,
@@ -583,9 +852,28 @@ class MainWindow(QMainWindow):
                 if title != "Artwork offset (px)":
                     editor.setRange(low, high)
                     editor.setValue(initial)
+                    if title == "Right-angle alignment":
+                        editor.setSuffix("°")
                     editor.valueChanged.connect(handler)
                 setattr(self, attribute, editor)
-                tile = SizedToolButton(editor, item)
+                alignment = title in (
+                    "Snapping (px)",
+                    "Right-angle alignment",
+                    "Contour alignment",
+                    "Figure point alignment",
+                    "Figure guide alignment",
+                    "Figure extension alignment",
+                    "Region point alignment",
+                    "Region guide alignment",
+                )
+                tile = SizedToolButton(
+                    editor,
+                    item,
+                    inline=title in RASTER_BRUSHES,
+                    activation_hint=("" if title == "Snapping (px)" else "Alt")
+                    if alignment
+                    else None,
+                )
                 self.sized_tools[title] = tile
                 if title in GEOMETRY_ERASERS:
                     self.geometry_eraser_tiles[title] = tile
@@ -594,7 +882,7 @@ class MainWindow(QMainWindow):
                 bar.addAction(item)
                 if vertical:
                     bar.widgetForAction(item).setFixedSize(48, 48)
-                elif bar == self.basic_toolbar:
+                elif bar in (self.basic_toolbar, self.view_toolbar):
                     button = bar.widgetForAction(item)
                     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                     button.setFixedSize(36, 36)
@@ -670,7 +958,7 @@ class MainWindow(QMainWindow):
             ),
             (region_tools, REGION_TOOLS),
             (figures, FIGURE_TOOLS),
-            (pixels, ("Select raster regions", "Erase", "Restore")),
+            (pixels, ("Select raster regions", *RASTER_TRANSFORM_TOOLS, *RASTER_BRUSHES)),
         ):
             for mode in names:
                 item = action(bar, mode, lambda checked=False, m=mode: self.activate_mode(m))
@@ -678,6 +966,38 @@ class MainWindow(QMainWindow):
                 item.setChecked(mode == "Pan")
                 modes.addAction(item)
                 self.mode_actions[mode] = item
+        self.rotation_value_controls = {}
+        self.circle_detail_control = ToolSpinBox(self)
+        self.circle_detail_control.setRange(0, 95)
+        self.circle_detail_control.setValue(0)
+        self.circle_detail_control.hide()
+        self.circle_detail_control.valueChanged.connect(self.set_circle_detail)
+        self.rotation_step_controls = {}
+        for mode, prefix in (("Rotate figures", "figure"), ("Rotate regions", "region")):
+            controls = []
+            for modifier in ("", "alt_"):
+                key = f"{prefix}_{modifier}rotation_step_cdeg"
+                editor = ToolSpinBox(self)
+                low, high, default = ROTATION_VALUE_RANGES[key]
+                editor.setRange(low, high)
+                editor.setValue(default)
+                editor.hide()
+                self.rotation_value_controls[key] = editor
+                controls.append(editor)
+                editor.valueChanged.connect(lambda value, mode=mode: self.sync_rotation_steps(mode))
+            self.rotation_step_controls[mode] = tuple(controls)
+        self.rotation_step_controls["Rotate raster regions"] = self.rotation_step_controls[
+            "Rotate regions"
+        ]
+        self.mirror_contour_actions = {
+            axis: action(
+                figures, title, lambda checked=False, axis=axis: self.mirror_contours(axis)
+            )
+            for axis, title in (
+                ("vertical", "Mirror contours about vertical axis"),
+                ("horizontal", "Mirror contours about horizontal axis"),
+            )
+        }
         self.mode_actions["Select raster regions"].setEnabled(False)
         self.select_all_action = action(
             self.basic_toolbar, "Select all contour lines", self.select_all_elements, "Ctrl+A"
@@ -688,8 +1008,9 @@ class MainWindow(QMainWindow):
         self.edit_menu.addAction(self.select_all_action)
         self.edit_menu.addAction(self.clear_selection_action)
         self.copy_regions_action = action(
-            self.edit_menu, "Copy region contours", self.copy_region_contours, "Ctrl+C"
+            self.basic_toolbar, "Copy region contours", self.copy_region_contours, "Ctrl+C"
         )
+        self.edit_menu.addAction(self.copy_regions_action)
         self.paste_regions_action = action(
             self.edit_menu, "Paste region contours", self.paste_region_contours, "Ctrl+V"
         )
@@ -701,11 +1022,17 @@ class MainWindow(QMainWindow):
             "Contour alignment: snap to a vertex first, then horizontal/vertical guides. "
             "Escape: cancel."
         )
+        self.delete_regions_action = action(
+            self.basic_toolbar, "Delete region", self.delete_selected_regions, "Del"
+        )
+        self.delete_regions_action.setEnabled(False)
+        self.edit_menu.addAction(self.delete_regions_action)
+        self.main_delete_action = self.delete_regions_action
         self.update_clipboard_actions()
         self.move_button = region_tools.widgetForAction(self.mode_actions["Move regions"])
         self.rotate_button = region_tools.widgetForAction(self.mode_actions["Rotate regions"])
-        action(self.basic_toolbar, "Fit", self.view.fit_map, "F")
-        self.walls_action = action(self.basic_toolbar, "Show contours", self.toggle_walls)
+        action(self.view_toolbar, "Fit", self.view.fit_map, "F")
+        self.walls_action = action(self.view_toolbar, "Show contours", self.toggle_walls)
         self.walls_action.setCheckable(True)
         self.walls_action.setChecked(True)
         self.alignment_actions = {}
@@ -714,7 +1041,9 @@ class MainWindow(QMainWindow):
             ("contour_alignment", "Contour alignment"),
         ):
             item = action(
-                geometry, title, lambda checked, key=key: self.set_alignment(key, checked)
+                self.alignment_toolbars["geometry"],
+                title,
+                lambda checked, key=key: self.set_alignment(key, checked),
             )
             item.setCheckable(True)
             self.alignment_actions[key] = item
@@ -726,62 +1055,89 @@ class MainWindow(QMainWindow):
         self.settings_action.setCheckable(True)
         self.settings_action.setToolTip("Show or hide the application settings panel.")
         self.geometry_brush_control = self.geometry_eraser_tiles["Erase lines"].editor()
-        for tool, button in (
-            ("Erase lines", self.geometry_eraser_tiles["Erase lines"]),
-            ("Edit points", geometry.widgetForAction(self.mode_actions["Edit points"])),
-        ):
-            button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            button.customContextMenuRequested.connect(
-                lambda position, tool=tool: self.confirm_contour_connection(tool, settings=True)
-            )
         self.vertex_brush_control = self.geometry_eraser_tiles["Erase vertices"].editor()
         pixels.addSeparator()
         self.mask_actions = {
             "outside": action(pixels, "Remove outside", lambda: self.mask("outside")),
             "inside": action(pixels, "Remove inside", lambda: self.mask("inside")),
         }
+        self.crosshair_action = action(
+            self.view_toolbar,
+            "Raster crosshair",
+            lambda checked: self.view.raster_aids.configure(crosshair=checked),
+        )
+        self.rulers_action = action(
+            self.view_toolbar,
+            "Raster rulers",
+            lambda checked: self.view.raster_aids.configure(rulers=checked),
+        )
+        self.move_guides_action = action(self.view_toolbar, "Move guides", self.set_guide_editing)
+        self.mode_actions["Move guides"] = self.move_guides_action
+        modes.addAction(self.move_guides_action)
+        self.grid_action = action(self.view_toolbar, "Scene grid", self.set_scene_grid_visible)
+        self.background_action = action(
+            self.view_toolbar,
+            "Canvas background",
+            lambda: self.show_tool_settings("Canvas background"),
+        )
+        self.native_resolution_action = action(
+            self.view_toolbar,
+            "Native raster resolution",
+            lambda checked: self.view.raster_aids.configure(full_resolution=checked),
+        )
+        for command in (
+            self.crosshair_action,
+            self.rulers_action,
+            self.move_guides_action,
+            self.grid_action,
+            self.native_resolution_action,
+        ):
+            command.setCheckable(True)
         self.auto_close_tile = self.sized_tools["Auto-close"]
-        self.snap_action = action(geometry, "Snapping (px)", self.set_snapping)
+        self.snap_action = action(
+            self.alignment_toolbars["geometry"], "Snapping (px)", self.set_snapping
+        )
         self.snap_action.setCheckable(True)
         self.snap_action.setChecked(True)
         self.snap_tile = self.sized_tools["Snapping (px)"]
         action(geometry, "Close all contours", self.close_all_contours)
-        self.delete_regions_action = action(
-            region_tools, "Delete region", self.delete_selected_regions, "Del"
-        )
-        self.delete_regions_action.setEnabled(False)
-        self.edit_menu.addAction(self.delete_regions_action)
         self.delete_contours_action = action(
             self.edit_menu, "Delete contours", self.delete_selected_contours, "Del"
         )
+        self.delete_contours_action.setIcon(tool_icon("Delete region"))
+        self.delete_contours_action.setProperty("dale_icon_only", True)
         self.delete_contours_action.setEnabled(False)
         self.export_regions_action = action(
-            region_tools, "Export selected regions", lambda: self.export(selected_only=True)
+            self.region_output_toolbar,
+            "Export selected regions",
+            lambda: self.export(selected_only=True),
         )
-        self.export_regions_button = region_tools.widgetForAction(self.export_regions_action)
-        self.export_regions_button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.export_regions_button.customContextMenuRequested.connect(
-            lambda position: self.confirm_merge_selected_regions(settings=True)
+        self.export_regions_button = self.region_output_toolbar.widgetForAction(
+            self.export_regions_action
         )
         self.region_alignment_actions = {}
         self.figure_alignment_actions = {}
-        for bar, prefix, target in (
-            (region_tools, "Region", self.region_alignment_actions),
-            (figures, "Figure", self.figure_alignment_actions),
+        for section, prefix, target in (
+            ("regions", "Region", self.region_alignment_actions),
+            ("figures", "Figure", self.figure_alignment_actions),
         ):
-            for suffix, source_control, initial in (
-                ("point alignment", self.snap_distance, True),
+            controls = [
                 (
                     "guide alignment",
                     self.contour_alignment_distance,
                     False,
                 ),
-            ):
+            ]
+            if section == "figures":
+                controls.append(("extension alignment", None, False))
+            controls.append(("point alignment", self.snap_distance, True))
+            for suffix, source_control, initial in controls:
                 title = f"{prefix} {suffix}"
-                item = action(bar, title, self.apply_section_alignment)
+                item = action(self.alignment_toolbars[section], title, self.apply_section_alignment)
                 item.setCheckable(True)
                 item.setChecked(initial)
-                source_control.valueChanged.connect(self.sized_tools[title].editor().setValue)
+                if source_control is not None:
+                    source_control.valueChanged.connect(self.sized_tools[title].editor().setValue)
                 target[title] = item
         for command in (
             self.snap_action,
@@ -790,14 +1146,94 @@ class MainWindow(QMainWindow):
             *self.region_alignment_actions.values(),
         ):
             command.toggled.connect(self.apply_section_alignment)
-        action(region_tools, "Artwork offset (px)", lambda: self.contour_offset.setFocus())
-        for bar in (geometry, figures, region_tools, pixels):
+        action(
+            self.region_output_toolbar,
+            "Artwork offset (px)",
+            lambda: self.show_tool_settings("Artwork offset (px)"),
+        )
+        raster_offset_action = action(
+            self.raster_output_toolbar,
+            "Raster artwork offset",
+            lambda: self.show_tool_settings("Raster artwork offset"),
+        )
+        raster_offset_action.setProperty("dale_display_key", "Region artwork offset (px)")
+        self.raster_output_toolbar.removeAction(raster_offset_action)
+        self.raster_offset_button = SizedToolButton(
+            self.raster_contour_offset, raster_offset_action
+        )
+        self.sized_tools["Raster artwork offset"] = self.raster_offset_button
+        raster_offset_widget = self.raster_output_toolbar.addWidget(self.raster_offset_button)
+        self.isolate_raster_action = action(
+            self.raster_output_toolbar, "Preview selected regions", self.set_raster_isolation
+        )
+        self.isolate_raster_action.setCheckable(True)
+        self.raster_output_toolbar.insertAction(raster_offset_widget, self.isolate_raster_action)
+        self.tool_settings_buttons = {
+            **self.sized_tools,
+            "Edit points": geometry.widgetForAction(self.mode_actions["Edit points"]),
+            "New circle": geometry.widgetForAction(self.mode_actions["New circle"]),
+            "Export selected regions": self.export_regions_button,
+            "Raster rulers": self.view_toolbar.widgetForAction(self.rulers_action),
+            "Scene grid": self.view_toolbar.widgetForAction(self.grid_action),
+            "Canvas background": self.view_toolbar.widgetForAction(self.background_action),
+            "Raster artwork offset": self.raster_offset_button,
+            "Preview selected regions": self.raster_output_toolbar.widgetForAction(
+                self.isolate_raster_action
+            ),
+        }
+        for mode, bar in (
+            ("Rotate figures", figures),
+            ("Rotate regions", region_tools),
+            ("Rotate raster regions", pixels),
+        ):
+            self.tool_settings_buttons[mode] = bar.widgetForAction(self.mode_actions[mode])
+        for title, button in self.tool_settings_buttons.items():
+            ToolSettingsCorner(button)
+            button.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            button.customContextMenuRequested.connect(
+                lambda position, title=title: self.show_tool_settings(title)
+            )
+        for bar in (
+            geometry,
+            figures,
+            region_tools,
+            pixels,
+            self.region_output_toolbar,
+            self.raster_output_toolbar,
+            *self.alignment_toolbars.values(),
+        ):
             bar.ensurePolished()
             bar.setFixedHeight(bar.sizeHint().height())
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.view.size_changed.connect(self.sync_tool_sizes)
         QApplication.instance().installEventFilter(self)
         tips = {
+            "Erase square": "Erase image pixels with an axis-aligned square brush.",
+            "Restore square": "Restore image pixels with an axis-aligned square brush.",
+            "Raster crosshair": "Show dashed one-pixel cursor axes across the scene editing area.",
+            "Raster rulers": (
+                "Measure the scene and drag horizontal or vertical guides from the rulers."
+            ),
+            "Move guides": "Select and reposition ruler guides without editing the scene.",
+            "Scene grid": "Show the square grid used by PNG export and preview.",
+            "Canvas background": (
+                "Choose a checkerboard or solid canvas background for this dataset."
+            ),
+            "Move raster regions": (
+                "Move selected boundaries together with their current image pixels."
+            ),
+            "Rotate raster regions": (
+                "Rotate selected boundaries and their image pixels around their common center."
+            ),
+            "Scale raster regions": "Resize selected boundaries together with their image pixels.",
+            "Preview selected regions": (
+                "Preview only selected region imagery; "
+                "show the whole image when selection is empty."
+            ),
+            "Raster artwork offset": "Include scene image pixels beyond the contour or cut inward.",
+            "Native raster resolution": (
+                "Show visible image tiles at source resolution with current raster edits."
+            ),
             "Select all contour lines": (
                 "Select all elements of the current section in the visible height scope."
             ),
@@ -806,7 +1242,7 @@ class MainWindow(QMainWindow):
                 "Keep lines inside and image pixels."
             ),
             "Region point alignment": (
-                "Snap the highlighted region vertex to an existing point; move the whole figure."
+                "Snap the highlighted vertex or common center to an existing point."
             ),
             "Region guide alignment": (
                 "Align the highlighted region vertex with horizontal/vertical vertex guides."
@@ -844,7 +1280,7 @@ class MainWindow(QMainWindow):
             ),
             "Snapping (px)": "Toggle snapping to existing points and lines. Points take priority.",
             "Right-angle alignment": (
-                "Make a right angle with adjacent contour lines, including rotated contours."
+                "Make a right angle while moving a vertex or drawing a line from a contour."
             ),
             "Contour alignment": (
                 "Align a point or shape with other vertices horizontally or vertically."
@@ -865,19 +1301,30 @@ class MainWindow(QMainWindow):
             ),
             "Move figures": "Move selected contour lines together. Image pixels stay in place.",
             "Rotate figures": "Rotate selected contour lines around their common center.",
-            "Figure point alignment": "Snap the highlighted contour vertex to an existing point.",
+            "Mirror contours about vertical axis": (
+                "Swap left and right about the vertical axis through the common contour center. "
+                "Keep image pixels and unselected lines in place."
+            ),
+            "Mirror contours about horizontal axis": (
+                "Swap top and bottom about the horizontal axis through the common contour center. "
+                "Keep image pixels and unselected lines in place."
+            ),
+            "Figure point alignment": (
+                "Snap the highlighted vertex or common center to an existing point."
+            ),
             "Figure guide alignment": (
                 "Align the highlighted contour vertex with vertex X/Y guides."
             ),
+            "Figure extension alignment": (
+                "Snap the highlighted vertex or common center to a stationary line's "
+                "virtual extension at any angle. No lines are added."
+            ),
             "Select raster regions": (
                 "Click to toggle a region; drag over 10 screen pixels to invert regions in a box. "
-                "Empty click clears selection."
+                "Empty click asks before clearing selection. Undo/redo includes selection changes."
             ),
             "Move regions": "Drag selected contours to move them. Image pixels stay in place.",
-            "Rotate regions": (
-                "Wheel: rotate selected contours by 0.1 degrees per notch; up is "
-                "clockwise. Image pixels stay in place."
-            ),
+            "Rotate regions": "Rotate selected region contours around their common center.",
             "Export selected regions": (
                 "Save selected regions as transparent PNGs, optionally joining adjacent selections."
             ),
@@ -900,7 +1347,7 @@ class MainWindow(QMainWindow):
                 "Toggle contour visibility. Selected regions and highlighted lines stay visible."
             ),
             "Clear selection": (
-                "Deselect regions and highlighted contours; cancel the current gesture."
+                "Deselect elements in the current section; cancel the current gesture."
             ),
             "Settings": "Open or close language and tool settings in the right panel.",
             "Copy region contours": (
@@ -920,6 +1367,15 @@ class MainWindow(QMainWindow):
             "Close all contours",
         }
         conditions = {
+            "Erase square": "A scene image is open.",
+            "Restore square": "A scene image is open.",
+            "Raster crosshair": "A scene image is open.",
+            "Raster rulers": "A scene image is open.",
+            "Move guides": "Rulers are visible and guide editing is enabled.",
+            "Move raster regions": "At least one region is selected.",
+            "Rotate raster regions": "At least one region is selected.",
+            "Scale raster regions": "At least one region is selected.",
+            "Native raster resolution": "A scene image is open.",
             "Delete contours": (
                 "Contours is active, a line is selected and no gesture or export is in progress."
             ),
@@ -939,11 +1395,22 @@ class MainWindow(QMainWindow):
             "Figure guide alignment": (
                 "This button is enabled and contours are being moved or pasted."
             ),
+            "Figure extension alignment": (
+                "This button is enabled and contours are being moved or pasted."
+            ),
             "Select figures": "Contours are available.",
             "Move figures": "At least one contour line is selected.",
             "Rotate figures": "At least one contour line is selected.",
+            "Mirror contours about vertical axis": (
+                "Contours is active, a line is selected and no gesture or export is in progress."
+            ),
+            "Mirror contours about horizontal axis": (
+                "Contours is active, a line is selected and no gesture or export is in progress."
+            ),
             **{key: "An image or contour JSON is open." for key in contour_tools},
-            "Right-angle alignment": "This button is enabled and a contour point is being moved.",
+            "Right-angle alignment": (
+                "This button is enabled and a point is being moved or a line is being drawn."
+            ),
             "Contour alignment": (
                 "This button is enabled and a point or shape is being moved or drawn."
             ),
@@ -971,17 +1438,69 @@ class MainWindow(QMainWindow):
             key = item.property("dale_tool_key")
             if key in tips:
                 parts = [tips[key]]
+                if key in ("Contour alignment", "Figure guide alignment", "Region guide alignment"):
+                    parts.append(
+                        "Hover a stationary vertex during placement to keep its X/Y guides "
+                        "until the gesture ends."
+                    )
                 keys = []
+                if key in RASTER_BRUSHES:
+                    keys.extend(
+                        [
+                            "Ctrl+wheel: change brush diameter.",
+                            "Alt+wheel: change feather width.",
+                            "Right-click: open tool settings.",
+                            "Escape: cancel the stroke.",
+                        ]
+                    )
                 if key in ("Edit points", "Paste region contours"):
                     keys.append("Alt: use the enabled alignment buttons.")
                 if key == "New rectangle":
                     keys.append("Alt: align corners when Contour alignment is enabled.")
+                if key == "New line":
+                    keys.append("Alt: use the enabled alignment buttons.")
                 if key == "New circle":
                     keys.append("Ctrl+wheel while drawing: adjust the radius.")
+                    keys.append("Right-click: open tool settings.")
                 if key in ("Edit points", "Erase lines"):
-                    keys.append("Right-click the tool button: configure the connection question.")
-                if key == "Export selected regions":
-                    keys.append("Right-click this button: configure adjacent-region export.")
+                    keys.append("Right-click: open tool settings.")
+                if key in ("Export selected regions", "Preview selected regions", "Scene grid"):
+                    keys.append("Right-click: open tool settings.")
+                if key == "Raster rulers":
+                    keys.extend(
+                        [
+                            "Drag from a ruler: create a guide.",
+                            "Ctrl+drag a guide: move it; return it to a ruler to delete.",
+                            "Escape: cancel the guide drag.",
+                            "Right-click: open tool settings.",
+                        ]
+                    )
+                if key == "Move guides":
+                    keys.extend(
+                        [
+                            "Drag a guide: move it.",
+                            "Double-click a guide: delete it.",
+                            "Escape: cancel the guide drag.",
+                        ]
+                    )
+                if key in RASTER_TRANSFORM_TOOLS:
+                    keys.extend(
+                        [
+                            "Drag selected regions: move. Ctrl+wheel: scale."
+                            if key == "Move raster regions"
+                            else "Wheel: resize selected raster regions."
+                            if key == "Scale raster regions"
+                            else (
+                                "Wheel: rotate selected regions by the configured step "
+                                "around their common center."
+                            ),
+                            "Alt+wheel: rotate by the configured Alt step."
+                            if key == "Rotate raster regions"
+                            else "Escape: cancel the current gesture.",
+                        ]
+                    )
+                if key == "Raster artwork offset":
+                    keys.append("Right-click: open tool settings.")
                 if key in (
                     "Right-angle alignment",
                     "Contour alignment",
@@ -989,17 +1508,21 @@ class MainWindow(QMainWindow):
                     "Region guide alignment",
                     "Figure point alignment",
                     "Figure guide alignment",
+                    "Figure extension alignment",
                 ):
                     keys.append("Alt: apply this alignment while dragging.")
                 if key in MOVE_TOOLS:
                     keys.append("Ctrl+wheel: scale selected contours.")
                 if key in ROTATE_TOOLS:
-                    keys.append("Wheel: rotate selected contours by 0.1 degrees.")
+                    keys.append("Wheel: rotate by the configured step.")
+                    keys.append("Alt+wheel: rotate by the configured Alt step.")
+                    keys.append("Right-click: open tool settings.")
                 if key == "Select figures":
                     keys.extend(
                         [
                             "Click: toggle the line under the cursor.",
-                            "Double-click: select all lines connected by shared vertices.",
+                            "Double-click: select or deselect all lines "
+                            "connected by shared vertices.",
                             "Drag over 10 screen pixels: invert lines intersecting the box.",
                         ]
                     )
@@ -1010,8 +1533,6 @@ class MainWindow(QMainWindow):
                     "Edit points",
                     "Erase lines",
                     "Erase vertices",
-                    "Erase",
-                    "Restore",
                     "Move regions",
                     "Select regions",
                     "Select raster regions",
@@ -1061,6 +1582,35 @@ class MainWindow(QMainWindow):
     def t(self, text, **values):
         return translate(text, self.language, **values)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "top_panels_timer"):
+            self.top_panels_timer.start(0)
+
+    def update_top_toolbar_geometry(self):
+        height = max(bar.sizeHint().height() for bar in self.top_panels)
+        for bar in self.top_panels:
+            bar.setFixedWidth(bar.sizeHint().width())
+            bar.setFixedHeight(height)
+        self.top_panels_scroll.setFixedHeight(height + 3)
+
+    def update_main_delete_action(self):
+        if not hasattr(self, "settings_action") or not hasattr(self, "delete_contours_action"):
+            return
+        target = (
+            self.delete_contours_action
+            if self.current_tool_set == "figures"
+            else self.delete_regions_action
+        )
+        if target is not self.main_delete_action:
+            self.basic_toolbar.removeAction(self.main_delete_action)
+            self.basic_toolbar.insertAction(self.settings_action, target)
+            self.main_delete_action = target
+            button = self.basic_toolbar.widgetForAction(target)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setFixedSize(36, 36)
+            self.top_panels_timer.start(0)
+
     def control_help(self, text, *, condition=None, keys=(), title=None):
         return format_tooltip([text], self.language, condition=condition, keys=keys, title=title)
 
@@ -1090,16 +1640,21 @@ class MainWindow(QMainWindow):
 
     def initialize_tool_preferences(self):
         self.tool_value_controls = {
+            "circle_detail_steps": self.circle_detail_control,
             "line_eraser_diameter": self.geometry_brush_control,
             "vertex_eraser_diameter": self.vertex_brush_control,
             "raster_erase_diameter": self.brush_control,
             "raster_restore_diameter": self.restore_brush_control,
+            "raster_erase_square_diameter": self.square_brush_control,
+            "raster_restore_square_diameter": self.square_restore_control,
             "auto_close_distance_px": self.auto_close_control,
             "global_close_distance_px": self.global_close_control,
             "snap_distance_px": self.snap_distance,
-            "right_angle_distance_px": self.right_angle_distance,
+            "right_angle_tolerance_deg": self.right_angle_tolerance,
             "contour_alignment_distance_px": self.contour_alignment_distance,
+            "extension_distance_px": self.extension_distance,
             "artwork_offset_px": self.contour_offset,
+            **self.rotation_value_controls,
         }
         initial = (
             load_tool_values(self.preferences_path)
@@ -1134,6 +1689,17 @@ class MainWindow(QMainWindow):
                     self.t("Tool values changed; preferences could not be written."), 7000
                 )
 
+    def set_circle_detail(self, value):
+        self.view.circle_detail_steps = value
+        self.view.viewport().update()
+
+    def sync_rotation_steps(self, mode):
+        self.view.rotation_steps[mode] = tuple(
+            c.value() / 100 for c in self.rotation_step_controls[mode]
+        )
+        if mode == "Rotate regions":
+            self.view.rotation_steps["Rotate raster regions"] = self.view.rotation_steps[mode]
+
     def current_tool_values(self):
         return {key: control.value() for key, control in self.tool_value_controls.items()}
 
@@ -1165,21 +1731,28 @@ class MainWindow(QMainWindow):
 
     def clear_selection(self):
         self.view.cancel_pending()
-        self.view.detached_selection = None
-        self.selected_regions = ()
-        self.view.region_pivot = None
-        self.view.figure_line_ids = ()
-        self.view.figure_pivot = None
-        self.view.contour_line_ids = ()
+        before = self.raster_selection_snapshot()
+        if self.current_tool_set == "figures":
+            self.view.figure_line_ids = ()
+            self.view.figure_pivot = None
+            self.view.figure_pivot_edges = ()
+        elif self.current_tool_set == "geometry":
+            self.view.contour_line_ids = ()
+        else:
+            self.view.detached_selection = None
+            self.selected_regions = ()
+            self.view.region_pivot = None
         self.view.cursor_point = self.view.hover_edge = None
         self.view.update_hover()
         self.update_map_info()
         self.view.update_image()
+        self.record_raster_selection(before)
 
     def select_all_elements(self):
         if not self.view.session:
             return
         self.view.cancel_pending()
+        before = self.raster_selection_snapshot()
         if self.current_tool_set in ("geometry", "figures"):
             geometry = self.view.editing_geometry()
             ids = tuple(record.id for record in geometry.lineage)
@@ -1196,6 +1769,55 @@ class MainWindow(QMainWindow):
             self.update_map_info()
             self.selected_regions = tuple(range(len(self.regions)))
         self.update_map_info()
+
+        self.record_raster_selection(before)
+
+    def raster_selection_snapshot(self):
+        if self.current_tool_set != "pixels" or not self.view.session:
+            return None
+        detached = self.view.detached_selection
+        return RegionSelection(
+            tuple(p.wkb for p in self.view.region_polygons),
+            bool(detached),
+            tuple(detached.get("line_ids", ())) if detached else (),
+            self.selected_regions is None,
+        )
+
+    def record_raster_selection(self, before):
+        if before is None:
+            return
+        after = self.raster_selection_snapshot()
+        if after is not None and before != after:
+            self.view.session.add(RasterSelectionEdit(before, after))
+
+    def restore_raster_selection(self, state):
+        from shapely import from_wkb
+
+        switched = self.current_tool_set != "pixels"
+        if switched:
+            self.select_tool_set("pixels", activate=False)
+        polygons = self.available_regions()
+        self.region_key = tuple(p.wkb for p in polygons)
+        self.view.region_pivot = self.view.region_anchor = None
+        self.view.detached_selection = None
+        if state.detached:
+            self.view.detached_selection = {
+                "geometry": self.view.session.geometry(),
+                "polygons": tuple(from_wkb(p) for p in state.polygons),
+                "line_ids": state.line_ids,
+            }
+            self.selected_regions = tuple(range(len(state.polygons)))
+        else:
+            chosen = set(state.polygons)
+            self.selected_regions = (
+                None
+                if state.all_regions
+                else tuple(i for i, p in enumerate(polygons) if p.wkb in chosen)
+            )
+        self.update_map_info()
+        if switched:
+            self.activate_mode("Select raster regions")
+        self.view.update_image()
 
     def set_language(self, language, persist=True):
         self.view.finish_rotation()
@@ -1220,10 +1842,13 @@ class MainWindow(QMainWindow):
                 self.layer_control,
                 self.dataset_control,
                 self.dataset_heading,
+                self.group_control,
+                self.group_heading,
                 *self.mode_help_labels.values(),
             ),
         )
         self.update_size_help()
+        self.sync_raster_aids()
         for menu in (self.file_menu, self.edit_menu, self.about_menu, self.recent_menu):
             menu.menuAction().setToolTip(menu.toolTip())
         self.region_control.setToolTip(
@@ -1232,7 +1857,9 @@ class MainWindow(QMainWindow):
         self.update_project_info()
         self.rebuild_recent_menu()
         self.rebuild_dataset_controls()
+        self.rebuild_group_controls()
         self.set_sidebar_visible(self.right_panel_visible, persist=False)
+        self.top_panels_timer.start(0)
         self.update_mode_help()
         self.refresh()
         self.statusBar().clearMessage()
@@ -1269,10 +1896,273 @@ class MainWindow(QMainWindow):
     def question(self, title, text, *options):
         return QMessageBox.question(self, self.t(title), self.t(text), *options)
 
-    def confirm_contour_connection(self, tool, *, settings=False):
+    def confirm_export_file(self, path):
+        dialog = QMessageBox(self.progress if self.worker and self.progress else self)
+        dialog.setObjectName("exportFileConflict")
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle(self.t("File already exists"))
+        dialog.setText(self.t('Overwrite file "{name}"?', name=path.name))
+        dialog.setInformativeText(self.t("Folder: {folder}", folder=path.parent.name))
+        overwrite = dialog.addButton(self.t("Overwrite"), QMessageBox.ButtonRole.AcceptRole)
+        copy = dialog.addButton(self.t("Create copy"), QMessageBox.ButtonRole.ActionRole)
+        cancel = dialog.addButton(self.t("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        for button, title, purpose in (
+            (overwrite, "Overwrite", "Replace only this exported file."),
+            (copy, "Create copy", "Keep the existing file and save a copy with a free name."),
+            (cancel, "Cancel", "Cancel this export and keep existing files unchanged."),
+        ):
+            button.setToolTip(self.control_help(purpose, title=title))
+        dialog.setDefaultButton(cancel)
+        dialog.setEscapeButton(cancel)
+        dialog.exec()
+        return (
+            "overwrite"
+            if dialog.clickedButton() is overwrite
+            else "copy"
+            if dialog.clickedButton() is copy
+            else None
+        )
+
+    def resolve_worker_file_conflict(self, path):
+        worker = self.worker
+        if worker is None:
+            return
+        worker.conflict_answer = (
+            None if worker.isInterruptionRequested() else self.confirm_export_file(path)
+        )
+        worker.conflict_event.set()
+
+    def show_tool_settings(self, tool):
+        anchor = (
+            self.raster_offset_button
+            if tool == "Raster artwork offset"
+            else self.raster_output_toolbar.widgetForAction(self.isolate_raster_action)
+            if tool == "Preview selected regions"
+            else None
+        )
+        self.view.finish_rotation()
+        if self.tool_settings_popup is not None:
+            self.tool_settings_popup.reject()
+        tile = self.sized_tools.get(tool)
+        value = None
+        if tile:
+            label = (
+                "Artwork offset (source pixels)"
+                if tool == "Artwork offset (px)"
+                else "Brush diameter (source pixels)"
+                if tool in RASTER_BRUSHES
+                else "Brush diameter (screen pixels)"
+                if tool in GEOMETRY_ERASERS
+                else "Angular tolerance (degrees)"
+                if tool == "Right-angle alignment"
+                else "Snap distance (screen pixels)"
+                if "alignment" in tool.lower() or tool == "Snapping (px)"
+                else "Maximum endpoint movement (screen pixels)"
+            )
+            value = tile.editor(), label
+        if tool == "Raster artwork offset":
+            value = self.raster_contour_offset, "Artwork offset (source pixels)"
+            self.raster_contour_offset.setToolTip(
+                self.control_help(
+                    "Include scene image pixels beyond the contour or cut inward.",
+                    title="Region artwork offset (px)",
+                )
+            )
+        question, choices, remembered = None, (), None
+        if tool in self.connection_choices:
+            question = (
+                "Connect new cut endpoints to intersecting contours with shared vertices?"
+                if tool == "Erase lines"
+                else "Connect this point to the other contour with a shared vertex?"
+            )
+            choices = (("Connect contours", True), ("Keep contours independent", False))
+            remembered = self.connection_choices[tool]
+        is_preview = tool == "Preview selected regions"
+        preview_settings = self.view.raster_aids.settings
+        is_export = tool in ("Export selected regions", "Preview selected regions")
+        grid_info = ""
+        grid_size = preview_settings["export_grid_size"] or None
+        if is_export or tool == "Scene grid":
+            try:
+                if self.view.session:
+                    grid = export_grid(self.view.session, grid_size)
+                    if grid_size is None:
+                        grid_size = round(grid.scene_cell)
+                    grid_info = self.t(
+                        "Grid: {width} × {height} source px. Origin: {x}, {y}.",
+                        width=grid.cell[0],
+                        height=grid.cell[1],
+                        x=grid.origin[0],
+                        y=grid.origin[1],
+                    )
+            except ValueError as exc:
+                grid_info = self.t(str(exc))
+        if is_export:
+            question = "Export adjacent regions as one?"
+            choices = (("One PNG per adjacent group", True), ("One PNG per region", False))
+            remembered = (
+                preview_settings["preview_merge"]
+                if is_preview
+                else self.remembered_merge_selected_regions
+            )
+        button = anchor or self.tool_settings_buttons[tool]
+        dialog = ToolSettingsDialog(
+            self,
+            button.defaultAction().text(),
+            value=value,
+            question=question,
+            choices=choices,
+            remembered=remembered,
+            size_to_grid=(preview_settings["preview_grid"] if is_preview else self.size_to_grid)
+            if is_export
+            else None,
+            scene_grid=(grid_size or 100) if tool == "Scene grid" else None,
+            grid_color=preview_settings["export_grid_color"],
+            grid_transparency=preview_settings["export_grid_transparency"],
+            grid_width=preview_settings["export_grid_width"],
+            include_json=(preview_settings["preview_json"] if is_preview else self.include_json)
+            if is_export
+            else None,
+            group_naming=(
+                preview_settings["preview_naming"] if is_preview else self.export_group_naming
+            )
+            if is_export
+            else None,
+            rotation_steps=self.rotation_step_controls.get(tool, ()),
+            circle_detail=self.circle_detail_control if tool == "New circle" else None,
+            grid_info=grid_info,
+            background=self.view.raster_aids.snapshot() if tool == "Canvas background" else None,
+            raster_aids=self.view.raster_aids.snapshot() if tool == "Raster rulers" else None,
+            raster_brush=(
+                {
+                    **self.view.raster_brushes[tool],
+                    "shape": "square" if tool.endswith("square") else "circle",
+                }
+                if tool in RASTER_BRUSHES
+                else None
+            ),
+            adjacent_vertices=(
+                self.view.right_angle_neighbours if tool == "Right-angle alignment" else None
+            ),
+            connected_contours=(
+                self.view.extension_connected if tool == "Figure extension alignment" else None
+            ),
+            own_angle_priority=(
+                self.view.right_angle_own_priority if tool == "Right-angle alignment" else None
+            ),
+        )
+        position = button.mapToGlobal(QPoint(button.width() + 8, 0))
+        available = button.screen().availableGeometry()
+        viewport = self.view.viewport()
+        map_bounds = QRect(viewport.mapToGlobal(QPoint()), viewport.size())
+        map_bounds = map_bounds.intersected(available).adjusted(6, 6, -6, -6)
+        if map_bounds.width() >= dialog.width() and map_bounds.height() >= dialog.height():
+            available = map_bounds
+        dialog.move(
+            max(available.left(), min(position.x(), available.right() - dialog.width())),
+            max(available.top(), min(position.y(), available.bottom() - dialog.height())),
+        )
+        self.tool_settings_popup = dialog
+        dialog.accepted.connect(lambda: self.apply_tool_settings(tool, dialog, value))
+        dialog.finished.connect(lambda result: self.clear_tool_settings_popup(dialog))
+        dialog.show()
+        return dialog
+
+    def clear_tool_settings_popup(self, dialog):
+        if self.tool_settings_popup is dialog:
+            self.tool_settings_popup = None
+
+    def apply_tool_settings(self, tool, dialog, value):
+        if tool == "Scene grid":
+            try:
+                export_grid(self.view.session, dialog.grid_size.value())
+            except ValueError as exc:
+                self.warning("Scene grid", str(exc))
+                return
+            self.view.raster_aids.configure(
+                export_grid_size=dialog.grid_size.value(),
+                export_grid_color=dialog.grid_color,
+                export_grid_transparency=dialog.grid_transparency.value(),
+                export_grid_width=dialog.grid_width.value(),
+            )
+        if tool == "Canvas background":
+            self.view.raster_aids.configure(
+                background_kind=dialog.background_kind.currentData(),
+                background_color=dialog.background_color,
+            )
+        if tool in RASTER_BRUSHES:
+            target = ("Restore" if tool.startswith("Restore") else "Erase") + (
+                " square" if dialog.brush_shape.currentData() == "square" else ""
+            )
+            self.sized_tools[target].editor().setValue(dialog.value.value())
+            self.view.raster_brushes[target] = {
+                "feather": dialog.brush_feather.value(),
+                "opacity": dialog.brush_opacity.value(),
+            }
+            if self.view.mode == tool:
+                self.activate_mode(target)
+            self.view.viewport().update()
+        if tool == "Raster rulers":
+            unit = dialog.ruler_units.currentData()
+            try:
+                if self.view.session:
+                    measurement_scale(self.view.session.source, unit)
+            except ValueError as exc:
+                self.warning("Raster rulers", str(exc))
+                return
+            self.view.raster_aids.configure(
+                unit=unit,
+                snap=dialog.ruler_snap.isChecked(),
+                grid=dialog.ruler_grid.isChecked(),
+                step=dialog.ruler_step.value(),
+            )
+        if tool == "New circle":
+            self.circle_detail_control.setValue(dialog.circle_detail.value())
+        if tool in self.rotation_step_controls:
+            for source, editor in zip(
+                self.rotation_step_controls[tool], dialog.rotation_values, strict=True
+            ):
+                source.setValue(round(editor.value() * 100))
+        if value and tool not in RASTER_BRUSHES:
+            value[0].setValue(dialog.value.value())
+        if tool == "Right-angle alignment":
+            self.set_alignment_distance("right_angle_neighbours", dialog.neighbours.isChecked())
+            self.set_alignment_distance(
+                "right_angle_own_priority", dialog.own_angle_priority.isChecked()
+            )
+        if tool == "Figure extension alignment":
+            self.view.extension_connected = dialog.connected_contours.isChecked()
+        try:
+            if tool in self.connection_choices:
+                self.connection_choices[tool] = dialog.default_action.currentData()
+                save_connection_choice(self.preferences_path, tool, self.connection_choices[tool])
+            if tool == "Export selected regions":
+                self.remembered_merge_selected_regions = dialog.default_action.currentData()
+                self.merge_selected_regions = self.remembered_merge_selected_regions is True
+                self.size_to_grid = dialog.grid.isChecked()
+                self.include_json = dialog.json_export.isChecked()
+                self.export_group_naming = dialog.naming_action.currentData()
+                save_merge_selected_regions(
+                    self.preferences_path, self.remembered_merge_selected_regions
+                )
+                save_size_to_grid(self.preferences_path, self.size_to_grid)
+                save_include_json(self.preferences_path, self.include_json)
+                save_export_group_naming(self.preferences_path, self.export_group_naming)
+            if tool == "Preview selected regions":
+                self.view.raster_aids.configure(
+                    preview_merge=dialog.default_action.currentData(),
+                    preview_grid=dialog.grid.isChecked(),
+                    preview_json=dialog.json_export.isChecked(),
+                    preview_naming=dialog.naming_action.currentData(),
+                )
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+        self.update_map_info()
+
+    def confirm_contour_connection(self, tool):
         self.view.finish_rotation()
         choice = self.connection_choices[tool]
-        if choice is not None and not settings:
+        if choice is not None:
             return choice
         title = self.mode_actions[tool].text()
         purpose = (
@@ -1282,15 +2172,8 @@ class MainWindow(QMainWindow):
         )
         dialog = QMessageBox(QMessageBox.Icon.Question, title, self.t(purpose), parent=self)
         dialog.setObjectName("contourConnectionQuestion")
-        if settings:
-            dialog.setInformativeText(
-                self.t(
-                    "Choose the answer for this tool. Clear the checkbox to ask on each contact."
-                )
-            )
         checkbox = QCheckBox(self.t("Do not ask again"), dialog)
         checkbox.setObjectName("rememberContourConnection")
-        checkbox.setChecked(settings and choice is not None)
         checkbox.setToolTip(
             self.control_help(
                 "Remember this answer for this tool. Right-click its button to change it.",
@@ -1326,10 +2209,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
         return answer
 
-    def confirm_merge_selected_regions(self, *, settings=False):
+    def confirm_merge_selected_regions(self):
         self.view.finish_rotation()
         choice = self.remembered_merge_selected_regions
-        if choice is not None and not settings:
+        if choice is not None:
             self.merge_selected_regions = choice
             return choice
         dialog = QMessageBox(
@@ -1345,14 +2228,7 @@ class MainWindow(QMainWindow):
                 "Unselected regions are not included."
             )
         )
-        if settings:
-            dialog.setInformativeText(
-                dialog.informativeText()
-                + "\n\n"
-                + self.t("Choose the answer for export. Clear the checkbox to ask on every export.")
-            )
         checkbox = QCheckBox(self.t("Do not ask again"), dialog)
-        checkbox.setChecked(settings and choice is not None)
         checkbox.setToolTip(
             self.control_help(
                 "Remember the answer between launches. "
@@ -1411,6 +2287,61 @@ class MainWindow(QMainWindow):
             finally:
                 self.view.auto_close_review = False
                 self.view.update_hover()
+
+    def confirm_export_group_naming(self, dataset, groups):
+        if self.export_group_naming is not None:
+            return self.export_group_naming
+        dialog = QMessageBox(
+            QMessageBox.Icon.Question,
+            self.t("PNG naming"),
+            self.t("Which name should a region matching a group use?"),
+            parent=self,
+        )
+        dialog.setObjectName("exportGroupNamingQuestion")
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        names = ", ".join(dict.fromkeys(group_export_stem(group.name) for group in groups if group))
+        dialog.setInformativeText(
+            self.t(
+                "Dataset: {dataset}\nGroups: {groups}\nUnique numbers and PNG dimensions are kept.",
+                dataset=dataset,
+                groups=names,
+            )
+        )
+        checkbox = QCheckBox(self.t("Do not ask again"), dialog)
+        checkbox.setToolTip(
+            self.control_help(
+                "Remember this naming choice. Right-click Export selected regions to change it.",
+                title="Do not ask again",
+            )
+        )
+        dialog.setCheckBox(checkbox)
+        dataset_button = dialog.addButton(self.t("Dataset name"), QMessageBox.ButtonRole.AcceptRole)
+        group_button = dialog.addButton(self.t("Group name"), QMessageBox.ButtonRole.ActionRole)
+        cancel = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        cancel.setText(self.t("Cancel"))
+        for button, purpose, title in (
+            (dataset_button, "Use the dataset name for every exported PNG.", "Dataset name"),
+            (
+                group_button,
+                "Use matching group names; other PNGs keep the dataset name.",
+                "Group name",
+            ),
+            (cancel, "Cancel without exporting or changing the question settings.", "Cancel"),
+        ):
+            button.setToolTip(self.control_help(purpose, title=title))
+        dialog.setDefaultButton(dataset_button)
+        dialog.setEscapeButton(cancel)
+        dialog.exec()
+        clicked = dialog.clickedButton()
+        if clicked not in (dataset_button, group_button):
+            return None
+        answer = "group" if clicked is group_button else "dataset"
+        self.export_group_naming = answer if checkbox.isChecked() else None
+        try:
+            save_export_group_naming(self.preferences_path, self.export_group_naming)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+        return answer
 
     def confirm_auto_close(self, plan):
         session = self.view.session
@@ -1500,7 +2431,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QMessageBox.StandardButton.Yes and changed:
             if self.view.session is session and session.geometry() == original:
                 session.add(geometry)
-                self.refresh()
+                self.refresh_geometry_edit()
 
     def configure_json_repair(self, enabled=None):
         source = self.view.session.source if self.view.session else None
@@ -1542,9 +2473,10 @@ class MainWindow(QMainWindow):
         has_image = bool(session and session.source.image_path)
         for key in ("figures", "regions", "pixels"):
             self.tool_set_actions[key].setEnabled(bool(session))
-        for mode in ("Erase", "Restore", "Select raster regions"):
+        for mode in (*RASTER_BRUSHES, "Select raster regions"):
             self.mode_actions[mode].setEnabled(has_image)
         self.tool_set_actions["pixels"].setEnabled(has_image)
+        self.sync_raster_aids()
         self.export_action.setEnabled(has_image and not self.worker)
         self.export_regions_action.setEnabled(has_image and not self.worker)
         has_data = bool(
@@ -1631,6 +2563,18 @@ class MainWindow(QMainWindow):
         self.refresh()
         self.update_mode_help()
 
+    def export_identity(self):
+        selection = None if self.current_tool_set == "figures" else self.selected_regions
+        regions = (
+            tuple(self.regions[i] for i in selection)
+            if selection
+            else self.view.session.analysis().cells
+        )
+        geometry = self.view.session.geometry()
+        return selection_number(
+            regions, fallback_edges=geometry_edges(geometry.walls, geometry.closures)
+        )
+
     def export_json(self):
         session = self.view.session
         if not session or self.worker:
@@ -1647,13 +2591,20 @@ class MainWindow(QMainWindow):
         selected, _ = QFileDialog.getSaveFileName(
             self,
             self.t("Export JSON…"),
-            str(directory / Path(document.name).name),
-            self.t("Scene JSON (*.json)"),
+            str(
+                directory
+                / f"{export_family(Path(document.name).stem, self.export_identity())}.json"
+            ),
+            self.t("Export assets (*.json *.png);;Scene JSON (*.json);;All files (*)"),
+            "",
+            QFileDialog.Option.DontConfirmOverwrite,
         )
         if not selected:
             return
         destination = Path(selected)
-        if destination.suffix.lower() != ".json":
+        if destination.suffix.lower() == ".png":
+            destination = destination.with_suffix(".json")
+        elif destination.suffix.lower() != ".json":
             destination = destination.with_name(destination.name + ".json")
         sources = [self.project_path] if self.project_path else []
         sessions = (
@@ -1677,7 +2628,9 @@ class MainWindow(QMainWindow):
                 if session.source.json_bytes is not None
                 else document.data
             )
-            write_json_copy(payload, destination, sources)
+            destination = write_json_copy(
+                payload, destination, sources, conflict=self.confirm_export_file
+            )
             self.remember_directory("output", destination.resolve().parent)
             self.information(
                 "JSON exported",
@@ -1686,6 +2639,8 @@ class MainWindow(QMainWindow):
                     path=destination,
                 ),
             )
+        except ExportCancelled:
+            return
         except Exception as exc:
             self.warning("Cannot export scene JSON", str(exc))
 
@@ -1693,14 +2648,101 @@ class MainWindow(QMainWindow):
         self.view.raster_diameters[mode] = value
         self.view.viewport().update()
 
+    def set_raster_offset(self, value):
+        self.view.raster_aids.configure(raster_offset=value)
+        self.view.geometry_key = None
+        self.view.refresh()
+        self.update_map_info()
+
+    def set_guide_editing(self, enabled):
+        self.activate_mode(
+            "Move guides" if enabled else self.last_tool_modes[self.current_tool_set]
+        )
+
+    def sync_raster_aids(self):
+        if not hasattr(self, "crosshair_action"):
+            return
+        settings = self.view.raster_aids.settings
+        can_edit_guides = bool(
+            self.view.session and self.view.session.source.image_path and settings["rulers"]
+        )
+        if can_edit_guides and settings["move_guides"] and self.view.mode != "Move guides":
+            self.activate_mode("Move guides")
+            return
+        if self.view.mode == "Move guides" and not (can_edit_guides and settings["move_guides"]):
+            self.view.set_mode("Pan")
+            self.activate_mode(self.last_tool_modes[self.current_tool_set])
+            return
+        self.raster_contour_offset.blockSignals(True)
+        self.raster_contour_offset.setValue(settings["raster_offset"])
+        self.raster_contour_offset.blockSignals(False)
+        for command, key in (
+            (self.crosshair_action, "crosshair"),
+            (self.rulers_action, "rulers"),
+            (self.isolate_raster_action, "isolate_regions"),
+            (self.native_resolution_action, "full_resolution"),
+            (self.grid_action, "export_grid_visible"),
+        ):
+            command.blockSignals(True)
+            command.setChecked(settings[key])
+            command.setEnabled(bool(self.view.session and self.view.session.source.image_path))
+            command.blockSignals(False)
+        self.move_guides_action.setChecked(settings["rulers"] and settings["move_guides"])
+        self.move_guides_action.setEnabled(
+            bool(self.view.session and self.view.session.source.image_path and settings["rulers"])
+        )
+        aids = self.view.raster_aids
+        aids.corner.setText(
+            self.t({"px": "px", "ft": "ft", "cm": "cm", "mm": "mm"}[settings["unit"]])
+        )
+        aids.corner.setToolTip(
+            self.t(
+                {"px": "Source pixels", "ft": "Feet", "cm": "Centimeters", "mm": "Millimeters"}[
+                    settings["unit"]
+                ]
+            )
+        )
+        for bar in aids.rulers:
+            bar.setToolTip(
+                self.control_help(
+                    "Drag from this ruler to create a scene-anchored guide.",
+                    title="Raster rulers",
+                    keys=[
+                        "Ctrl+drag a guide: move it; return it to a ruler to delete.",
+                        "Escape: cancel the guide drag.",
+                    ],
+                )
+            )
+        aids.repaint()
+
+    def set_scene_grid_visible(self, enabled):
+        self.view.raster_aids.configure(export_grid_visible=enabled)
+        self.update_map_info()
+        if enabled and self.view.export_grid_frame is None:
+            self.show_tool_settings("Scene grid")
+
+    def set_raster_isolation(self, enabled):
+        self.view.raster_aids.configure(isolate_regions=enabled)
+        self.view.update_image()
+
+    def native_preview_failed(self, message):
+        self.view.raster_aids.configure(full_resolution=False)
+        self.warning("Native raster resolution", message)
+
     def select_tool_set(self, key, activate=True):
-        if key != self.current_tool_set:
+        changed = key != self.current_tool_set
+        if changed:
             self.view.cancel_pending()
+        self.switch_region_selection(key)
         self.left_panel.show()
         self.show_sidebar("project")
         self.current_tool_set = key
         self.view.figure_selection = key == "figures"
+        self.view.selection_section = key
+        self.sync_raster_aids()
         self.view.contour_selection_context = key == "geometry"
+        if self.view.session and self.view.raster_aids.settings["isolate_regions"]:
+            self.view.update_image()
         self.apply_section_alignment()
         self.view.update_hover()
         self.update_clipboard_actions()
@@ -1710,8 +2752,72 @@ class MainWindow(QMainWindow):
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.update_size_help()
         self.tool_set_actions[key].setChecked(True)
+        self.tool_set_toolbar.refresh_tabs()
+        self.sync_mode_shortcuts()
         if activate:
             self.activate_mode(self.last_tool_modes[key])
+        if changed:
+            self.rebuild_group_controls()
+
+    def sync_mode_shortcuts(self):
+        modes = {
+            "geometry": ("Edit points", None, None),
+            "figures": ("Select figures", "Move figures", "Rotate figures"),
+            "regions": ("Select regions", "Move regions", "Rotate regions"),
+            "pixels": ("Select raster regions", "Move raster regions", "Rotate raster regions"),
+        }
+        bindings = dict(zip(modes[self.current_tool_set], ("S", "M", "R"), strict=True))
+        for mode, command in self.mode_actions.items():
+            command.setShortcut(bindings.get(mode, ""))
+            parts = command.property("dale_tooltip_parts")
+            if parts:
+                command.setToolTip(
+                    format_tooltip(
+                        parts,
+                        self.language,
+                        command.shortcut(),
+                        condition=command.property("dale_tooltip_condition"),
+                        keys=command.property("dale_tooltip_keys") or [],
+                        title=command.text(),
+                        shortcut_label=command.text(),
+                    )
+                )
+
+    def region_selection_state(self):
+        return {
+            "selected": self.selected_regions,
+            "key": self.region_key,
+            "detached": self.view.detached_selection,
+            "pivot": self.view.region_pivot,
+        }
+
+    def switch_region_selection(self, key):
+        section = "pixels" if key == "pixels" else "regions"
+        if section == self._region_selection_section:
+            return
+        self._region_selection_states[self._region_selection_section] = (
+            self.region_selection_state()
+        )
+        state = self._region_selection_states.get(section, {})
+        self._region_selection_section = section
+        self.selected_regions = state.get("selected", ())
+        self.region_key = state.get("key")
+        self.view.detached_selection = state.get("detached")
+        self.view.region_pivot = state.get("pivot")
+        self.view.region_polygons = ()
+        self.view.selected_path = QPainterPath()
+
+    def reset_region_selections(self):
+        self._region_selection_states = {}
+        self._region_selection_section = (
+            "pixels" if self.current_tool_set == "pixels" else "regions"
+        )
+        self.selected_regions = None
+        self.region_key = None
+        self.view.detached_selection = None
+        self.view.region_pivot = None
+        self.view.region_polygons = ()
+        self.view.selected_path = QPainterPath()
 
     def show_sidebar(self, key):
         if key == "settings" and not self.right_panel_visible:
@@ -1782,6 +2888,14 @@ class MainWindow(QMainWindow):
         self.recent_projects = projects
         self.rebuild_recent_menu()
 
+    def remember_active_dataset(self):
+        if not self.project_path or not self.catalog:
+            return
+        try:
+            save_project_dataset(self.preferences_path, self.project_path, self.catalog.active_key)
+        except OSError:
+            self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
+
     def clear_recent_projects(self):
         try:
             save_recent_projects(self.preferences_path, [])
@@ -1806,6 +2920,11 @@ class MainWindow(QMainWindow):
         mode = self.view.mode
         instructions = {
             "Pan": ["Left-drag: pan the scene image."],
+            "Move guides": [
+                "Drag a guide: move it.",
+                "Double-click a guide: delete it.",
+                "Escape: cancel the guide drag.",
+            ],
             "Edit points": [
                 "Click a line: insert a contour point. Drag a circle: move it.",
                 "Double-click a circle: delete the point. Alt-drag: use enabled "
@@ -1815,6 +2934,7 @@ class MainWindow(QMainWindow):
             ],
             "New line": [
                 "Press, drag, release: draw a contour line.",
+                "Alt: use the enabled alignment buttons.",
                 "Escape: cancel the current gesture.",
             ],
             "New rectangle": [
@@ -1827,6 +2947,7 @@ class MainWindow(QMainWindow):
             "New circle": [
                 "Press: set center. Drag: change radius. Release: create circular contour.",
                 "Ctrl+wheel while drawing: adjust the radius.",
+                "Right-click the circle button: adjust detail.",
                 "Escape: cancel the current gesture.",
             ],
             "Auto-close": [
@@ -1850,7 +2971,7 @@ class MainWindow(QMainWindow):
             ],
             "Select figures": [
                 "Click: toggle the line under the cursor.",
-                "Double-click: select all lines connected by shared vertices.",
+                "Double-click: select or deselect all lines connected by shared vertices.",
                 "Drag over 10 screen pixels: invert lines intersecting the box.",
                 "Empty click clears selection.",
                 "Escape: restore the selection from before dragging.",
@@ -1860,10 +2981,14 @@ class MainWindow(QMainWindow):
                 "Escape: cancel the current gesture.",
             ],
             "Rotate figures": [
-                "Wheel: rotate selected contour lines by 0.1 degrees around their common center.",
+                "Wheel: rotate selected contour lines by the configured step "
+                "around their common center.",
+                "Alt+wheel: rotate by the configured Alt step.",
+                "The center label shows the total angle since this rotation started; "
+                "negative is counterclockwise.",
             ],
             "Select raster regions": [
-                "Click a region: select/deselect. Empty click: clear selection.",
+                "Click a region: select/deselect. Empty click: ask before clearing selection.",
                 "Drag over 10 screen pixels: invert regions intersecting the box.",
                 "Escape: restore the selection from before dragging.",
                 "Raster inside/outside commands use selected regions only.",
@@ -1873,19 +2998,33 @@ class MainWindow(QMainWindow):
                 "Escape: cancel the current gesture.",
             ],
             "Rotate regions": [
-                "Wheel: rotate selected regions by 0.1 degrees around their common center.",
+                "Wheel: rotate selected regions by the configured step around their common center.",
+                "Alt+wheel: rotate by the configured Alt step.",
+                "The center label shows the total angle since this rotation started; "
+                "negative is counterclockwise.",
             ],
             "Erase": [
                 "Drag: erase raster pixels.",
                 "Ctrl+wheel: change this tool's diameter.",
+                "Alt+wheel: change feather width.",
                 "Escape: cancel the current gesture.",
             ],
             "Restore": [
                 "Drag: restore raster pixels.",
                 "Ctrl+wheel: change this tool's diameter.",
+                "Alt+wheel: change feather width.",
                 "Escape: cancel the current gesture.",
             ],
-        }[mode]
+            "Move raster regions": [
+                "Drag selected regions: move. Ctrl+wheel: scale.",
+                "Escape: cancel the current gesture.",
+            ],
+            "Rotate raster regions": [
+                "Wheel: rotate selected regions by the configured step around their common center.",
+                "Alt+wheel: rotate by the configured Alt step.",
+            ],
+            "Scale raster regions": ["Wheel: resize selected raster regions."],
+        }[mode.removesuffix(" square") if mode in RASTER_BRUSHES else mode]
         for key in ("Edit points", "New line"):
             action = self.mode_actions[key]
             parts = action.property("dale_default_tooltip_parts")
@@ -1912,8 +3051,8 @@ class MainWindow(QMainWindow):
             instructions = [
                 *instructions,
                 (
-                    "The nearest region vertex is highlighted; "
-                    "dragging keeps this vertex as the anchor."
+                    "The nearest vertex or common center is highlighted; "
+                    "dragging keeps this point as the anchor."
                 ),
                 "Alt: use the enabled region point/guide alignment buttons.",
                 (
@@ -1925,7 +3064,7 @@ class MainWindow(QMainWindow):
             instructions = [
                 *instructions,
                 (
-                    "The nearest contour vertex is highlighted and stays the grab point "
+                    "The nearest vertex or common center is highlighted and stays the grab point "
                     "while dragging."
                 ),
                 "Alt: use the enabled contour point/guide alignment buttons.",
@@ -1937,7 +3076,16 @@ class MainWindow(QMainWindow):
         if mode in ("Edit points", "Erase lines"):
             instructions = [
                 *instructions,
-                "Right-click the tool button: configure the connection question.",
+                "Right-click: open tool settings.",
+            ]
+        if mode in ("Edit points", "New line", "New rectangle", *REGION_TOOLS, *FIGURE_TOOLS):
+            instructions = [
+                *instructions,
+                (
+                    "With guide alignment enabled, hover stationary vertices while dragging "
+                    "or placing. Their X/Y guides stay available until the gesture ends; "
+                    "hold Alt to align."
+                ),
             ]
         lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
         lines.append(self.t("Right-drag: pan the scene image."))
@@ -1954,13 +3102,33 @@ class MainWindow(QMainWindow):
             label.setText("\n".join(lines))
 
     def activate_mode(self, mode, prompt=True):
-        if mode in (*MOVE_TOOLS, *ROTATE_TOOLS) and prompt:
+        if (
+            not prompt
+            and self.view.session
+            and self.view.session.source.image_path
+            and self.view.raster_aids.settings["rulers"]
+            and self.view.raster_aids.settings["move_guides"]
+        ):
+            mode = "Move guides"
+        if mode == "Move guides" and not (
+            self.view.session
+            and self.view.session.source.image_path
+            and self.view.raster_aids.settings["rulers"]
+        ):
+            mode = self.last_tool_modes[self.current_tool_set]
+        if mode in (*MOVE_TOOLS, *ROTATE_TOOLS, "Scale raster regions") and prompt:
             if not (self.view.figure_line_ids if mode in FIGURE_TOOLS else self.selected_regions):
-                mode = "Select figures" if mode in FIGURE_TOOLS else "Select regions"
-        if mode != "Pan":
+                mode = (
+                    "Select figures"
+                    if mode in FIGURE_TOOLS
+                    else "Select raster regions"
+                    if mode in RASTER_TRANSFORM_TOOLS
+                    else "Select regions"
+                )
+        if mode not in ("Pan", "Move guides"):
             key = (
                 "pixels"
-                if mode in ("Erase", "Restore", "Select raster regions")
+                if mode in (*RASTER_BRUSHES, "Select raster regions", *RASTER_TRANSFORM_TOOLS)
                 else "figures"
                 if mode in FIGURE_TOOLS
                 else "regions"
@@ -1971,6 +3139,9 @@ class MainWindow(QMainWindow):
             self.select_tool_set(key, activate=False)
         self.mode_actions[mode].setChecked(True)
         self.view.set_mode(mode)
+        guide_editing = mode == "Move guides"
+        if self.view.raster_aids.settings["move_guides"] != guide_editing:
+            self.view.raster_aids.configure(move_guides=guide_editing)
         if mode in SELECTION_TOOLS and self.selected_regions is None:
             self.selected_regions = ()
         self.update_map_info()
@@ -1985,6 +3156,8 @@ class MainWindow(QMainWindow):
         for control, value in (
             (self.brush_control, self.view.raster_diameters["Erase"]),
             (self.restore_brush_control, self.view.raster_diameters["Restore"]),
+            (self.square_brush_control, self.view.raster_diameters["Erase square"]),
+            (self.square_restore_control, self.view.raster_diameters["Restore square"]),
             (self.geometry_brush_control, self.view.geometry_diameters["Erase lines"]),
             (self.vertex_brush_control, self.view.geometry_diameters["Erase vertices"]),
             (self.auto_close_control, self.view.auto_close_distance),
@@ -2014,12 +3187,46 @@ class MainWindow(QMainWindow):
             event.type() == QEvent.Type.Wheel
             and isinstance(watched, QWidget)
             and watched.window() == self
+            and hasattr(self, "top_panels_scroll")
+            and self.top_panels_scroll.isAncestorOf(watched)
+            and not event.modifiers()
+            & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
+        ):
+            self.top_panels_scroll.scroll_wheel(event)
+            return True
+        if (
+            event.type() == QEvent.Type.Wheel
+            and isinstance(watched, QWidget)
+            and watched.window() == self
+            and event.modifiers() & Qt.KeyboardModifier.AltModifier
+            and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            control = watched
+            mode = self.view.mode
+            while control is not None:
+                if isinstance(control, SizedToolButton):
+                    mode = control.defaultAction().property("dale_tool_key")
+                    break
+                control = control.parentWidget()
+            if mode in RASTER_BRUSHES:
+                delta = event.angleDelta().y() or event.angleDelta().x()
+                self.view.adjust_raster_feather(mode, delta / 120)
+                event.accept()
+                return True
+        if (
+            self.group_manager
+            and isinstance(watched, QWidget)
+            and (watched is self.group_manager or self.group_manager.isAncestorOf(watched))
+        ):
+            return super().eventFilter(watched, event)
+        if (
+            event.type() == QEvent.Type.Wheel
+            and isinstance(watched, QWidget)
+            and watched.window() == self
             and self.view.mode in ROTATE_TOOLS
             and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
         ):
-            steps = event.angleDelta().y() / 120
-            if steps:
-                self.view.transform_regions(angle=(round(steps) or (1 if steps > 0 else -1)) / 10)
+            self.view.rotate_wheel_event(event)
             event.accept()
             return True
         if (
@@ -2034,19 +3241,23 @@ class MainWindow(QMainWindow):
                 sizeable = (
                     self.brush_control,
                     self.restore_brush_control,
+                    self.square_brush_control,
+                    self.square_restore_control,
                     self.global_close_control,
                     self.geometry_brush_control,
                     self.vertex_brush_control,
                     self.auto_close_control,
                     self.snap_distance,
-                    self.right_angle_distance,
+                    self.right_angle_tolerance,
                     self.contour_alignment_distance,
                     self.region_point_distance,
                     self.region_guide_distance,
                     self.figure_point_distance,
                     self.figure_guide_distance,
+                    self.extension_distance,
                     self.gap_tolerance,
                     self.contour_offset,
+                    self.raster_contour_offset,
                 )
                 while control is not None and control not in sizeable:
                     if isinstance(control, SizedToolButton):
@@ -2083,23 +3294,38 @@ class MainWindow(QMainWindow):
         self.view.snap_enabled = (
             actions[f"{prefix} point alignment"].isChecked()
             if actions
+            else False
+            if self.current_tool_set == "pixels"
             else self.snap_action.isChecked()
         )
         self.view.contour_alignment = (
             actions[f"{prefix} guide alignment"].isChecked()
             if actions
+            else False
+            if self.current_tool_set == "pixels"
             else self.alignment_actions["contour_alignment"].isChecked()
         )
         self.view.right_angle_alignment = (
             self.current_tool_set == "geometry"
             and self.alignment_actions["right_angle_alignment"].isChecked()
         )
+        self.view.extension_alignment = (
+            self.current_tool_set == "figures"
+            and self.figure_alignment_actions["Figure extension alignment"].isChecked()
+        )
         self.view.snap = None
+        self.view.extension_guide = None
         self.view.viewport().update()
 
     def alignment_ui_state(self):
         return {
             "snap_enabled": self.snap_action.isChecked(),
+            "right_angle_neighbours": self.view.right_angle_neighbours,
+            "right_angle_own_priority": self.view.right_angle_own_priority,
+            "figure_extension_alignment": self.figure_alignment_actions[
+                "Figure extension alignment"
+            ].isChecked(),
+            "extension_connected": self.view.extension_connected,
             **{key: command.isChecked() for key, command in self.alignment_actions.items()},
             **{
                 f"{prefix}_{kind}_alignment": actions[
@@ -2114,6 +3340,12 @@ class MainWindow(QMainWindow):
         }
 
     def restore_alignment_state(self, settings):
+        self.view.extension_connected = settings.get("extension_connected", False)
+        self.figure_alignment_actions["Figure extension alignment"].setChecked(
+            settings.get("figure_extension_alignment", False)
+        )
+        self.view.right_angle_neighbours = settings.get("right_angle_neighbours", True)
+        self.view.right_angle_own_priority = settings.get("right_angle_own_priority", True)
         self.snap_action.setChecked(settings.get("snap_enabled", True))
         for key, command in self.alignment_actions.items():
             command.setChecked(settings.get(key, False))
@@ -2131,6 +3363,8 @@ class MainWindow(QMainWindow):
         if self.worker or not self.can_discard():
             return
         self.view.clear_map()
+        self.custom_colors = DEFAULT_CUSTOM_COLORS
+        self.reset_region_selections()
         self.bounds_preview.clear()
         if self.bounds_preview.worker:
             self.bounds_preview.worker.wait()
@@ -2192,7 +3426,7 @@ class MainWindow(QMainWindow):
                 self._project_tool_values["artwork_offset_px"]
                 if self.use_global_tool_settings and self._project_tool_values is not None
                 else session.contour_offset
-            )
+            ), self.custom_colors
         return (
             tuple(session.operations),
             tuple(session.future),
@@ -2201,37 +3435,83 @@ class MainWindow(QMainWindow):
             self._project_tool_values["artwork_offset_px"]
             if self.use_global_tool_settings and self._project_tool_values is not None
             else session.contour_offset,
+            self.custom_colors,
         )
 
     def ui_state(self):
-        center = self.view.mapToScene(self.view.viewport().rect().center())
-        detached = self.view.detached_selection
+        center = self.view.camera_center()
+        region_states = {
+            **self._region_selection_states,
+            self._region_selection_section: self.region_selection_state(),
+        }
+        region_key = tuple(p.wkb for p in self.available_regions())
+        section_selections = {}
+        for section in ("regions", "pixels"):
+            state = region_states.get(section, {})
+            frozen = state.get("detached")
+            valid_frozen = bool(
+                frozen and self.view.session and frozen["geometry"] == self.view.session.geometry()
+            )
+            section_selections[section] = (
+                state.get("selected", ()) if valid_frozen or state.get("key") == region_key else ()
+            )
+        detached = region_states.get("regions", {}).get("detached")
         selection = None
         if detached and self.view.session and detached["geometry"] == self.view.session.geometry():
             selection = {
                 "lines": list(detached["line_ids"]),
                 "polygons": [p.wkb_hex for p in detached["polygons"]],
-                "pivot": list(self.view.region_pivot or detached["polygons"][0].centroid.coords[0]),
+                "pivot": list(
+                    region_states["regions"].get("pivot")
+                    or detached["polygons"][0].centroid.coords[0]
+                ),
+            }
+        raster_settings = self.view.raster_aids.snapshot()
+        raster_detached = region_states.get("pixels", {}).get("detached")
+        raster_settings["selection"] = None
+        if (
+            raster_detached
+            and self.view.session
+            and raster_detached["geometry"] == self.view.session.geometry()
+        ):
+            raster_settings["selection"] = {
+                "lines": list(raster_detached["line_ids"]),
+                "polygons": [p.wkb_hex for p in raster_detached["polygons"]],
+                "pivot": list(
+                    region_states["pixels"].get("pivot")
+                    or raster_detached["polygons"][0].centroid.coords[0]
+                ),
             }
         return {
+            "raster_aids": raster_settings,
+            "raster_brushes": brush_settings(self.view.raster_brushes),
+            "raster_erase_square_diameter": self.view.raster_diameters["Erase square"],
+            "raster_restore_square_diameter": self.view.raster_diameters["Restore square"],
+            **group_ui_state(self.catalog.current.ui if self.catalog else {}),
+            "groups": [group.encode() for group in self.all_selection_groups()],
+            "active_group": self.active_selection_group(),
             "detached_region_selection": selection,
             "figure_lines": list(self.view.figure_line_ids),
             "figure_pivot": list(self.view.figure_pivot) if self.view.figure_pivot else None,
             "raster_erase_diameter": self.view.raster_diameters["Erase"],
             "raster_restore_diameter": self.view.raster_diameters["Restore"],
             "export_regions": self.selected_regions,
+            "section_region_selections": section_selections,
             "move_related_lines": self.view.move_related,
             "mode": self.view.mode,
             "show_walls": self.view.show_walls,
             "zoom": self.view.transform().m11(),
             "center": [center.x(), center.y()],
+            **{key: control.value() for key, control in self.rotation_value_controls.items()},
             "auto_close_distance_px": self.view.auto_close_distance,
             "global_close_distance_px": self.global_close_control.value(),
             "language": self.language,
             **self.alignment_ui_state(),
             "snap_distance_px": self.view.snap_distance,
-            "right_angle_distance_px": self.view.right_angle_distance_px,
+            "circle_detail_steps": self.view.circle_detail_steps,
+            "right_angle_tolerance_deg": self.view.right_angle_tolerance_deg,
             "contour_alignment_distance_px": self.view.contour_alignment_distance_px,
+            "extension_distance_px": self.view.extension_distance_px,
             "line_eraser_diameter": self.view.geometry_diameters["Erase lines"],
             "vertex_eraser_diameter": self.view.geometry_diameters["Erase vertices"],
             "tool_set": self.current_tool_set,
@@ -2241,9 +3521,15 @@ class MainWindow(QMainWindow):
         }
 
     def update_clipboard_actions(self):
+        if self.group_manager and self.group_manager.isVisible():
+            self.group_manager.update_actions()
         if not hasattr(self, "paste_regions_action"):
             return
         figures = self.current_tool_set == "figures"
+        paste_figures = figures or (
+            self.current_tool_set not in ("figures", "regions")
+            and self._clipboard_section == "figures"
+        )
         if hasattr(self, "select_all_action"):
             contours = self.current_tool_set in ("geometry", "figures")
             caption = "Select all contour lines" if contours else "Select all regions"
@@ -2276,7 +3562,7 @@ class MainWindow(QMainWindow):
             ),
             (
                 self.paste_regions_action,
-                "Paste contours" if figures else "Paste region contours",
+                "Paste contours" if paste_figures else "Paste region contours",
             ),
         ):
             if command.property("dale_display_key") != caption:
@@ -2285,15 +3571,20 @@ class MainWindow(QMainWindow):
                 command.setText(self.t(caption))
             parts = command.property("dale_default_tooltip_parts")
             if parts:
-                if figures and command == self.copy_regions_action:
+                contour_subject = figures if command == self.copy_regions_action else paste_figures
+                if contour_subject and command == self.copy_regions_action:
                     parts = ["Copy selected contour lines. Image pixels stay in place."]
-                elif figures:
+                elif contour_subject:
                     parts = ["Place copied contour lines. Image pixels stay in place."]
                 condition = (
-                    "At least one contour line is selected."
-                    if figures and command == self.copy_regions_action
+                    "Contours is active, a line is selected "
+                    "and no gesture or export is in progress."
+                    if contour_subject and command == self.copy_regions_action
                     else "Contour lines have been copied to the application clipboard."
-                    if figures
+                    if contour_subject
+                    else "Regions is active, a region is selected "
+                    "and no gesture or export is in progress."
+                    if command == self.copy_regions_action
                     else command.property("dale_default_tooltip_condition")
                 )
                 command.setProperty("dale_tooltip_parts", parts)
@@ -2309,10 +3600,15 @@ class MainWindow(QMainWindow):
                 if command.toolTip() != help_text:
                     command.setToolTip(help_text)
         available = bool(self.view.session and self.current_tool_set in ("figures", "regions"))
-        copy_enabled = available and bool(
-            self.view.figure_line_ids if figures else self.selected_regions
+        copy_enabled = (
+            available
+            and not self.worker
+            and not self.view.active_gesture
+            and bool(self.view.figure_line_ids if figures else self.selected_regions)
         )
-        paste_enabled = available and self.view.region_clipboard is not None
+        paste_enabled = bool(
+            self.view.session and self.view.region_clipboard is not None and not self.worker
+        )
         # QAction.changed refreshes help; avoid recursive unchanged writes.
         if self.copy_regions_action.isEnabled() != copy_enabled:
             self.copy_regions_action.setEnabled(copy_enabled)
@@ -2335,6 +3631,13 @@ class MainWindow(QMainWindow):
             )
             if self.delete_contours_action.isEnabled() != contour_delete_enabled:
                 self.delete_contours_action.setEnabled(contour_delete_enabled)
+        self.update_main_delete_action()
+        for command in self.mirror_contour_actions.values():
+            enabled = bool(
+                copy_enabled and figures and not self.worker and not self.view.active_gesture
+            )
+            if command.isEnabled() != enabled:
+                command.setEnabled(enabled)
         if hasattr(self, "mask_actions"):
             mask_enabled = bool(
                 self.view.session
@@ -2347,6 +3650,20 @@ class MainWindow(QMainWindow):
             for command in self.mask_actions.values():
                 if command.isEnabled() != mask_enabled:
                     command.setEnabled(mask_enabled)
+
+    def mirror_contours(self, axis):
+        if (
+            not self.view.session
+            or self.current_tool_set != "figures"
+            or not self.view.figure_line_ids
+            or self.worker
+            or self.view.active_gesture
+        ):
+            return
+        try:
+            self.view.transform_regions(mirror=axis)
+        except ValueError as exc:
+            self.warning("Cannot transform contours", str(exc))
 
     def delete_selected_contours(self):
         if (
@@ -2407,7 +3724,13 @@ class MainWindow(QMainWindow):
             self.refresh()
 
     def copy_region_contours(self):
-        if self.view.copy_selected_regions():
+        pointer = self.view.pointer_scene_point()
+        if pointer is not None:
+            self.view.cursor_point = pointer
+        self.view.copy_selected_regions()
+
+    def capture_contour_clipboard(self):
+        if self.view.region_clipboard is not None:
             documents = self.catalog.documents if self.catalog else ()
             source = self.view.session.source
             if source.json_bytes is not None:
@@ -2432,6 +3755,24 @@ class MainWindow(QMainWindow):
                     if hashlib.sha256(d.data).hexdigest() in needed
                 }.values()
             )
+            self.contour_clipboard.store(
+                self.view.region_clipboard,
+                self.view.clipboard_source,
+                self._clipboard_documents,
+                "figures" if self.view.figure_selection else "regions",
+            )
+
+    def restore_contour_clipboard(self):
+        if self.contour_clipboard.content is not None:
+            if self.view.paste_delta is not None:
+                self.view.cancel_pending()
+            (
+                self.view.region_clipboard,
+                self.view.clipboard_source,
+                self._clipboard_documents,
+                self._clipboard_section,
+            ) = self.contour_clipboard.content
+        self.update_clipboard_actions()
 
     def clipboard_source_additions(self):
         if not self.catalog:
@@ -2460,7 +3801,11 @@ class MainWindow(QMainWindow):
     def paste_region_contours(self):
         try:
             self.clipboard_source_additions()
-            if self.view.mode not in TRANSFORM_TOOLS:
+            if self.current_tool_set not in ("figures", "regions"):
+                self.activate_mode(
+                    "Select figures" if self._clipboard_section == "figures" else "Select regions"
+                )
+            elif self.view.mode not in TRANSFORM_TOOLS:
                 self.activate_mode(
                     "Select figures" if self.current_tool_set == "figures" else "Select regions"
                 )
@@ -2497,6 +3842,376 @@ class MainWindow(QMainWindow):
         self.manager_button.setAccessibleName(self.t("Dataset manager"))
         self.manager_button.setToolTip(self.manager_action.toolTip())
         self.manager_button.setEnabled(not self.worker)
+        self.rebuild_group_controls()
+
+    def all_selection_groups(self):
+        value = self.catalog.current.ui.get("groups") if self.catalog else None
+        if value is not self._groups_value:
+            self._groups_cache = decode_groups(value or [])
+            self._groups_value = value
+        return self._groups_cache if value is not None else ()
+
+    def selection_groups(self):
+        sections = self.catalog.current.ui.get("group_sections", {}) if self.catalog else {}
+        return tuple(
+            g
+            for g in self.all_selection_groups()
+            if sections.get(g.id, "regions") == self.current_tool_set
+        )
+
+    def active_selection_group(self):
+        if not self.catalog:
+            return None
+        ui = self.catalog.current.ui
+        identifier = ui.get("section_active_groups", {}).get(
+            self.current_tool_set, ui.get("active_group")
+        )
+        return identifier if identifier in {g.id for g in self.selection_groups()} else None
+
+    def set_active_selection_group(self, identifier):
+        if identifier is not None and identifier not in {g.id for g in self.selection_groups()}:
+            return False
+        ui = self.catalog.current.ui
+        choices = group_ui_state(ui)["section_active_groups"]
+        choices[self.current_tool_set] = identifier
+        ui.update(active_group=identifier, section_active_groups=choices)
+        return True
+
+    def resolved_group_members(self, identifier):
+        if not self.view.session:
+            return frozenset()
+        group = next((g for g in self.selection_groups() if g.id == identifier), None)
+        return group_members(group, self.view.editing_geometry()) if group else frozenset()
+
+    def group_selection_ids(self):
+        if not self.view.session:
+            return frozenset()
+        geometry = self.view.editing_geometry()
+        if self.current_tool_set == "figures":
+            selected = self.view.figure_line_ids
+        elif self.current_tool_set == "geometry":
+            selected = self.view.contour_line_ids
+        elif self.current_tool_set == "pixels":
+            return frozenset(
+                identifier
+                for cell in self.selected_raster_cells()
+                for ring in (cell.shell, *cell.holes)
+                for identifier in ring
+            )
+        else:
+            return boundary_members(geometry, self.view.region_polygons)
+        return frozenset(selected) & {r.id for r in geometry.lineage}
+
+    def selected_raster_cells(self):
+        selected = set(self.view.region_polygons)
+        return tuple(
+            cell for cell, polygon in self.view.raster_region_entries() if polygon in selected
+        )
+
+    def store_selection_groups(self, groups):
+        self.view.finish_rotation()
+        if not self.catalog:
+            catalog = DatasetCatalog(self.view.session, self.project_ui_state())
+            self.catalog = catalog
+            if not self.view.session:
+                self.show_catalog_view(
+                    catalog.current, load_preview(catalog.current.session.source), False
+                )
+        state = group_ui_state(self.catalog.current.ui)
+        current_ids = {g.id for g in self.selection_groups()}
+        others = tuple(g for g in self.all_selection_groups() if g.id not in current_ids)
+        encoded = [g.encode() for g in (*others, *groups)]
+        decode_groups(encoded)
+        live = {g["id"] for g in encoded}
+        sections = {i: section for i, section in state["group_sections"].items() if i in live}
+        sections.update({g.id: self.current_tool_set for g in groups})
+        choices = {
+            section: identifier if identifier in live else None
+            for section, identifier in state["section_active_groups"].items()
+        }
+        self.catalog.current.ui.update(
+            groups=encoded,
+            group_sections=sections,
+            section_active_groups=choices,
+            active_group=choices[self.current_tool_set],
+        )
+        self.rebuild_dataset_controls()
+        self.update_group_rendering()
+
+    def create_selection_group(self):
+        if self.worker or self.view.active_gesture:
+            return
+        groups = self.selection_groups()
+        if len(self.all_selection_groups()) >= 256:
+            return
+        index, names = 1, {g.name for g in groups}
+        while self.t("Group {number}", number=index) in names:
+            index += 1
+        group = SelectionGroup.create(self.t("Group {number}", number=index))
+        self.store_selection_groups((*groups, group))
+        self.set_active_selection_group(group.id)
+        self.rebuild_group_controls()
+
+    def update_selection_group(self, identifier, **values):
+        self.store_selection_groups(
+            tuple(
+                replace(g, **values) if g.id == identifier else g for g in self.selection_groups()
+            )
+        )
+
+    def rename_selection_group(self, identifier):
+        group = next(g for g in self.selection_groups() if g.id == identifier)
+        name, accepted = QInputDialog.getText(
+            self, self.t("Rename group"), self.t("Group name"), text=group.name
+        )
+        if accepted and name.strip():
+            try:
+                self.update_selection_group(identifier, name=name.strip())
+            except ValueError as exc:
+                self.warning("Cannot update group", str(exc))
+
+    def change_group_color(self, identifier):
+        group = next(g for g in self.selection_groups() if g.id == identifier)
+        color = self.choose_project_color(QColor(group.color), self.t("Group color"))
+        if color.isValid():
+            self.update_selection_group(identifier, color=color.name())
+
+    def choose_project_color(self, initial, title):
+        for index, color in enumerate(self.custom_colors):
+            QColorDialog.setCustomColor(index, QColor(color))
+        try:
+            return QColorDialog.getColor(
+                initial, self, title, QColorDialog.ColorDialogOption.DontUseNativeDialog
+            )
+        finally:
+            # Palette editing is independent of accepting the selected object color.
+            self.custom_colors = tuple(
+                QColorDialog.customColor(index).name(QColor.NameFormat.HexArgb)
+                for index in range(QColorDialog.customCount())
+            )
+
+    def delete_selection_group(self, identifier):
+        group = next(g for g in self.selection_groups() if g.id == identifier)
+        answer = self.question(
+            "Delete group",
+            self.t('Delete group "{name}"? Scene elements will remain.', name=group.name),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.store_selection_groups(
+                tuple(g for g in self.selection_groups() if g.id != identifier)
+            )
+
+    def assign_selection_group(self, identifier, add):
+        from dale.raster_transform import assign_cells
+
+        if self.worker or self.view.active_gesture:
+            return
+        selected = self.group_selection_ids()
+        if not selected:
+            return
+        groups = self.selection_groups()
+        priority = max((g.priority for g in groups), default=0) + 1
+        # Renumber the bounded group list before its counter could overflow.
+        if priority > 1_000_000_000:
+            ranks = {g.id: i for i, g in enumerate(sorted(groups, key=lambda g: g.priority))}
+            groups = tuple(replace(g, priority=ranks[g.id]) for g in groups)
+            priority = len(groups)
+        self.store_selection_groups(
+            tuple(
+                replace(
+                    (
+                        assign_cells(
+                            g, self.view.raster_region_entries(), self.selected_raster_cells(), add
+                        )
+                        if self.current_tool_set == "pixels"
+                        else assign_region_cells(
+                            g,
+                            self.view.editing_geometry(),
+                            self.view.region_polygons,
+                            self.available_regions(),
+                            add,
+                        )
+                        if self.current_tool_set == "regions"
+                        else assign_group(g, self.view.session.geometry(), selected, add)
+                    ),
+                    priority=priority if add else g.priority,
+                )
+                if g.id == identifier
+                else g
+                for g in groups
+            )
+        )
+
+    def choose_selection_group(self, index):
+        self.select_selection_group(self.group_control.itemData(index))
+
+    def select_selection_group(self, identifier):
+        if not self.catalog or self.worker or self.view.active_gesture:
+            self.rebuild_group_controls()
+            return
+        self.view.finish_rotation()
+        before = self.raster_selection_snapshot()
+        if not self.set_active_selection_group(identifier):
+            return
+        if identifier is not None:
+            members = self.resolved_group_members(identifier)
+            if self.current_tool_set == "figures":
+                self.view.figure_line_ids = tuple(sorted(members))
+                self.view.figure_pivot = None
+            elif self.current_tool_set == "geometry":
+                self.view.contour_line_ids = tuple(sorted(members))
+                self.view.update_hover()
+            else:
+                self.view.detached_selection = None
+                self.view.region_pivot = None
+                polygons = self.available_regions()
+                self.update_map_info()
+                group = next(g for g in self.selection_groups() if g.id == identifier)
+                if self.current_tool_set == "pixels":
+                    from dale.raster_transform import group_cells
+
+                    entries = self.view.raster_region_entries()
+                    wanted = group_cells(group, entries)
+                    self.selected_regions = tuple(
+                        i for i, (cell, _) in enumerate(entries) if cell in wanted
+                    )
+                else:
+                    self.selected_regions = matched_cells(
+                        group, self.view.editing_geometry(), polygons
+                    )
+            self.update_map_info()
+            self.record_raster_selection(before)
+        self.rebuild_group_controls()
+        self.update_group_rendering()
+
+    def rebuild_group_controls(self):
+        self.group_heading.setText(self.t("Groups"))
+        self.group_manager_button.setAccessibleName(self.t("Group manager"))
+        self.group_manager_button.setToolTip(
+            self.control_help(
+                "Show or hide the floating group manager and group colors.", title="Group manager"
+            )
+        )
+        self.group_control.setToolTip(
+            self.control_help(
+                "Select a group's elements. Each section of this dataset has its own groups.",
+                title="Groups",
+            )
+        )
+        self.group_control.blockSignals(True)
+        self.group_control.clear()
+        self.group_control.addItem(self.t("All group colors"), None)
+        for group in self.selection_groups():
+            self.group_control.addItem(group.name, group.id)
+            self.group_control.setItemData(
+                self.group_control.count() - 1, QColor(group.color), Qt.ItemDataRole.DecorationRole
+            )
+        self.group_control.setCurrentIndex(
+            max(0, self.group_control.findData(self.active_selection_group()))
+        )
+        self.group_control.blockSignals(False)
+        self.group_control.setEnabled(bool(self.selection_groups()) and not self.worker)
+        if self.group_manager:
+            self.group_manager.rebuild()
+        self.update_group_rendering()
+
+    def toggle_group_manager(self, checked=False):
+        self.view.finish_rotation()
+        if self.group_manager and self.group_manager.isVisible():
+            self.group_manager.hide()
+            return
+        if self.group_manager is None:
+            self.group_manager = GroupManager(self)
+            viewport = self.view.viewport()
+            point = viewport.mapFromGlobal(
+                self.group_manager_button.mapToGlobal(QPoint(self.group_manager_button.width(), 0))
+            )
+            self.group_manager.constrain_position(point, dock=False)
+        self.group_manager.rebuild()
+        self.group_manager.show()
+        self.group_manager.raise_()
+
+    def update_group_rendering(self):
+        self._group_render_cache = None
+        self.view.viewport().update()
+
+    def group_overlay(self):
+        if not self.group_manager or not self.group_manager.isVisible() or not self.view.session:
+            return (), ()
+        from dale.canvas import line_path
+
+        if self.current_tool_set == "pixels":
+            from dale.raster_transform import group_cells
+
+            entries = self.view.raster_region_entries(preview=True)
+            groups = self.selection_groups()
+            active = self.active_selection_group()
+            key = entries, groups, active, self.view.region_polygons, self.view.show_walls
+            if self._group_render_cache and key == self._group_render_cache[0]:
+                return self._group_render_cache[1]
+            colors = {}
+            for group in sorted(groups, key=lambda g: (g.id == active, g.priority)):
+                colors.update({cell: group.color for cell in group_cells(group, entries)})
+            result = (
+                tuple(
+                    (polygon_path(p), colors[cell])
+                    for cell, p in entries
+                    if cell in colors and self.view.show_walls
+                ),
+                tuple(
+                    (polygon_path(p), colors[cell])
+                    for cell, p in entries
+                    if cell in colors and p in self.view.region_polygons
+                ),
+            )
+            self._group_render_cache = key, result
+            return result
+
+        geometry = self.view.editing_geometry()
+        groups = self.selection_groups()
+        active = self.active_selection_group()
+        selected = (
+            self.view.region_polygons if self.current_tool_set in ("regions", "pixels") else ()
+        )
+        highlight = frozenset(
+            self.view.figure_line_ids
+            if self.current_tool_set == "figures"
+            else self.view.contour_line_ids
+            if self.current_tool_set == "geometry"
+            else ()
+        )
+        key = (
+            geometry,
+            geometry.lineage,
+            geometry.ancestry,
+            groups,
+            active,
+            tuple(p.wkb for p in selected),
+            self.view.show_walls,
+            highlight,
+        )
+        if self._group_render_cache and key == self._group_render_cache[0]:
+            return self._group_render_cache[1]
+        colors, fills = {}, {}
+        for group in sorted(groups, key=lambda g: (g.id == active, g.priority)):
+            members = group_members(group, geometry)
+            colors.update({i: group.color for i in members})
+            for i in matched_cells(group, geometry, selected):
+                fills[i] = group.color
+        paths = {}
+        for edge, record in zip(
+            geometry_edges(geometry.walls, geometry.closures), geometry.lineage, strict=True
+        ):
+            if record.id in colors and (self.view.show_walls or record.id in highlight):
+                paths.setdefault(colors[record.id], []).append(edge)
+        result = (
+            tuple((line_path(edges), color) for color, edges in paths.items()),
+            tuple((polygon_path(selected[i]), color) for i, color in fills.items()),
+        )
+        self._group_render_cache = key, result
+        return result
 
     def manage_datasets(self):
         self.view.finish_rotation()
@@ -2530,18 +4245,13 @@ class MainWindow(QMainWindow):
                 else load_preview(source)
             )
             self.catalog = catalog
-            self.show_catalog_view(
-                catalog.current,
-                preview,
-                True,
-                center=open_id is not None or previous_id != identifier,
-            )
+            self.show_catalog_view(catalog.current, preview, True)
             return True
         except Exception as exc:
             self.catalog = previous_catalog
             if previous_catalog:
                 old = replace(previous_catalog.current, ui=previous_ui)
-                self.show_catalog_view(old, previous_preview, True, center=False)
+                self.show_catalog_view(old, previous_preview, True)
             else:
                 self.view.clear_map()
                 self.configure_json_repair(False)
@@ -2571,11 +4281,16 @@ class MainWindow(QMainWindow):
             return
         self.show_catalog_view(draft, preview, True)
 
-    def show_catalog_view(self, draft, preview, existing, *, center=True):
+    def show_catalog_view(self, draft, preview, existing):
         self.view.safe_json_repair = False
         self.view.assign(draft.session, preview)
-        self.selected_regions = None
+        self.reset_region_selections()
         settings = {**self.project_ui_state(), **draft.ui}
+        self.view.raster_aids.restore(draft.ui.get("raster_aids"))
+        self.view.raster_brushes = brush_settings(draft.ui.get("raster_brushes"))
+        self.sync_raster_aids()
+        if "section_region_selections" not in draft.ui:
+            settings.pop("section_region_selections", None)
         self._project_tool_values = {
             k: settings.get(k, draft.session.contour_offset)
             if k == "artwork_offset_px"
@@ -2602,19 +4317,21 @@ class MainWindow(QMainWindow):
         self.walls_action.setChecked(self.view.show_walls)
         self.restore_alignment_state(settings)
         self.activate_mode(settings.get("mode", "Edit points"), prompt=False)
-        self.restore_region_selection(settings)
-        if "zoom" in settings:
-            self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
-            if not center:
-                self.view.centerOn(*settings["center"])
         self.refresh()
-        self.selected_regions = settings.get("export_regions")
+        self.restore_region_selection(settings)
         self.update_map_info()
         self.update_project_info()
         self.rebuild_dataset_controls()
         self.update_clipboard_actions()
-        if center:
-            self.view.center_map()
+        self.restore_camera(settings)
+        self.remember_active_dataset()
+
+    def restore_camera(self, settings):
+        if "zoom" in settings:
+            self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
+        if "center" in settings:
+            self.view.centerOn(*settings["center"])
+        self.view.update_hover()
 
     def export_dataset_to_project(self, catalog, identifier):
         if self.worker:
@@ -2683,15 +4400,13 @@ class MainWindow(QMainWindow):
         path = self.project_path
         if path is None or save_as:
             filename = (
-                path.name
+                path.stem
                 if path
                 else Path(
                     self.catalog.base_session.source.name
                     if self.catalog
                     else self.view.session.source.name
-                )
-                .with_suffix(".dale")
-                .name
+                ).stem
             )
             default = (self.output_directory or (path.parent if path else Path.cwd())) / filename
             selected, _ = QFileDialog.getSaveFileName(
@@ -2711,11 +4426,18 @@ class MainWindow(QMainWindow):
                     project_session, contour_offset=self._project_tool_values["artwork_offset_px"]
                 )
                 project_ui.update(self._project_tool_values)
-            save_project(project_session, path, project_ui, catalog=self.catalog)
+            save_project(
+                project_session,
+                path,
+                project_ui,
+                catalog=self.catalog,
+                custom_colors=list(self.custom_colors),
+            )
             self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
             self.remember_recent_project(path)
+            self.remember_active_dataset()
             self.update_project_info()
             self.statusBar().showMessage(self.t("Saved complete project: {path}", path=path), 10000)
             return True
@@ -2745,16 +4467,21 @@ class MainWindow(QMainWindow):
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             loaded = load_project(path)
             loaded.catalog = DatasetCatalog.from_catalog(loaded.catalog)
+            remembered = load_project_dataset(self.preferences_path, path)
+            if remembered in loaded.catalog.views:
+                loaded.catalog.activate(remembered)
             loaded.session = loaded.catalog.current.session
             loaded.ui_state = loaded.catalog.current.ui
             preview = load_preview(loaded.session.source)
             self.view.safe_json_repair = False
             self.catalog = loaded.catalog
             self.view.assign(loaded.session, preview)
+            self.reset_region_selections()
             if self.loaded_project:
                 self.loaded_project.close()
             self.loaded_project, loaded = loaded, None
             session, settings = self.loaded_project.session, self.loaded_project.ui_state
+            self.custom_colors = self.loaded_project.custom_colors
             self.configure_json_repair(settings["safe_json_repair"])
             self.view.source_layer = settings["source_layer"]
             self._project_tool_values = {
@@ -2777,6 +4504,9 @@ class MainWindow(QMainWindow):
                 control.blockSignals(False)
             self.apply_tool_values(active_tool_values)
             self.restore_alignment_state(settings)
+            self.view.raster_aids.restore(settings.get("raster_aids"))
+            self.view.raster_brushes = brush_settings(settings.get("raster_brushes"))
+            self.sync_raster_aids()
             self.walls_action.setChecked(settings["show_walls"])
             self.view.show_walls = settings["show_walls"]
             self.select_tool_set(settings["tool_set"], activate=False)
@@ -2786,7 +4516,6 @@ class MainWindow(QMainWindow):
             self.selected_regions = settings["export_regions"]
             self.update_map_info()
             self.restore_region_selection(settings)
-            self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
             self.project_path = path
             self.remember_directory("input", path.resolve().parent)
             self.remember_recent_project(path)
@@ -2794,8 +4523,9 @@ class MainWindow(QMainWindow):
             self.rebuild_dataset_controls()
             self.update_project_info()
             self.refresh()
-            self.view.center_map()
+            self.restore_camera(settings)
             self.remember_tool_values()
+            self.remember_active_dataset()
             return True
         except Exception as exc:
             if loaded:
@@ -2812,6 +4542,8 @@ class MainWindow(QMainWindow):
             self.t("Save JSON…"),
             str((self.output_directory or project_path.parent) / Path(document.name).name),
             self.t("Scene JSON (*.json)"),
+            "",
+            QFileDialog.Option.DontConfirmOverwrite,
         )
         if not selected:
             return
@@ -2834,8 +4566,12 @@ class MainWindow(QMainWindow):
                 if p
             )
         try:
-            write_json_copy(document.data, destination, sources)
+            destination = write_json_copy(
+                document.data, destination, sources, conflict=self.confirm_export_file
+            )
             self.remember_directory("output", destination.resolve().parent)
+        except ExportCancelled:
+            return
         except Exception as exc:
             self.warning("Cannot export scene JSON", str(exc))
 
@@ -2895,6 +4631,8 @@ class MainWindow(QMainWindow):
                 ),
                 preview,
             )
+            self.reset_region_selections()
+            self.custom_colors = DEFAULT_CUSTOM_COLORS
             self.catalog = DatasetCatalog(self.view.session)
             self.configure_json_repair()
             self._project_tool_values = self.current_tool_values()
@@ -2927,6 +4665,20 @@ class MainWindow(QMainWindow):
         except OSError:
             self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
 
+    def refresh_geometry_edit(self):
+        self.refresh()
+        if self.current_tool_set == "geometry":
+            self._region_selection_states.clear()
+            self.view.detached_selection = None
+            self.view.region_pivot = self.view.figure_pivot = None
+            self.view.figure_pivot_edges = ()
+            self.view.figure_line_ids = ()
+            self.view.region_polygons = ()
+            self.view.selected_path = QPainterPath()
+            self.selected_regions = ()
+            self.marquee_selection = self.figure_marquee = None
+            self.update_map_info()
+
     def refresh(self):
         self.view.property_documents = self.catalog.documents if self.catalog else ()
         self.update_clipboard_actions()
@@ -2954,6 +4706,7 @@ class MainWindow(QMainWindow):
 
     def select_region(self, index):
         self.view.finish_rotation()
+        before = self.raster_selection_snapshot()
         if self.current_tool_set == "figures":
             data = self.region_control.itemData(index)
             self.view.figure_line_ids = tuple(data or ())
@@ -2965,28 +4718,44 @@ class MainWindow(QMainWindow):
         self.selected_regions = None if data is None else tuple(data)
         self.view.region_pivot = None
         self.update_map_info()
+        self.record_raster_selection(before)
 
     def toggle_region_at(self, point):
+        before = self.raster_selection_snapshot()
+        polygons = self.available_regions() if self.view.detached_selection else self.regions
+        hit = min(
+            (i for i, polygon in enumerate(polygons) if polygon.covers(ShapePoint(point))),
+            key=lambda i: polygons[i].area,
+            default=None,
+        )
+        if hit is None:
+            if (
+                before is not None
+                and before.polygons
+                and self.question(
+                    "Clear selection",
+                    "Do you want to deselect all regions?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                != QMessageBox.StandardButton.Yes
+            ):
+                return
+            self.clear_selection()
+            return
         if self.view.detached_selection:
             self.view.detached_selection = None
             self.selected_regions = ()
             self.update_map_info()
         self.view.region_pivot = None
-        hit = min(
-            (i for i, polygon in enumerate(self.regions) if polygon.covers(ShapePoint(point))),
-            key=lambda i: self.regions[i].area,
-            default=None,
-        )
         selected = set(self.selected_regions or ())
-        if hit is None:
-            self.clear_selection()
-            return
-        elif hit in selected:
+        if hit in selected:
             selected.remove(hit)
         else:
             selected.add(hit)
         self.selected_regions = tuple(sorted(selected))
         self.update_map_info()
+        self.record_raster_selection(before)
 
     def available_regions(self):
         return self.view.selectable_regions()
@@ -3021,7 +4790,11 @@ class MainWindow(QMainWindow):
             return
         selected = set(first["before"] if first is not None else before)
         if event.get("double"):
-            selected.update(hit[2].line_ids)
+            component = set(hit[2].line_ids)
+            if component.issubset(selected):
+                selected.difference_update(component)
+            else:
+                selected.update(component)
         elif hit[1] in selected:
             selected.remove(hit[1])
         else:
@@ -3062,6 +4835,7 @@ class MainWindow(QMainWindow):
         phase = event["phase"]
         if phase == "begin":
             self.marquee_selection = {
+                "history": self.raster_selection_snapshot(),
                 "selected": self.selected_regions,
                 "detached": self.view.detached_selection,
                 "pivot": self.view.region_pivot,
@@ -3102,11 +4876,16 @@ class MainWindow(QMainWindow):
         else:
             self.marquee_selection = None
             self.update_clipboard_actions()
+            self.record_raster_selection(original["history"])
 
     def select_transformed_regions(self, result):
+        if self.current_tool_set == "pixels" and result.get("raster_cells"):
+            self.select_raster_cells(result["raster_cells"], result["pivot"])
+            return
         if self.current_tool_set == "figures":
             self.view.figure_line_ids = tuple(result.get("line_ids", ()))
             self.view.figure_pivot = result["pivot"]
+            self.view.figure_pivot_edges = self.view.selected_figure_edges()
             self.update_map_info()
             return
         polygons = result["polygons"]
@@ -3119,29 +4898,59 @@ class MainWindow(QMainWindow):
         self.update_map_info()
         self.view.region_pivot = result["pivot"]
 
+    def select_raster_cells(self, cells, pivot=None):
+        self.view.detached_selection = None
+        self.selected_regions = ()
+        self.update_map_info()
+        wanted = set(cells)
+        self.selected_regions = tuple(
+            i for i, (cell, _) in enumerate(self.view.raster_region_entries()) if cell in wanted
+        )
+        self.update_map_info()
+        self.view.region_pivot = pivot
+
     def restore_region_selection(self, settings):
         from shapely import from_wkb
 
         live = {r.id for r in self.view.session.geometry().lineage}
         self.view.figure_line_ids = tuple(i for i in settings.get("figure_lines", ()) if i in live)
-        pivot = settings.get("figure_pivot")
-        self.view.figure_pivot = tuple(pivot) if pivot is not None else None
+        # Pivot is derived UI data; stored grab anchors must not become rotation centers.
+        self.view.figure_pivot = None
+        self.view.figure_pivot_edges = ()
 
-        selection = settings.get("detached_region_selection")
-        if selection and set(selection["lines"]).issubset(
-            {r.id for r in self.view.session.geometry().lineage}
+        key = tuple(p.wkb for p in self.available_regions())
+        selections = settings.get("section_region_selections") or {
+            self._region_selection_section: settings.get("export_regions")
+        }
+        self._region_selection_states = {
+            section: {"selected": selections.get(section, ()), "key": key}
+            for section in ("regions", "pixels")
+        }
+        for section, selection in (
+            ("regions", settings.get("detached_region_selection")),
+            ("pixels", settings.get("raster_aids", {}).get("selection")),
         ):
+            if not selection or not set(selection["lines"]).issubset(
+                {r.id for r in self.view.session.geometry().lineage}
+            ):
+                continue
             polygons = tuple(from_wkb(bytes.fromhex(p)) for p in selection["polygons"])
-            self.view.detached_selection = {
+            detached = {
                 "geometry": self.view.session.geometry(),
                 "polygons": polygons,
                 "line_ids": tuple(selection["lines"]),
             }
-            self.selected_regions = tuple(range(len(polygons)))
-            self.view.region_pivot = tuple(selection["pivot"])
-            self.update_map_info()
-        if self.current_tool_set == "figures":
-            self.update_map_info()
+            self._region_selection_states[section].update(
+                selected=tuple(range(len(polygons))),
+                detached=detached,
+                pivot=tuple(selection["pivot"]),
+            )
+        state = self._region_selection_states[self._region_selection_section]
+        self.selected_regions = state["selected"]
+        self.region_key = state["key"]
+        self.view.detached_selection = state.get("detached")
+        self.view.region_pivot = state.get("pivot")
+        self.update_map_info()
 
     def update_figure_info(self):
         session = self.view.session
@@ -3187,6 +4996,8 @@ class MainWindow(QMainWindow):
         except ValueError:
             selected = ()
         self.update_png_info(session, selected)
+        if self.view.raster_aids.settings["isolate_regions"]:
+            self.view.update_image()
 
     def update_map_info(self):
         if self.current_tool_set == "figures":
@@ -3204,10 +5015,12 @@ class MainWindow(QMainWindow):
             and self.current_tool_set not in ("regions", "figures")
         ):
             self.bounds_preview.clear()
-            self.regions, self.selected_regions = (), None
+            self.regions = ()
             self.view.selected_path = QPainterPath()
+            self.region_control.blockSignals(True)
             self.region_control.clear()
             self.region_control.setEnabled(False)
+            self.region_control.blockSignals(False)
             layers, ambiguous = infer_layers(
                 session.source, session.geometry(), self.view.property_documents
             )
@@ -3313,7 +5126,35 @@ class MainWindow(QMainWindow):
         self.update_png_info(session, selected)
 
     def update_png_info(self, session, selected):
-        result = self.bounds_preview.request(session, selected)
+        settings = self.view.raster_aids.settings
+        self.view.preview_merge_adjacent = settings["preview_merge"] is True
+        grid = self.size_to_grid
+        grid_size = settings["export_grid_size"] or None
+        self.view.export_grid_frame = None
+        if settings["export_grid_visible"]:
+            try:
+                self.view.export_grid_frame = export_grid(session, grid_size)
+            except ValueError:
+                pass  # The Information block reports invalid placement settings.
+        if self.current_tool_set == "pixels" and settings["isolate_regions"]:
+            grid = settings["preview_grid"]
+            try:
+                selected = tuple(
+                    p
+                    for _, p in selected_export_regions(
+                        self.view.region_polygons,
+                        settings["raster_offset"],
+                        merge_adjacent=self.view.preview_merge_adjacent,
+                    )
+                )
+            except ValueError:
+                selected = ()
+        if self.view.raster_aids.settings["isolate_regions"]:
+            self.view.update_image()
+        result = self.bounds_preview.request(
+            session, selected, size_to_grid=grid, grid_size=grid_size
+        )
+        self.view.export_preview_bounds = result.bounds if result and not result.error else ()
         if not selected:
             detail = self.t("PNG: none")
         elif result is None:
@@ -3356,7 +5197,14 @@ class MainWindow(QMainWindow):
             )
         )
         self.map_info.setToolTip(
-            self.t(
+            self.t(result.error)
+            if result and result.error
+            else self.t(
+                "PNG bounds retain every nonzero alpha pixel after artwork offset, "
+                "then expand to grid lines with transparent padding."
+            )
+            if self.size_to_grid
+            else self.t(
                 "Closed: connected closed regions in current geometry. Open: "
                 "connected groups of unresolved lines. PNG bounds include every "
                 "nonzero bicubic alpha pixel, clipped to the scene image."
@@ -3373,13 +5221,34 @@ class MainWindow(QMainWindow):
                 contour_offset=self.contour_offset.value(),
             )
             self.view.assign(session, self.view.preview)
+            self.reset_region_selections()
             self.refresh()
 
     def history(self, redo):
         self.view.cancel_pending()
         if self.view.session:
+            session = self.view.session
+            operation = (
+                session.future[-1]
+                if redo and session.future
+                else session.operations[-1]
+                if not redo and len(session.operations) > session.history_floor
+                else None
+            )
+            before = self.view.session.geometry()
             (self.view.session.redo if redo else self.view.session.undo)()
-            self.refresh()
+            after = self.view.session.geometry()
+            if isinstance(operation, RasterSelectionEdit):
+                self.restore_raster_selection(operation.after if redo else operation.before)
+            elif getattr(operation, "raster", None) is not None and operation.raster.cells:
+                self.select_tool_set("pixels", activate=False)
+                self.view.detached_selection = None
+                self.refresh()
+                self.select_raster_cells(operation.raster.cells)
+            elif after != before or after.lineage != before.lineage:
+                self.refresh_geometry_edit()
+            else:
+                self.refresh()
 
     def mask(self, mode):
         if (
@@ -3425,6 +5294,18 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def export(self, selected_only=False):
+        try:
+            self.start_png_export(selected_only)
+        except Exception as exc:
+            if self.worker is None and self.progress is not None:
+                self.progress.close()
+                self.progress = None
+            has_image = bool(self.view.session and self.view.session.source.image_path)
+            self.export_action.setEnabled(has_image and not self.worker)
+            self.export_regions_action.setEnabled(has_image and not self.worker)
+            self.warning("Export failed", str(exc))
+
+    def start_png_export(self, selected_only):
         self.view.finish_rotation()
         if not self.view.session or self.worker:
             return
@@ -3443,18 +5324,49 @@ class MainWindow(QMainWindow):
                 "Select regions", "Select at least one closed region on the scene image."
             )
             return
+        if self.size_to_grid:
+            try:
+                export_grid(
+                    self.view.session, self.view.raster_aids.settings["export_grid_size"] or None
+                )
+            except ValueError as exc:
+                self.warning("PNG export", str(exc))
+                return
         merge_adjacent = False
         if selection is not None:
             merge_adjacent = self.confirm_merge_selected_regions()
             if merge_adjacent is None:
                 return
+        polygons = tuple(self.regions[i] for i in selection) if selection is not None else None
+        groups = self.selection_groups()
+        active_group = self.active_selection_group()
+        stem = self.catalog.name if self.catalog else self.view.session.source.image_path.stem
+        if groups:
+            plan = overlay_region_plan(
+                self.view.session,
+                selected_polygons=polygons,
+                merge_adjacent=merge_adjacent,
+            )
+            matches = export_group_matches(self.view.session, groups, plan, active_group)
+            if any(matches):
+                naming = self.confirm_export_group_naming(stem, matches)
+                if naming is None:
+                    return
+                if naming == "dataset":
+                    groups = ()
+                else:
+                    package_group = shared_export_group(matches)
+                    if package_group is not None:
+                        stem = group_export_stem(package_group.name)
+            else:
+                groups = ()
         default = self.output_directory or (
             self.project_path.parent if self.project_path else Path.cwd()
         )
-        path = QFileDialog.getExistingDirectory(self, self.t("Export separate PNGs"), str(default))
+        path = choose_export_directory(self, default, export_family(stem, self.export_identity()))
         if not path:
             return
-        self.remember_directory("output", Path(path))
+        self.remember_directory("output", Path(path).parent)
         self.export_action.setEnabled(False)
         self.export_regions_action.setEnabled(False)
         self.progress = QProgressDialog(
@@ -3469,12 +5381,16 @@ class MainWindow(QMainWindow):
             Path(path),
             self,
             selection,
-            selected_polygons=(
-                tuple(self.regions[i] for i in selection) if selection is not None else None
-            ),
+            selected_polygons=polygons,
             merge_adjacent=merge_adjacent,
+            size_to_grid=self.size_to_grid,
+            grid_size=self.view.raster_aids.settings["export_grid_size"] or None,
+            include_json=self.include_json,
+            export_groups=groups,
+            active_group=active_group,
         )
         self.worker.progress.connect(self.progress.setValue)
+        self.worker.file_conflict.connect(self.resolve_worker_file_conflict)
         self.worker.outcome.connect(self.record_outcome)
         self.worker.finished.connect(self.export_finished)
         self.progress.canceled.connect(self.cancel_export)
@@ -3503,6 +5419,13 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(self.t(text), 10000)
 
+    def showEvent(self, event):
+        if not self._clipboard_connected:
+            self.contour_clipboard.changed.connect(self.restore_contour_clipboard)
+            self._clipboard_connected = True
+            self.restore_contour_clipboard()
+        super().showEvent(event)
+
     def closeEvent(self, event):
         if self.worker:
             self.cancel_export()
@@ -3511,7 +5434,11 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
         elif self.can_discard():
+            if self._clipboard_connected:
+                self.contour_clipboard.changed.disconnect(self.restore_contour_clipboard)
+                self._clipboard_connected = False
             self.bounds_preview.shutdown()
+            self.view.native_preview.shutdown()
             self.release_json_workspaces()
             if self.loaded_project:
                 self.loaded_project.close()
@@ -3621,12 +5548,48 @@ def main():
                 "selected_region_export": {
                     "remembered_merge": window.remembered_merge_selected_regions,
                     "merge": window.merge_selected_regions,
+                    "size_to_grid": window.size_to_grid,
+                    "include_json": window.include_json,
+                    "group_naming": window.export_group_naming,
+                    "grid_size": window.view.raster_aids.settings["export_grid_size"],
                     "right_click": window.export_regions_button.contextMenuPolicy()
                     == Qt.ContextMenuPolicy.CustomContextMenu,
                     "tooltip": window.export_regions_action.toolTip(),
                 },
                 "global_tool_settings": window.global_tools_control.isChecked(),
+                "top_panels": {
+                    "main": [
+                        a.property("dale_tool_key")
+                        for a in window.basic_toolbar.actions()
+                        if a.property("dale_tool_key")
+                    ],
+                    "view": [
+                        a.property("dale_tool_key")
+                        for a in window.view_toolbar.actions()
+                        if a.property("dale_tool_key")
+                    ],
+                    "scroll_maximum": window.top_panels_scroll.horizontalScrollBar().maximum(),
+                    "grid_visible": window.grid_action.isChecked(),
+                    "grid_color": window.view.raster_aids.settings["export_grid_color"],
+                    "grid_transparency": window.view.raster_aids.settings[
+                        "export_grid_transparency"
+                    ],
+                    "grid_width": window.view.raster_aids.settings["export_grid_width"],
+                },
+                "custom_colors": window.custom_colors,
                 "tool_values": window.current_tool_values(),
+                "tool_settings": {
+                    title: {
+                        "size": [button.width(), button.height()],
+                        "right_click": button.contextMenuPolicy()
+                        == Qt.ContextMenuPolicy.CustomContextMenu,
+                        "corner": button.findChild(QWidget, "toolSettingsCorner") is not None,
+                        "inline_value_hidden": button.editor().isHidden()
+                        if isinstance(button, SizedToolButton)
+                        else None,
+                    }
+                    for title, button in window.tool_settings_buttons.items()
+                },
                 "alignment_enabled": {
                     key: getattr(window.view, key) for key in window.alignment_actions
                 },
@@ -3710,8 +5673,8 @@ def main():
                     "shortcut": window.delete_regions_action.shortcut().toString(),
                     "help": window.delete_regions_action.toolTip(),
                     "size": [
-                        window.toolbars[4].widgetForAction(window.delete_regions_action).width(),
-                        window.toolbars[4].widgetForAction(window.delete_regions_action).height(),
+                        window.basic_toolbar.widgetForAction(window.main_delete_action).width(),
+                        window.basic_toolbar.widgetForAction(window.main_delete_action).height(),
                     ],
                 },
                 "delete_contours": {
@@ -3749,13 +5712,14 @@ def main():
                 },
                 "button_help": {
                     "right_angle": window.sized_tools["Right-angle alignment"].toolTip(),
-                    "right_angle_value": window.right_angle_distance.toolTip(),
+                    "right_angle_value": window.right_angle_tolerance.toolTip(),
                     "contour_alignment": window.sized_tools["Contour alignment"].toolTip(),
                     "export_png": window.export_action.toolTip(),
                     "edit_points": window.mode_actions["Edit points"].toolTip(),
                     "erase_lines": window.geometry_eraser_tiles["Erase lines"].toolTip(),
                 },
                 "camera": {
+                    "center": [window.view.camera_center().x(), window.view.camera_center().y()],
                     "center_error_pixels": (
                         window.view.mapFromScene(window.view.image_rect.center())
                         - window.view.viewport().rect().center()
@@ -3764,6 +5728,18 @@ def main():
                 }
                 if window.view.session
                 else None,
+                "rotation_steps": window.view.rotation_steps,
+                "mirror_controls": {
+                    axis: {
+                        "text": command.text(),
+                        "enabled": command.isEnabled(),
+                        "size": [
+                            window.figure_toolbar.widgetForAction(command).width(),
+                            window.figure_toolbar.widgetForAction(command).height(),
+                        ],
+                    }
+                    for axis, command in window.mirror_contour_actions.items()
+                },
                 "geometry_erasers_enabled": all(
                     window.mode_actions[key].isEnabled() for key in GEOMETRY_ERASERS
                 ),
@@ -3785,6 +5761,16 @@ def main():
                 "project_loaded": bool(window.project_path),
                 "dimensions": window.view.session.source.size if window.view.session else None,
                 "operations": len(window.view.session.operations) if window.view.session else 0,
+                "undo_history": {
+                    key: {
+                        "floor": draft.session.history_floor,
+                        "undo": len(draft.session.operations) - draft.session.history_floor,
+                        "redo": len(draft.session.future),
+                    }
+                    for key, draft in window.catalog.views.items()
+                }
+                if window.catalog
+                else {},
                 "region_alignment": {
                     title: {
                         "checked": item.isChecked(),
@@ -3803,6 +5789,24 @@ def main():
                 if window.view.detached_selection
                 else [],
             }
+            circle_popup = window.show_tool_settings("New circle")
+            circle_value = window.view.circle_detail_steps
+            circle_popup.circle_detail.setValue(0)
+            minimum_label = circle_popup.circle_detail_label.text()
+            circle_popup.circle_detail.setValue(95)
+            report["circle_detail_settings"] = {
+                "steps": circle_value,
+                "range": [
+                    circle_popup.circle_detail.minimum(),
+                    circle_popup.circle_detail.maximum(),
+                ],
+                "single_step": circle_popup.circle_detail.singleStep(),
+                "minimum_label": minimum_label,
+                "maximum_label": circle_popup.circle_detail_label.text(),
+                "staged_only": window.view.circle_detail_steps == circle_value,
+                "nonmodal": not circle_popup.isModal(),
+            }
+            circle_popup.reject()
             if window.view.session and window.view.session.source.json_bytes is not None:
                 from dale.json_repair import JsonCoordinateDocument
 
@@ -3844,8 +5848,117 @@ def main():
             manager.grab().save(
                 str(options.smoke_report.with_name(options.smoke_report.stem + "-manager.png"))
             )
+            if manager.catalog.current.has_json:
+                from dale.editing import add_line
+
+                source_id = manager.catalog.active_key
+                target = manager.catalog.create(
+                    manager.catalog.unique_name(
+                        "Merge check", (v.name for v in manager.catalog.views.values())
+                    )
+                ).id
+                manager.catalog.transfer(source_id, target, "json")
+                incoming = manager.catalog.views[source_id].session
+                x = incoming.source.size[0] + 30
+                incoming.add(add_line(incoming.geometry(), (x, 0), (x + 10, 10)))
+                before = next(item for item in manager.catalog.state() if item[0] == source_id)
+                target_count = len(manager.catalog.views[target].session.geometry().lineage)
+                merge_report = {}
+
+                def choose_smoke_merge():
+                    dialog = QApplication.activeModalWidget()
+                    try:
+                        button = next(
+                            button
+                            for button in dialog.findChildren(QPushButton)
+                            if button.text() == window.t("Merge contours")
+                        )
+                        merge_report.update(label=button.text(), enabled=button.isEnabled())
+                        button.click()
+                    finally:
+                        if dialog.isVisible():
+                            dialog.reject()
+
+                QTimer.singleShot(0, choose_smoke_merge)
+                manager.transfer(source_id, target, "json")
+                merge_report.update(
+                    added=len(manager.catalog.views[target].session.geometry().lineage)
+                    - target_count,
+                    source_unchanged=next(
+                        item for item in manager.catalog.state() if item[0] == source_id
+                    )
+                    == before,
+                )
+                report["json_transfer_merge"] = merge_report
             manager.close()
             manager.deleteLater()
+            naming = window.show_tool_settings("Export selected regions")
+            report["group_naming_settings"] = {
+                "choices": [
+                    naming.naming_action.itemData(i) for i in range(naming.naming_action.count())
+                ],
+                "current": naming.naming_action.currentData(),
+            }
+            naming.reject()
+            if window.view.session and window.view.session.geometry().lineage:
+                from dale.region_transform import copy_figures
+
+                geometry = window.view.session.geometry()
+                ids = tuple(record.id for record in geometry.lineage)
+                clipboard = copy_figures(geometry, ids)
+                copied = clipboard.paste(geometry, window.view.session.source.size[0] + 100, 0)
+                new_ids = {record.id for record in copied.lineage} - set(ids)
+                report["clipboard_group_isolation"] = all(
+                    not (group_members(group, copied) & new_ids)
+                    for group in window.selection_groups()
+                )
+            window.toggle_group_manager()
+            QApplication.processEvents()
+            groups_manager = window.group_manager
+            fixed_position = groups_manager.viewport_position()
+            scrollbars = window.view.horizontalScrollBar(), window.view.verticalScrollBar()
+            scroll_values = tuple(bar.value() for bar in scrollbars)
+            for bar in scrollbars:
+                bar.setValue(bar.value() + (27 if bar.value() < bar.maximum() - 27 else -27))
+            fixed_on_scroll = fixed_position == groups_manager.viewport_position()
+            for bar, value in zip(scrollbars, scroll_values, strict=True):
+                bar.setValue(value)
+            main_size, manager_size = window.size(), groups_manager.size()
+            groups_manager.set_user_size(manager_size + QSize(20, 20))
+            resize_only_overlay = (
+                window.size() == main_size and groups_manager.size() != manager_size
+            )
+            groups_manager.user_sized = False
+            groups_manager.requested_size = manager_size
+            groups_manager.fit_size()
+            groups_manager.reposition()
+            report["selection_groups"] = {
+                "groups": [g.encode() for g in window.selection_groups()],
+                "active": window.active_selection_group(),
+                "members": {
+                    g.id: sorted(window.resolved_group_members(g.id))
+                    for g in window.selection_groups()
+                },
+                "manager_visible": groups_manager.isVisible(),
+                "button_checked": window.group_manager_button.isChecked(),
+                "map_child": groups_manager.parentWidget() is window.view,
+                "fixed_on_scroll": fixed_on_scroll,
+                "viewport_position": [fixed_position.x(), fixed_position.y()],
+                "resize_grip_visible": groups_manager.size_grip.isVisible(),
+                "resize_only_overlay": resize_only_overlay,
+                "footer_buttons": len(groups_manager.findChildren(QDialogButtonBox)),
+                "width": groups_manager.width(),
+                "new_button": groups_manager.new_button.text(),
+                "color_layers": len(window.group_overlay()[0]),
+                "opaque_fills": len(window.group_overlay()[1]),
+                "panel_after_main": window.groups_toolbar.x()
+                == window.basic_toolbar.x() + window.basic_toolbar.width(),
+                "selector_size": [window.group_control.width(), window.group_control.height()],
+            }
+            window.grab().save(
+                str(options.smoke_report.with_name(options.smoke_report.stem + "-groups.png"))
+            )
+            groups_manager.hide()
             options.smoke_report.write_text(json.dumps(report), encoding="utf-8")
             window.grab().save(str(options.smoke_report.with_suffix(".png")))
             window.windowIcon().pixmap(256, 256).save(

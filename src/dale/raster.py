@@ -9,14 +9,15 @@ import tempfile
 import zlib
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
-from itertools import pairwise
+from functools import lru_cache
 from pathlib import Path
 
 import psutil
 from PIL import Image, ImageChops, ImageDraw
 
+from dale.raster_brush import stroke_coverage
 from dale.scene import SceneInput, open_source
-from dale.session import ContourMask, Operation, Stroke
+from dale.session import ContourMask, Operation, RasterTransform, Stroke
 
 PREVIEW_SIDE = 2048
 STRIPE_ROWS = 128
@@ -73,33 +74,32 @@ def render_alpha(
                 region = ImageChops.invert(region)
             alpha = ImageChops.multiply(alpha, region)
         elif isinstance(operation, Stroke) and operation.points:
-            rx, ry = max(0.5, operation.radius * sx), max(0.5, operation.radius * sy)
+            ry = max(0.5, operation.radius * sy)
             points = [(x * sx - left, y * sy - top) for x, y in operation.points]
             if max(p[1] for p in points) + ry < 0 or min(p[1] for p in points) - ry > size[1]:
                 continue
-            draw = ImageDraw.Draw(alpha)
-            value = 255 if operation.restore else 0
-            # Polygonal segments and elliptical caps prevent gaps even with sparse events.
-            for a, b in pairwise(points):
-                dx, dy = (b[0] - a[0]) / sx, (b[1] - a[1]) / sy
-                length = (dx * dx + dy * dy) ** 0.5
-                if length:
-                    nx, ny = -dy / length * rx, dx / length * ry
-                    corners = [
-                        (a[0] + nx, a[1] + ny),
-                        (b[0] + nx, b[1] + ny),
-                        (b[0] - nx, b[1] - ny),
-                        (a[0] - nx, a[1] - ny),
-                    ]
-                    draw.polygon([(math.floor(x), math.floor(y)) for x, y in corners], fill=value)
-            for x, y in points:
-                draw.ellipse(
-                    tuple(math.floor(v) for v in (x - rx, y - ry, x + rx, y + ry)), fill=value
-                )
+            mask = stroke_coverage(size, operation, sx, sy, left, top)
+            if operation.opacity != 1:
+                mask = mask.point([round(i * operation.opacity) for i in range(256)])
+            alpha = (
+                Image.composite(Image.new("L", size, 255), alpha, mask)
+                if operation.restore
+                else ImageChops.multiply(alpha, ImageChops.invert(mask))
+            )
     return alpha
 
 
 def render_preview(source: Image.Image, native_size, operations) -> Image.Image:
+    if any(isinstance(op, RasterTransform) for op in operations):
+        from dale.raster_transform import image_reader, render_layered
+
+        return render_layered(
+            image_reader(source, native_size),
+            native_size,
+            operations,
+            (0, 0, *native_size),
+            source.size,
+        )
     result = source.convert("RGBA")
     alpha = ImageChops.multiply(
         result.getchannel("A"),
@@ -128,15 +128,17 @@ def raster_operations(operations, artwork_offset=0):
             operation.boundary,
         )
         if isinstance(operation, ContourMask) and operation.boundary is not None
-        else operation
+        else getattr(operation, "raster", None) or operation
         for operation in operations
-        if isinstance(operation, (ContourMask, Stroke))
+        if isinstance(operation, (ContourMask, Stroke, RasterTransform))
+        or getattr(operation, "raster", None) is not None
     )
 
 
-def render_export_alpha(size, native_size, operations, top=0, left=0, *, scale=(1, 1)):
-    """Shared 2x/bicubic alpha with seam-safe halos, at native or preview projection."""
-    width, height = size
+@lru_cache(maxsize=128)
+def _alpha_tile(native_size, operations, top, left, scale):
+    """Fixed output blocks make clipped polygon scan conversion deterministic."""
+    width = height = 256
     halo = ALPHA_FILTER_HALO
     padded = (width + 2 * halo, height + 2 * halo)
     alpha = render_alpha(
@@ -151,6 +153,16 @@ def render_export_alpha(size, native_size, operations, top=0, left=0, *, scale=(
     return alpha.crop((halo, halo, halo + width, halo + height))
 
 
+def render_export_alpha(size, native_size, operations, top=0, left=0, *, scale=(1, 1)):
+    """Shared globally anchored 2x/bicubic alpha for previews, crops and stripes."""
+    result = Image.new("L", size)
+    for y in range(math.floor(top / 256) * 256, math.ceil((top + size[1]) / 256) * 256, 256):
+        for x in range(math.floor(left / 256) * 256, math.ceil((left + size[0]) / 256) * 256, 256):
+            tile = _alpha_tile(tuple(native_size), tuple(operations), y, x, tuple(scale))
+            result.paste(tile, (round(x - left), round(y - top)))
+    return result
+
+
 def alpha_bounds(native_size, operations, crop, cancelled=None, source_path=None):
     """Find the exact nonzero-alpha box without decoding RGB or allocating a full mask."""
     with open_source(source_path) if source_path else nullcontext(None) as original:
@@ -163,14 +175,32 @@ def _alpha_bounds_rows(native_size, operations, crop, cancelled, original):
     for row in range(top, bottom, STRIPE_ROWS):
         if cancelled and cancelled():
             raise ExportCancelled("PNG export cancelled.")
-        alpha = render_export_alpha(
-            (right - left, min(STRIPE_ROWS, bottom - row)),
-            native_size,
-            operations,
-            top=row,
-            left=left,
-        )
-        if original is not None and ("A" in original.getbands() or "transparency" in original.info):
+        transformed = any(isinstance(op, RasterTransform) for op in operations)
+        if transformed:
+            from dale.raster_transform import crop_reader, render_layered
+
+            if original is None:
+                raise ValueError("Raster transform bounds require the scene image.")
+            alpha = render_layered(
+                crop_reader(original, native_size),
+                native_size,
+                operations,
+                (left, row, right, min(bottom, row + STRIPE_ROWS)),
+                (right - left, min(STRIPE_ROWS, bottom - row)),
+            ).getchannel("A")
+        else:
+            alpha = render_export_alpha(
+                (right - left, min(STRIPE_ROWS, bottom - row)),
+                native_size,
+                operations,
+                top=row,
+                left=left,
+            )
+        if (
+            not transformed
+            and original is not None
+            and ("A" in original.getbands() or "transparency" in original.info)
+        ):
             source_alpha = (
                 original.crop((left, row, right, row + alpha.height))
                 .convert("RGBA")
@@ -258,17 +288,47 @@ def export_png(
                 for top in range(0, height, STRIPE_ROWS):
                     check_cancel()
                     bottom = min(height, top + STRIPE_ROWS)
-                    stripe = image.crop((left, origin_y + top, right, origin_y + bottom)).convert(
-                        "RGBA"
-                    )
-                    alpha = render_export_alpha(
-                        stripe.size,
-                        source.size,
-                        operations,
-                        top=origin_y + top,
-                        left=left,
-                    )
-                    alpha = ImageChops.multiply(alpha, stripe.getchannel("A"))
+                    stripe_box = (left, origin_y + top, right, origin_y + bottom)
+                    if (
+                        left >= 0
+                        and stripe_box[1] >= 0
+                        and right <= source.size[0]
+                        and stripe_box[3] <= source.size[1]
+                    ):
+                        stripe = image.crop(stripe_box).convert("RGBA")
+                    else:
+                        stripe = Image.new("RGBA", (width, bottom - top), (0, 0, 0, 0))
+                        visible_box = (
+                            max(0, left),
+                            max(0, stripe_box[1]),
+                            min(source.size[0], right),
+                            min(source.size[1], stripe_box[3]),
+                        )
+                        if visible_box[0] < visible_box[2] and visible_box[1] < visible_box[3]:
+                            stripe.paste(
+                                image.crop(visible_box).convert("RGBA"),
+                                (visible_box[0] - left, visible_box[1] - stripe_box[1]),
+                            )
+                    if any(isinstance(op, RasterTransform) for op in operations):
+                        from dale.raster_transform import crop_reader, render_layered
+
+                        stripe = render_layered(
+                            crop_reader(image, source.size),
+                            source.size,
+                            operations,
+                            stripe_box,
+                            stripe.size,
+                        )
+                        alpha = stripe.getchannel("A")
+                    else:
+                        alpha = render_export_alpha(
+                            stripe.size,
+                            source.size,
+                            operations,
+                            top=origin_y + top,
+                            left=left,
+                        )
+                        alpha = ImageChops.multiply(alpha, stripe.getchannel("A"))
                     visible = visible or alpha.getextrema()[1] > 0
                     stripe.putalpha(alpha)
                     stripe.paste((0, 0, 0, 0), mask=alpha.point([255] + [0] * 255))

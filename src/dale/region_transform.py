@@ -23,15 +23,21 @@ class RegionTransformPlan:
     pivot: tuple
     noded: GeometryEdit
 
-    def apply(self, dx=0.0, dy=0.0, scale=1.0, angle=0.0):
+    def apply(self, dx=0.0, dy=0.0, scale=1.0, angle=0.0, mirror=None):
         if not all(math.isfinite(v) for v in (dx, dy, scale, angle)) or scale <= 0:
             raise ValueError("Region transforms require finite coordinates and a positive scale.")
-        if dx == dy == angle == 0 and scale == 1:
+        if mirror not in (None, "vertical", "horizontal"):
+            raise ValueError("Choose a vertical or horizontal mirror axis.")
+        if dx == dy == angle == 0 and scale == 1 and mirror is None:
             return self.original, self.polygons
         cx, cy = self.pivot
         radians = math.radians(angle)
         a, b = scale * math.cos(radians), -scale * math.sin(radians)
         d, e = -b, a
+        if mirror == "vertical":
+            a, b = -a, -b
+        elif mirror == "horizontal":
+            d, e = -d, -e
         tx, ty = cx - a * cx - b * cy + dx, cy - d * cx - e * cy + dy
 
         def transform(point):
@@ -57,6 +63,11 @@ class RegionCopy:
     polygons: tuple
     anchor: tuple
     records: tuple = ()
+    pivot: tuple | None = None
+
+    @property
+    def center(self):
+        return self.pivot if self.pivot is not None else contour_center(self.edges)
 
     @property
     def points(self):
@@ -94,15 +105,12 @@ class RegionCopy:
                 *self.geometry.lineage,
             )
         }
-        ids = {record.id for record in records}
         for edge, record in zip(moved_edges, source_records, strict=True):
             if any(abs(v) > 1e9 for p in edge for v in p):
                 raise ValueError("Region placement exceeds coordinate limits.")
-            copied = LineRecord.child((record, *builder.contacts(edge)), edge)
-            if copied.id in ids:
-                copied = LineRecord.child((record,), edge, manual=True)
+            # A user-created copy retains ancestry/properties, not group membership.
+            copied = LineRecord.child((record, *builder.contacts(edge)), edge, manual=True)
             copied = replace(copied, connection_group=record.connection_group)
-            ids.add(copied.id)
             walls.append(edge)
             records.append(copied)
             styles[copied.id] = source.styles[record.id]
@@ -131,6 +139,12 @@ def copy_regions(geometry, selected, cells, joins=(), selection_ids=(), active_i
     )
 
 
+def contour_center(edges):
+    """Return the center of the complete selected line bounds, independent of grab anchors."""
+    points = [point for edge in edges for point in edge]
+    return tuple((min(p[i] for p in points) + max(p[i] for p in points)) / 2 for i in (0, 1))
+
+
 def plan_figure_transform(geometry, line_ids, pivot=None):
     """Transform the exact selected lines, including open and disconnected contours."""
     from dale.geometry import structural_regions
@@ -143,8 +157,6 @@ def plan_figure_transform(geometry, line_ids, pivot=None):
     for edge, record in zip(edges, geometry.lineage, strict=True):
         (moving if record.id in ids else fixed).append(edge)
         (moving_records if record.id in ids else fixed_records).append(record)
-    points = [p for edge in moving for p in edge]
-    center = tuple((min(p[i] for p in points) + max(p[i] for p in points)) / 2 for i in (0, 1))
     noded = GeometryEdit(
         (*fixed, *moving),
         lineage=(*fixed_records, *moving_records),
@@ -156,7 +168,7 @@ def plan_figure_transform(geometry, line_ids, pivot=None):
         tuple(fixed),
         tuple(moving),
         structural_regions(tuple(moving)),
-        pivot if pivot is not None else center,
+        pivot if pivot is not None else contour_center(moving),
         noded,
     )
 

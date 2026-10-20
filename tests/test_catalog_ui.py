@@ -1,6 +1,7 @@
 """Offscreen interaction with synthetic project sets and reusable contour placement."""
 
 import json
+import math
 import os
 from pathlib import Path
 
@@ -8,10 +9,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PIL import Image
-from PySide6.QtCore import QCoreApplication, QEvent, Qt
-from PySide6.QtGui import QTransform
+from PySide6.QtCore import QCoreApplication, QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent, QTransform
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 
 from dale.canvas import MapView
 from dale.editing import add_line, vertices
@@ -24,7 +25,7 @@ from dale.project_io import (
 )
 from dale.raster import load_preview
 from dale.scene import load_pair
-from dale.session import Session
+from dale.session import RasterSelectionEdit, Session
 from dale.ui import MainWindow, configure_application
 
 
@@ -71,6 +72,1194 @@ def selection_scene(window, pair_factory, mode, zoom=1):
     return source, view
 
 
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize(
+    "scenario",
+    ["horizontal", "vertical", "connected", "rotated", "branch", "interior", "combined"],
+)
+def test_new_line_alt_angles_and_guides_preview_commit_and_undo(
+    window, pair_factory, zoom, scenario
+):
+    walls = [[100, 100, 180, 160]]
+    start, cursor, expected = (100, 100), (280, 105), (280, 100)
+    guides = scenario in ("horizontal", "vertical", "connected", "combined")
+    angles = scenario in ("rotated", "branch", "interior", "combined")
+    snapping = scenario in ("interior", "combined")
+    if scenario == "vertical":
+        cursor, expected = (105, 280), (100, 280)
+    elif scenario == "connected":
+        walls = [[100, 100, 300, 160], [300, 160, 400, 250]]
+        cursor, expected = (305, 280), (300, 280)
+    elif scenario in ("rotated", "interior"):
+        if scenario == "interior":
+            walls = [[20, 40, 180, 160]]
+        cursor, expected = (43, 180), (41.08, 178.56)
+    elif scenario == "branch":
+        walls += [[100, 100, 100, 20], [100, 100, 180, 100]]
+    elif scenario == "combined":
+        walls = [[100, 100, 100, 20], [280, 0, 280, 250]]
+        cursor = (275, 105)
+    source = pair_factory(
+        size=(600, 450),
+        walls=[{"_id": f"wall{i:012d}", "c": c, "door": 1} for i, c in enumerate(walls)],
+        lights=[{"keep": "light"}],
+        tiles=[{"texture": {"src": "keep.webp"}}],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.configure_json_repair(True)
+    window.activate_mode("New line")
+    window.snap_action.setChecked(snapping)
+    window.alignment_actions["contour_alignment"].setChecked(guides)
+    window.alignment_actions["right_angle_alignment"].setChecked(angles)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(210, 200)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    raster = view.item.pixmap().toImage()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*start))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(*cursor))
+    from dale.editing import snap_point
+
+    ordinary = snap_point(original, cursor, 14 / zoom) if snapping else None
+    assert view.line_end == pytest.approx(ordinary or cursor)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert view.line_start == start
+    assert view.line_end == pytest.approx(expected)
+    assert bool(view.alignment_guides) == guides
+    assert bool(view.angle_joint) == angles
+    assert view.session.geometry() == original and not view.session.operations
+    if angles:
+        a, joint, b = view.angle_joint
+        assert joint == start
+        assert sum((a[i] - joint[i]) * (b[i] - joint[i]) for i in (0, 1)) == pytest.approx(
+            0, abs=1e-7
+        )
+    QTest.mouseRelease(
+        view.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.AltModifier,
+        pos=view.mapFromScene(*cursor),
+    )
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.session.geometry().walls[: len(walls)] == original.walls
+    assert view.session.geometry().walls[-1][0] == start
+    assert view.session.geometry().walls[-1][1] == pytest.approx(expected)
+    assert len(view.session.operations) == 1
+    assert view.angle_joint is None and not view.alignment_guides and view.guide_targets is None
+    assert view.item.pixmap().toImage() == raster
+    result = json.loads(repaired_json_bytes(view.session)[0])
+    assert result["lights"] == source.raw["lights"] and result["tiles"] == source.raw["tiles"]
+    assert result["walls"][: len(walls)] == source.raw["walls"]
+    assert result["walls"][-1]["door"] == 0
+    view.session.undo()
+    assert view.session.geometry() == original
+    view.session.redo()
+    assert view.session.geometry().walls[-1][1] == pytest.approx(expected)
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("rule", ["right_angle_alignment", "contour_alignment"])
+@pytest.mark.parametrize("hold_before_press", [False, True])
+def test_new_line_alignment_requires_enabled_button_and_alt_and_escape_clears_preview(
+    window, pair_factory, rule, hold_before_press
+):
+    source = pair_factory(size=(500, 400), walls=[{"c": [100, 20, 100, 100]}])
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("New line")
+    window.snap_action.setChecked(False)
+    window.alignment_actions[rule].setChecked(True)
+    view = window.view
+    # This checkbox controls extra corners for moved vertices, not a new line's sole corner.
+    view.right_angle_neighbours = False
+    view.resetTransform()
+    view.centerOn(200, 180)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    mods = Qt.KeyboardModifier.AltModifier if hold_before_press else Qt.KeyboardModifier.NoModifier
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, mods, view.mapFromScene(100, 100))
+    point = view.mapFromScene(280, 105)
+    QTest.mouseMove(view.viewport(), point)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert view.line_end == (280, 100)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.line_end == (280, 105)
+    window.alignment_actions[rule].setChecked(False)
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert view.line_end == (280, 105)
+    assert not view.angle_joint and not view.alignment_guides
+    window.alignment_actions[rule].setChecked(True)
+    QApplication.sendEvent(
+        view.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(point),
+            QPointF(view.viewport().mapToGlobal(point)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier,
+        ),
+    )
+    assert view.line_end == (280, 100)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert view.line_start is None and view.angle_joint is None
+    assert view.alignment_geometry is None and view.guide_targets is None
+    assert not view.alignment_guides and not view.session.operations
+    assert view.session.geometry() == original
+
+
+def test_new_line_guides_align_detached_start_and_keep_vertex_priority(window, pair_factory):
+    source = pair_factory(
+        size=(500, 400),
+        walls=[{"c": [100, 100, 104, 50]}, {"c": [108, 110, 200, 150]}],
+    )
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("New line")
+    window.alignment_actions["contour_alignment"].setChecked(True)
+    view = window.view
+    view.resetTransform()
+    view.centerOn(200, 180)
+    QApplication.processEvents()
+    alt = Qt.KeyboardModifier.AltModifier
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, alt, view.mapFromScene(101, 102))
+    assert view.line_start == (100, 100)  # Never replace a vertex hit with mixed x/y guides.
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton)
+    window.snap_action.setChecked(False)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, alt, view.mapFromScene(103, 250))
+    assert view.line_start == (104, 250)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, alt, view.mapFromScene(280, 255))
+    assert view.session.geometry().walls[-1] == ((104, 250), (280, 250))
+    assert len(view.session.operations) == 1
+
+
+@pytest.mark.parametrize("rule", ["right_angle_alignment", "contour_alignment"])
+def test_new_line_alignment_ignores_hidden_height_references(window, pair_factory, rule):
+    source = pair_factory(
+        size=(500, 400),
+        walls=[
+            {"c": [100, 100, 180, 160], "flags": {"wall-height": {"bottom": 0, "top": 10}}},
+            {"c": [100, 100, 100, 20], "flags": {"wall-height": {"bottom": 10, "top": 20}}},
+            {"c": [275, 105, 350, 105], "flags": {"wall-height": {"bottom": 10, "top": 20}}},
+        ],
+    )
+    window.load_sources(source.image_path, source.json_path)
+    from dale.source_editing import source_layers
+
+    view = window.view
+    layer = next(
+        layer
+        for layer in source_layers(view.session.source, view.session.geometry())
+        if layer.kind == "band" and layer.bottom == 0 and layer.top == 10
+    )
+    view.source_layer = layer.key
+    window.activate_mode("New line")
+    window.alignment_actions[rule].setChecked(True)
+    view.resetTransform()
+    view.centerOn(200, 180)
+    QApplication.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(100, 100))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(275, 105))
+    QTest.keyPress(view, Qt.Key.Key_Alt)
+    expected = (275, 100) if rule == "contour_alignment" else (275, 105)
+    assert view.line_end == expected
+    assert view.angle_joint is None
+    assert (275, 105) not in view.guide_targets.point_set
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton)
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    assert not view.session.operations
+
+
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize("hold_before_press", [False, True])
+@pytest.mark.parametrize("target", ["vertex", "segment"])
+@pytest.mark.parametrize("snapping", [False, True])
+@pytest.mark.parametrize("rule", ["guides", "angles", "both"])
+def test_vertex_alt_guides_keep_enabled_snapping_when_no_axis_matches(
+    window, pair_factory, zoom, hold_before_press, target, snapping, rule
+):
+    source = pair_factory(
+        size=(600, 400),
+        lights=[{"x": 5, "y": 7}],
+        walls=[{"c": c} for c in ([40, 40, 100, 80], [100, 80, 150, 140], [300, 200, 360, 200])],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(snapping)
+    window.snap_distance.setValue(14)
+    window.alignment_actions["contour_alignment"].setChecked(rule != "angles")
+    window.alignment_actions["right_angle_alignment"].setChecked(rule != "guides")
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(200, 140)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    point = (300 - 9 / zoom, 200 - 9 / zoom) if target == "vertex" else (330, 200 - 9 / zoom)
+    expected = ((300, 200) if target == "vertex" else (330, 200)) if snapping else point
+    if hold_before_press:
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+    QTest.mousePress(
+        view.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.AltModifier if hold_before_press else Qt.KeyboardModifier.NoModifier,
+        view.mapFromScene(100, 80),
+    )
+    position = view.mapFromScene(*point)
+    QApplication.sendEvent(
+        view.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(position),
+            QPointF(view.viewport().mapToGlobal(position)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier
+            if hold_before_press
+            else Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    if not hold_before_press:
+        assert view.snap == (expected if snapping else None)
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+    assert view.axis_constrained
+    assert not view.alignment_guides and not view.angle_joint
+    assert view.snap == (expected if snapping else None)
+    assert view.edit_preview.walls[0][1] == expected
+    if not hold_before_press:
+        QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(
+        view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, position
+    )
+    QTest.keyRelease(view, Qt.Key.Key_Alt)
+    if not hold_before_press:
+        assert view.session.geometry() == original and not view.session.operations
+    else:
+        assert len(view.session.operations) == 1
+        assert view.session.geometry().walls[0][1] == expected
+        assert view.session.geometry().walls[2] == original.walls[2]
+        assert json.loads(repaired_json_bytes(view.session)[0])["lights"] == source.raw["lights"]
+        view.session.undo()
+        assert view.session.geometry() == original
+        view.session.redo()
+        assert view.session.geometry().walls[0][1] == expected
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("height_scope", [False, True])
+@pytest.mark.parametrize("alt", [False, True])
+@pytest.mark.parametrize("zoom", [1, 3])
+def test_vertex_line_snapping_keeps_preview_closed_through_fractional_slide(
+    window, pair_factory, tmp_path, height_scope, alt, zoom
+):
+    from shapely.geometry import LineString, Point
+
+    target = ((8039.9832, 9182.7731), (9101.3927, 9519.2221))
+    corner, tip = (8334.2481, 9702.3419), (8400.35, 9500.87)
+    source = pair_factory(
+        size=(100, 100),
+        width=12000,
+        height=12000,
+        walls=[
+            {
+                "_id": f"NativeWall{i:06}",
+                "c": [*a, *b],
+                "door": i % 2,
+                "flags": {"wall-height": {"bottom": 0, "top": 10}},
+            }
+            for i, (a, b) in enumerate((target, (target[0], corner), (corner, tip)))
+        ],
+        lights=[{"keep": "light"}],
+        tiles=[{"keep": "tile"}],
+    )
+    assert window.load_sources(None, source.json_path)
+    window.set_json_repair(height_scope)
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(True)
+    window.snap_distance.setValue(14)
+    for action in window.alignment_actions.values():
+        action.setChecked(False)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(*tip)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    assert view.analysis.faces == 0
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*tip))
+    modifiers = Qt.KeyboardModifier.AltModifier if alt else Qt.KeyboardModifier.NoModifier
+    direction = tuple(target[1][i] - target[0][i] for i in (0, 1))
+    normal = (-direction[1] / math.hypot(*direction), direction[0] / math.hypot(*direction))
+    for index in range(40, 161, 3):
+        cursor = tuple(
+            target[0][i] + direction[i] * index / 200 + normal[i] * 3 / zoom for i in (0, 1)
+        )
+        view.centerOn(*cursor)
+        point = view.mapFromScene(*cursor)
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(point),
+                QPointF(view.viewport().mapToGlobal(point)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                modifiers,
+            ),
+        )
+        assert view.snap is not None
+        assert LineString(target).distance(Point(view.snap)) < 1e-7
+        assert view.edit_preview.walls[2][1] == view.snap
+        assert view.analysis.faces == 1, (index, view.snap)
+        assert len(view.analysis.unresolved) == 1
+        assert view.edit_preview.walls[:2] == original.walls[:2]
+        assert view.edit_preview.lineage == original.lineage
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, modifiers, point)
+    assert len(view.session.operations) == 1 and view.analysis.faces == 1
+    current = view.session.geometry()
+    assert json.loads(repaired_json_bytes(view.session)[0])["lights"] == source.raw["lights"]
+    window.history(False)
+    assert view.session.geometry() == original and view.analysis.faces == 0
+    window.history(True)
+    assert view.session.geometry() == current and view.analysis.faces == 1
+    window.project_path = tmp_path / "Sliding snapped vertex.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert view.session.geometry() == current and view.analysis.faces == 1
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("zoom", [1, 3, 12.8])
+@pytest.mark.parametrize("distance_px", [2, 8, 13, 15, 25])
+def test_vertex_line_snap_tolerance_is_screen_distance(window, pair_factory, zoom, distance_px):
+    from shapely.geometry import LineString, Point
+
+    target = ((100.371, 100.721), (400.761, 180.923))
+    corner, tip = (100.371, 300.37), (250.21, 250.76)
+    source = pair_factory(
+        size=(600, 400),
+        walls=[{"c": [*a, *b]} for a, b in (target, (target[0], corner), (corner, tip))],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(True)
+    window.snap_distance.setValue(14)
+    for action in window.alignment_actions.values():
+        action.setChecked(False)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(*tip)
+    QApplication.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*tip))
+    delta = tuple(target[1][i] - target[0][i] for i in (0, 1))
+    normal = (-delta[1] / math.hypot(*delta), delta[0] / math.hypot(*delta))
+    cursor = tuple(
+        (target[0][i] + target[1][i]) / 2 + normal[i] * distance_px / zoom for i in (0, 1)
+    )
+    view.centerOn(*cursor)
+    point = view.mapFromScene(*cursor)
+    raw = view.mapToScene(point)
+    destination = raw.x() + view.drag_offset[0], raw.y() + view.drag_offset[1]
+    expected = LineString(target).distance(Point(destination)) * zoom <= 14
+    QApplication.sendEvent(
+        view.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(point),
+            QPointF(view.viewport().mapToGlobal(point)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert (view.snap is not None) == expected
+    assert view.analysis.faces == int(expected)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert not view.session.operations
+
+
+def schedule_dialog(callback):
+    """Close a modal on assertion failure so a Qt callback cannot hang the suite."""
+    from PySide6.QtCore import QTimer
+
+    errors = []
+
+    def run():
+        try:
+            callback()
+        except BaseException as exc:
+            errors.append(exc)
+            dialog = QApplication.activeModalWidget() or QApplication.activePopupWidget()
+            if dialog:
+                dialog.reject()
+
+    QTimer.singleShot(0, run)
+    return errors
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("accepted", [False, True])
+def test_color_dialog_custom_palette_survives_cancel_save_and_other_dataset(
+    window, pair_factory, tmp_path, monkeypatch, language, accepted
+):
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.set_language(language, persist=False)
+    window.create_selection_group()
+    group = window.selection_groups()[0]
+    window.custom_colors = tuple(f"#ff{i:06x}" for i in range(16))
+    window.saved_state = window.document_state()
+    before = window.view.session.geometry(), tuple(window.view.session.operations)
+
+    def edit_palette():
+        dialog = QApplication.activeModalWidget()
+        assert isinstance(dialog, QColorDialog)
+        assert QColorDialog.customColor(15).name(QColor.NameFormat.HexArgb) == "#ff00000f"
+        QColorDialog.setCustomColor(0, QColor("#ff123456"))
+        QColorDialog.setCustomColor(15, QColor("#ffabcdef"))
+        dialog.setCurrentColor(QColor("#34aa65"))
+        dialog.accept() if accepted else dialog.reject()
+
+    errors = schedule_dialog(edit_palette)
+    window.change_group_color(group.id)
+    assert not errors, errors
+    assert window.custom_colors[0] == "#ff123456" and window.custom_colors[15] == "#ffabcdef"
+    assert window.selection_groups()[0].color == ("#34aa65" if accepted else group.color)
+    assert window.document_state() != window.saved_state
+    assert (window.view.session.geometry(), tuple(window.view.session.operations)) == before
+    questions = []
+    monkeypatch.setattr(
+        window,
+        "question",
+        lambda *args: questions.append(args) or QMessageBox.StandardButton.Cancel,
+    )
+    assert not MainWindow.can_discard(window) and questions
+    first = window.catalog.active_key
+    other = window.catalog.create("Other colors")
+    window.rebuild_dataset_controls()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other.id))
+    assert window.custom_colors[0] == "#ff123456"
+    window.project_path = tmp_path / "Shared project colors.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert window.custom_colors[15] == "#ffabcdef"
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(first))
+    assert window.custom_colors[0] == "#ff123456"
+    errors = schedule_dialog(lambda: QApplication.activeModalWidget().reject())
+    window.choose_project_color(QColor("white"), "Palette restored")
+    assert not errors and QColorDialog.customColor(0).name() == "#123456"
+
+
+def test_project_palettes_are_isolated_between_windows_and_new_projects(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QColorDialog
+
+    from dale.project_io import DEFAULT_CUSTOM_COLORS
+
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.custom_colors = ("#ff123456",) * 16
+    other = MainWindow()
+    monkeypatch.setattr(other, "can_discard", lambda: True)
+    assert other.load_sources(source.image_path, source.json_path)
+    for owner, expected in ((window, "#123456"), (other, "#ffffff"), (window, "#123456")):
+
+        def inspect(expected=expected):
+            assert QColorDialog.customColor(0).name() == expected
+            QApplication.activeModalWidget().reject()
+
+        errors = schedule_dialog(inspect)
+        owner.choose_project_color(QColor("white"), "Isolated palette")
+        assert not errors, errors
+    window.project_path = tmp_path / "With colors.dale"
+    assert window.save_project_file()
+    assert window.load_sources(source.image_path, source.json_path)
+    assert window.custom_colors == DEFAULT_CUSTOM_COLORS
+    assert window.load_project_file(tmp_path / "With colors.dale")
+    assert window.custom_colors == ("#ff123456",) * 16
+    window.close_document()
+    assert window.custom_colors == DEFAULT_CUSTOM_COLORS
+    other.close()
+    other.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize("snapping", [False, True])
+@pytest.mark.parametrize("scenario", ["horizontal", "vertical", "neighbour_angle", "moving_angle"])
+def test_vertex_alt_combines_axis_and_right_angles_with_line_snapping(
+    window, pair_factory, zoom, snapping, scenario
+):
+    if scenario == "horizontal":
+        walls = [[100, 100, 400, 100], [300, 0, 300, 200]]
+        start, cursor, guided, snapped = (100, 100), (295, 99), (295, 100), (300, 100)
+    elif scenario == "vertical":
+        walls = [[100, 100, 100, 400], [0, 300, 200, 300]]
+        start, cursor, guided, snapped = (100, 100), (99, 295), (100, 295), (100, 300)
+    elif scenario == "neighbour_angle":
+        walls = [[100, 100, 120, 100], [100, 100, 100, 0], [300, 0, 300, 200]]
+        start, cursor, guided, snapped = (120, 100), (295, 101), (295, 100), (300, 100)
+    else:
+        walls = [[90, 100, 100, 110], [100, 110, 110, 100], [106, 100, 106, 120]]
+        start, cursor, snapped = (100, 110), (101, 110), (106, 108)
+        guided = (100 + 10 / math.sqrt(101), 100 + 100 / math.sqrt(101))
+    source = pair_factory(size=(600, 450), walls=[{"c": c} for c in walls], lights=[{"keep": True}])
+    window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(snapping)
+    window.snap_distance.setValue(14)
+    for action in window.alignment_actions.values():
+        action.setChecked(True)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(200, 200)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*start))
+    point = view.mapFromScene(*cursor)
+    QApplication.sendEvent(
+        view.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(point),
+            QPointF(view.viewport().mapToGlobal(point)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.AltModifier,
+        ),
+    )
+    expected = snapped if snapping else guided
+    assert view.snap == pytest.approx(expected)
+    assert bool(view.angle_joint) == ("angle" in scenario)
+    assert bool(view.alignment_guides) == (scenario != "moving_angle")
+    if view.angle_joint:
+        a, joint, b = view.angle_joint
+        assert sum((a[i] - joint[i]) * (b[i] - joint[i]) for i in (0, 1)) == pytest.approx(
+            0, abs=1e-7
+        )
+        assert any(math.dist(p, expected) < 1e-7 for p in view.angle_joint)
+    assert view.edit_preview.walls[-1] == original.walls[-1]
+    QTest.mouseRelease(
+        view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, point
+    )
+    assert len(view.session.operations) == 1
+    assert json.loads(repaired_json_bytes(view.session)[0])["lights"] == source.raw["lights"]
+    view.session.undo()
+    assert view.session.geometry() == original
+    view.session.redo()
+    assert any(
+        math.dist(expected, p) < 1e-7 for edge in view.session.geometry().walls[:-1] for p in edge
+    )
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("answer", ["dataset", "group", None])
+@pytest.mark.parametrize("remember", [False, True])
+def test_group_export_name_question_remembers_only_confirmed_choices(
+    window, language, answer, remember
+):
+    from PySide6.QtWidgets import QMessageBox
+
+    from dale.preferences import load_export_group_naming
+    from dale.selection_groups import SelectionGroup
+
+    window.set_language(language, persist=False)
+    group = SelectionGroup.create("Room A")
+
+    def choose():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.objectName() == "exportGroupNamingQuestion"
+        assert "Room A" in dialog.informativeText() and "Floor" in dialog.informativeText()
+        dialog.checkBox().setChecked(remember)
+        text = window.t("Dataset name" if answer == "dataset" else "Group name")
+        button = (
+            dialog.button(QMessageBox.StandardButton.Cancel)
+            if answer is None
+            else next(b for b in dialog.buttons() if b.text() == text)
+        )
+        button.click()
+
+    errors = schedule_dialog(choose)
+    assert window.confirm_export_group_naming("Floor", (group,)) == answer
+    assert not errors
+    expected = answer if remember else None
+    assert load_export_group_naming(window.preferences_path) == expected
+    reopened = MainWindow(preferences_path=window.preferences_path)
+    assert reopened.export_group_naming == expected
+    reopened.close()
+    reopened.deleteLater()
+    if expected:
+        assert window.confirm_export_group_naming("Floor", (group,)) == expected
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_export_group_naming_settings_reflect_question_and_apply_or_cancel(window, language):
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from dale.preferences import load_export_group_naming
+
+    window.set_language(language, persist=False)
+    for choice in ("group", "dataset", None):
+        dialog = window.show_tool_settings("Export selected regions")
+        assert dialog.naming_action.currentData() == window.export_group_naming
+        dialog.naming_action.setCurrentIndex(dialog.naming_action.findData(choice))
+        dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
+        assert window.export_group_naming == choice
+        assert load_export_group_naming(window.preferences_path) == choice
+        QApplication.processEvents()
+    dialog = window.show_tool_settings("Export selected regions")
+    dialog.naming_action.setCurrentIndex(2)
+    dialog.reject()
+    assert load_export_group_naming(window.preferences_path) is None
+
+
+@pytest.mark.parametrize("exact", [False, True])
+def test_png_export_asks_group_naming_only_for_exact_exported_boundary(
+    window, pair_factory, monkeypatch, exact
+):
+    from dale.selection_groups import SelectionGroup, boundary_members
+
+    selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((50, 50))
+    ids = boundary_members(window.view.session.geometry(), (window.regions[0],))
+    group = SelectionGroup.create("Room A").assign(ids if exact else tuple(ids)[:1])
+    window.catalog.current.ui["groups"] = [group.encode()]
+    window.remembered_merge_selected_regions = False
+    seen, suggestions = [], []
+    monkeypatch.setattr(
+        window, "confirm_export_group_naming", lambda stem, groups: seen.append(groups) or "group"
+    )
+    monkeypatch.setattr(
+        "dale.ui.choose_export_directory", lambda owner, folder, name: suggestions.append(name)
+    )
+    window.export(selected_only=True)
+    assert bool(seen) is exact
+    assert suggestions[0].startswith("Room A-" if exact else window.catalog.name + "-")
+    assert window.worker is None
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("merge", [False, True])
+@pytest.mark.parametrize("naming", ["group", "dataset"])
+def test_region_group_button_exports_complete_group_with_internal_edges(
+    window, pair_factory, tmp_path, monkeypatch, language, merge, naming
+):
+    from itertools import pairwise
+
+    from PySide6.QtCore import QTimer
+    from shapely.geometry import box
+
+    from dale.export_names import selection_number
+    from dale.selection_groups import SelectionGroup, boundary_members
+
+    window.set_language(language, persist=False)
+    source = pair_factory(
+        size=(320, 200),
+        walls=[
+            {"c": [*a, *b]}
+            for p in (box(20, 20, 140, 120), box(200, 30, 280, 110))
+            for a, b in pairwise(p.exterior.coords)
+        ]
+        + [{"c": [80, 20, 80, 120]}],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select regions")
+    session = window.view.session
+    original = session.geometry(), tuple(session.operations), source.json_bytes
+    cells = window.available_regions()
+    group = SelectionGroup.create("Rooms A and B").assign(
+        boundary_members(session.geometry(), cells)
+    )
+    window.store_selection_groups((group,))
+    window.group_manager_button.click()
+    QApplication.processEvents()
+    QTest.mouseClick(window.group_manager.row_controls[group.id][1], Qt.MouseButton.LeftButton)
+    assert len(window.selected_regions) == len(cells) == 3
+    window.remembered_merge_selected_regions = merge
+    window.export_group_naming = None
+    window.include_json = True
+    window.contour_offset.setValue(3)
+    destination = tmp_path / "Exported group"
+    suggestions, questions = [], []
+
+    def directory(owner, folder, name):
+        suggestions.append(name)
+        return destination
+
+    monkeypatch.setattr("dale.ui.choose_export_directory", directory)
+
+    def choose_name():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.objectName() == "exportGroupNamingQuestion"
+        questions.append(dialog.text())
+        dialog.checkBox().setChecked(True)
+        caption = "Group name" if naming == "group" else "Dataset name"
+        next(b for b in dialog.buttons() if b.text() == window.t(caption)).click()
+
+    QTimer.singleShot(0, choose_name)
+    QTest.mouseClick(window.export_regions_button, Qt.MouseButton.LeftButton)
+    assert window.worker is not None
+    from PySide6.QtCore import QEventLoop
+
+    loop, deadline = QEventLoop(), QTimer()
+    deadline.setSingleShot(True)
+    deadline.timeout.connect(loop.quit)
+    window.worker.finished.connect(loop.quit)
+    deadline.start(15000)
+    loop.exec()
+    deadline.stop()
+    QApplication.processEvents()
+    assert window.worker is None and len(questions) == 1
+    number = selection_number(cells)
+    stem = group.name if naming == "group" else window.catalog.name
+    assert suggestions == [f"{stem}-{number}"]
+    files = list(destination.iterdir())
+    assert all(p.name.startswith(f"{stem}-{number}") for p in files)
+    manifest = json.loads(next(destination.glob("*-placement.json")).read_text())
+    assert manifest["selection_id"] == number
+    assert len(manifest["items"]) == (2 if merge else 3)
+    for item in manifest["items"]:
+        with Image.open(destination / item["file"]) as image:
+            assert item["file"].endswith(f"-{image.width}x{image.height}px.png")
+            assert image.mode == "RGBA" and image.getchannel("A").getbbox()
+    assert (
+        session.geometry(),
+        tuple(session.operations),
+        source.json_path.read_bytes(),
+    ) == original
+
+
+def test_png_export_preflight_failure_shows_error_and_keeps_button_available(
+    window, pair_factory, monkeypatch
+):
+    selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((50, 50))
+    window.remembered_merge_selected_regions = True
+    errors = []
+    monkeypatch.setattr(window, "warning", lambda *args: errors.append(args))
+
+    def fail(*args):
+        raise OSError("The export folder is unavailable.")
+
+    monkeypatch.setattr("dale.ui.choose_export_directory", fail)
+    QTest.mouseClick(window.export_regions_button, Qt.MouseButton.LeftButton)
+    assert errors == [("Export failed", "The export folder is unavailable.")]
+    assert window.worker is None and window.export_regions_button.isEnabled()
+
+
+@pytest.mark.parametrize("section", ["geometry", "figures", "regions", "pixels"])
+@pytest.mark.parametrize("sidebar", [False, True])
+def test_editor_panels_have_no_outer_gutters(window, section, sidebar):
+    window.select_tool_set(section)
+    window.set_sidebar_visible(sidebar, persist=False)
+    QApplication.processEvents()
+    root = window.centralWidget()
+    assert root.layout().contentsMargins().isNull() and root.layout().spacing() == 0
+    assert window.left_panel.geometry().topLeft() == root.rect().topLeft()
+    assert window.left_panel.geometry().bottom() == root.rect().bottom()
+    assert window.view.geometry().left() == window.left_panel.geometry().right() + 1
+    assert window.view.geometry().top() == root.rect().top()
+    assert window.view.geometry().bottom() == root.rect().bottom()
+    assert window.tool_stack.width() == 60
+    bar = window.tool_scroll.verticalScrollBar()
+    assert window.tool_scroll.width() == 60 + (10 if bar.maximum() > 0 else 0)
+    assert window.sidebar_toggle.geometry().right() == (
+        window.sidebar_scroll.geometry().left() - 1 if sidebar else root.rect().right()
+    )
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize(
+    "choice", ["default", "new", "existing", "selected", "entered", "empty", "cancel"]
+)
+def test_export_folder_chooser_uses_edited_name_as_final_destination(
+    window, tmp_path, language, choice
+):
+    from PySide6.QtWidgets import QDialogButtonBox, QFileDialog, QLineEdit, QListView
+
+    from dale.export_directory import ExportDirectoryDialog
+
+    window.set_language(language, persist=False)
+    directory = tmp_path / "Exports"
+    directory.mkdir()
+    existing = directory / "First floor"
+    existing.mkdir()
+    (directory / "Map-overlays").mkdir()
+    (existing / "Scene.json").write_bytes(b"untouched")
+    dialog = ExportDirectoryDialog(window, directory, "Map")
+    dialog.setViewMode(QFileDialog.ViewMode.List)
+    dialog.show()
+    QApplication.processEvents()
+    editor = dialog.findChild(QLineEdit, "fileNameEdit")
+    assert Path(dialog.directory().absolutePath()) == directory
+    assert editor.text() == "Map-overlays-2"
+    assert dialog.export_button.text() == window.t("Export")
+    if choice in ("new", "existing", "empty"):
+        editor.setText({"new": "Second floor", "existing": "First floor", "empty": ""}[choice])
+    elif choice in ("selected", "entered"):
+        listing = dialog.findChild(QListView, "listView")
+        assert listing.isVisible()
+        for _ in range(100):
+            index = listing.model().index(str(existing))
+            if index.isValid() and not listing.visualRect(index).isEmpty():
+                break
+            QTest.qWait(10)
+        listing.scrollTo(index)
+        QTest.mouseClick(
+            listing.viewport(), Qt.MouseButton.LeftButton, pos=listing.visualRect(index).center()
+        )
+        assert editor.text() == "First floor"
+        if choice == "entered":
+            QTest.mouseDClick(
+                listing.viewport(),
+                Qt.MouseButton.LeftButton,
+                pos=listing.visualRect(index).center(),
+            )
+            QApplication.processEvents()
+            assert Path(dialog.directory().absolutePath()) == existing
+    QApplication.processEvents()
+    assert dialog.export_button.isEnabled() and dialog.export_button.text() == window.t("Export")
+    if choice == "cancel":
+        QTest.mouseClick(
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel),
+            Qt.MouseButton.LeftButton,
+        )
+        assert dialog.destination is None
+    else:
+        QTest.mouseClick(dialog.export_button, Qt.MouseButton.LeftButton)
+        expected = {
+            "default": directory / "Map-overlays-2",
+            "empty": directory / "Map-overlays-2",
+            "new": directory / "Second floor",
+            "existing": existing,
+            "selected": existing,
+            "entered": existing,
+        }[choice]
+        assert dialog.destination == expected and not dialog.isVisible()
+    assert (existing / "Scene.json").read_bytes() == b"untouched"
+    assert set(directory.iterdir()) == {existing, directory / "Map-overlays"}
+    dialog.deleteLater()
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("asset", ["png", "json"])
+@pytest.mark.parametrize("choice", ["Overwrite", "Create copy", "Cancel"])
+def test_export_conflict_real_question_worker_and_json_preserve_assets(
+    window, pair_factory, tmp_path, monkeypatch, language, asset, choice
+):
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QMessageBox
+
+    from dale.overlay_export import export_overlays
+    from dale.session import Stroke
+
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.set_language(language, persist=False)
+    destination = tmp_path / "Floor assets"
+    destination.mkdir()
+    if asset == "png":
+        export_overlays(
+            window.view.session,
+            tmp_path,
+            target_directory=destination,
+            export_name=window.catalog.name,
+        )
+        window.view.session.add(Stroke(((30, 50),), 8))
+        monkeypatch.setattr("dale.ui.choose_export_directory", lambda *args: destination)
+    else:
+        (destination / "Floor.json").write_bytes(b"old exported JSON")
+        monkeypatch.setattr(
+            "dale.ui.QFileDialog.getSaveFileName",
+            lambda *args: (str(destination / "Floor.json"), ""),
+        )
+        monkeypatch.setattr(window, "information", lambda *args: None)
+    (destination / "Other asset.png").write_bytes(b"unrelated asset")
+    before = {p.name: p.read_bytes() for p in destination.iterdir()}
+    original = source.image_path.read_bytes(), source.json_path.read_bytes()
+    errors, questions = [], []
+    timer = QTimer()
+
+    def answer():
+        dialog = QApplication.activeModalWidget()
+        if not isinstance(dialog, QMessageBox) or dialog.objectName() != "exportFileConflict":
+            return
+        try:
+            questions.append(dialog.text())
+            assert str(tmp_path) not in dialog.text() + dialog.informativeText()
+            assert dialog.informativeText() == window.t("Folder: {folder}", folder=destination.name)
+            assert {b.text() for b in dialog.buttons()} == {
+                window.t("Overwrite"),
+                window.t("Create copy"),
+                window.t("Cancel"),
+            }
+            next(b for b in dialog.buttons() if b.text() == window.t(choice)).click()
+        except BaseException as exc:
+            errors.append(exc)
+            dialog.reject()
+
+    timer.timeout.connect(answer)
+    timer.start(5)
+    try:
+        if asset == "png":
+            window.export()
+            for _ in range(500):
+                if window.worker is None:
+                    break
+                QTest.qWait(10)
+            assert window.worker is None
+        else:
+            window.export_json()
+    finally:
+        timer.stop()
+    assert not errors, errors
+    assert len(questions) == (3 if asset == "png" and choice != "Cancel" else 1)
+    after = {p.name: p.read_bytes() for p in destination.iterdir()}
+    assert after["Other asset.png"] == before["Other asset.png"]
+    if choice == "Cancel":
+        assert after == before
+    elif choice == "Create copy":
+        assert all(after[name] == data for name, data in before.items())
+        assert len(after) == len(before) + (3 if asset == "png" else 1)
+    else:
+        assert set(after) == set(before) and after != before
+    assert original == (source.image_path.read_bytes(), source.json_path.read_bytes())
+    assert not list(tmp_path.glob(".dale-export-*"))
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("dismiss", ["outside", "x", "escape", "cancel"])
+def test_tool_settings_popup_closes_without_applying_and_keeps_nested_choices(
+    window, pair_factory, language, dismiss
+):
+    from PySide6.QtCore import QPoint, QRect
+    from PySide6.QtWidgets import QDialogButtonBox, QFrame, QLabel
+
+    selection_scene(window, pair_factory, "Select figures")
+    window.set_language(language, persist=False)
+    window.activate_mode("Pan")
+    geometry = window.view.session.geometry()
+    original = window.geometry_brush_control.value()
+    popup = window.show_tool_settings("Erase lines")
+    QApplication.processEvents()
+    assert window.tool_settings_popup is popup and popup.isVisible()
+    assert QApplication.activeModalWidget() is None and not popup.isModal()
+    assert popup.width() == 416 and popup.close_button.text() == "X"
+    assert (
+        popup.findChild(QLabel, "toolSettingsTitle").text()
+        == window.mode_actions["Erase lines"].text()
+    )
+    assert not popup.findChildren(QFrame, "settingsSeparator")
+    apply_button = popup.buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_button = popup.buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    assert apply_button.text() == window.t("Apply")
+    assert cancel_button.text() == window.t("Cancel")
+    assert apply_button.size() == cancel_button.size()
+    assert apply_button.x() < cancel_button.x()
+    assert popup.layout().itemAt(popup.layout().count() - 1).widget() is popup.buttons
+    viewport = window.view.viewport()
+    map_bounds = QRect(viewport.mapToGlobal(QPoint()), viewport.size())
+    assert map_bounds.contains(popup.geometry())
+    button = window.tool_settings_buttons["Erase lines"]
+    assert popup.x() > button.mapToGlobal(button.rect().topRight()).x()
+    popup.value.setValue(original + 10)
+    # The combo opens its own Qt popup; choosing an action must keep the container open.
+    popup.default_action.showPopup()
+    QApplication.processEvents()
+    choices = popup.default_action.view()
+    option = choices.visualRect(choices.model().index(2, 0)).center()
+    QTest.mouseClick(choices.viewport(), Qt.MouseButton.LeftButton, pos=option)
+    assert window.tool_settings_popup is popup and popup.isVisible()
+    assert popup.default_action.currentData() is False
+    if dismiss == "outside":
+        QTest.mouseClick(
+            viewport, Qt.MouseButton.LeftButton, pos=viewport.rect().bottomRight() - QPoint(5, 5)
+        )
+    elif dismiss == "x":
+        QTest.mouseClick(popup.close_button, Qt.MouseButton.LeftButton)
+    elif dismiss == "cancel":
+        QTest.mouseClick(cancel_button, Qt.MouseButton.LeftButton)
+    else:
+        QTest.keyClick(popup, Qt.Key.Key_Escape)
+    QApplication.processEvents()
+    assert window.tool_settings_popup is None
+    assert window.geometry_brush_control.value() == original
+    assert window.connection_choices["Erase lines"] is None
+    assert window.view.session.geometry() == geometry and not window.view.session.operations
+    # Replacing a popup also discards its staged value, leaving only one live container.
+    first = window.show_tool_settings("Erase lines")
+    first.value.setValue(original + 20)
+    second = window.show_tool_settings("Edit points")
+    assert window.tool_settings_popup is second and second.isVisible()
+    second.reject()
+    assert window.tool_settings_popup is None and window.geometry_brush_control.value() == original
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "Erase lines",
+        "Erase vertices",
+        "Auto-close",
+        "Close all contours",
+        "Erase",
+        "Restore",
+        "Snapping (px)",
+        "Right-angle alignment",
+        "Contour alignment",
+        "Artwork offset (px)",
+        "Figure point alignment",
+        "Figure guide alignment",
+        "Region point alignment",
+        "Region guide alignment",
+    ],
+)
+def test_standard_numeric_settings_typing_arrows_cancel_and_corner(window, pair_factory, tool):
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtTest import QSignalSpy
+    from PySide6.QtWidgets import (
+        QAbstractSpinBox,
+        QDialogButtonBox,
+        QSpinBox,
+        QStyle,
+        QStyleOptionSpinBox,
+    )
+
+    selection_scene(window, pair_factory, "Select figures")
+    section = (
+        "regions"
+        if tool.startswith("Region") or tool == "Artwork offset (px)"
+        else "figures"
+        if tool.startswith("Figure")
+        else "pixels"
+        if tool in ("Erase", "Restore")
+        else "geometry"
+    )
+    window.select_tool_set(section)
+    button = window.tool_settings_buttons[tool]
+    control = button.editor()
+    original = control.value()
+    geometry = window.view.session.geometry()
+    flags = window.alignment_ui_state()
+    triggered = QSignalSpy(button.defaultAction().triggered)
+    assert button.width() == 48
+    assert button.height() == (
+        60 if tool in ("Erase", "Restore") or button.activation_hint is not None else 48
+    )
+    assert control.isVisible() == (tool in ("Erase", "Restore"))
+    marker = button.findChild(QWidget, "toolSettingsCorner")
+    assert marker and marker.isVisible()
+    assert marker.pos().x() + marker.width() == button.width()
+    assert marker.pos().y() + marker.height() == button.height()
+    assert marker.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    values = []
+
+    def edit(accept):
+        dialog = window.tool_settings_popup
+        assert dialog.objectName() == "toolSettingsDialog"
+        assert dialog.minimumWidth() < dialog.maximumWidth()
+        assert dialog.windowFlags() & Qt.WindowType.FramelessWindowHint
+        assert not dialog.isModal() and QApplication.activeModalWidget() is None
+        spin = dialog.findChild(QSpinBox, "toolSettingsValue")
+        assert spin.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.UpDownArrows
+        assert spin.value() == original
+        target = spin.maximum() - 1
+        spin.setFocus()
+        spin.selectAll()
+        QTest.keyClicks(spin, str(target))
+        spin.interpretText()
+        option = QStyleOptionSpinBox()
+        spin.initStyleOption(option)
+        up = spin.style().subControlRect(
+            QStyle.ComplexControl.CC_SpinBox, option, QStyle.SubControl.SC_SpinBoxUp, spin
+        )
+        QTest.mouseClick(spin, Qt.MouseButton.LeftButton, pos=up.center())
+        assert spin.value() == spin.maximum()
+        down = spin.style().subControlRect(
+            QStyle.ComplexControl.CC_SpinBox, option, QStyle.SubControl.SC_SpinBoxDown, spin
+        )
+        QTest.mouseClick(spin, Qt.MouseButton.LeftButton, pos=down.center())
+        assert spin.value() == target
+        values.append(target)
+        if accept:
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+        else:
+            QTest.keyClick(dialog, Qt.Key.Key_Escape)
+
+    for accept in (False, True):
+        errors = schedule_dialog(lambda accept=accept: edit(accept))
+        position = button.rect().center()
+        QApplication.sendEvent(
+            button,
+            QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse, position, button.mapToGlobal(position)
+            ),
+        )
+        QApplication.processEvents()
+        if errors:
+            raise errors[0]
+        assert control.value() == (values[-1] if accept else original)
+    assert not triggered.count() and window.alignment_ui_state() == flags
+    assert window.view.session.geometry() == geometry and not window.view.session.operations
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+@pytest.mark.parametrize("tool", ["Edit points", "Erase lines", "Export selected regions"])
+def test_settings_default_action_dropdown_roundtrips_all_three_states(window, tool, language):
+    from PySide6.QtWidgets import QCheckBox, QComboBox, QDialogButtonBox, QLabel
+
+    from dale.preferences import (
+        load_connection_choice,
+        load_merge_selected_regions,
+        load_size_to_grid,
+    )
+
+    window.set_language(language, persist=False)
+    for index, expected in ((1, True), (2, False), (0, None)):
+
+        def choose(index=index):
+            dialog = window.tool_settings_popup
+            combo = dialog.findChild(QComboBox, "defaultAction")
+            assert combo.count() == 3
+            assert combo.itemText(0) == window.t("Ask every time")
+            assert dialog.findChild(QLabel, "defaultActionQuestion").text().endswith("?")
+            combo.setCurrentIndex(index)
+            if tool == "Export selected regions":
+                assert not load_size_to_grid(window.preferences_path)
+                dialog.findChild(QCheckBox, "sizeToGrid").setChecked(index != 0)
+            else:
+                assert not dialog.findChildren(QCheckBox)
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+
+        # Keep the grid choice independent while changing the remembered answer.
+        from dale.preferences import save_size_to_grid
+
+        save_size_to_grid(window.preferences_path, False)
+        window.size_to_grid = False
+        errors = schedule_dialog(choose)
+        window.show_tool_settings(tool)
+        QApplication.processEvents()
+        if errors:
+            raise errors[0]
+        assert window.tool_settings_popup is None
+        actual = (
+            load_merge_selected_regions(window.preferences_path)
+            if tool == "Export selected regions"
+            else load_connection_choice(window.preferences_path, tool)
+        )
+        assert actual is expected
+        if tool == "Export selected regions":
+            reopened = MainWindow(preferences_path=window.preferences_path)
+            assert reopened.size_to_grid is (index != 0)
+            reopened.close()
+            reopened.deleteLater()
+
+
 @pytest.mark.parametrize("language", ["ru", "en"])
 def test_selected_export_question_remember_restart_cancel_and_right_click(window, language):
     from PySide6.QtCore import QTimer
@@ -86,10 +1275,6 @@ def test_selected_export_question_remember_restart_cancel_and_right_click(window
         dialog = QApplication.activeModalWidget()
         assert dialog.objectName() == "mergeSelectedRegionsQuestion"
         assert dialog.text() == window.t("Export adjacent regions as one?")
-        if seen:
-            assert dialog.informativeText().endswith(
-                window.t("Choose the answer for export. Clear the checkbox to ask on every export.")
-            )
         assert dialog.checkBox().text() == window.t("Do not ask again")
         dialog.checkBox().setChecked(remember)
         seen.append(kind)
@@ -104,17 +1289,36 @@ def test_selected_export_question_remember_restart_cancel_and_right_click(window
     reopened.close()
     reopened.deleteLater()
 
-    QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.Cancel, False))
-    assert window.confirm_merge_selected_regions(settings=True) is None
+    def settings(index, accept):
+        from PySide6.QtWidgets import QComboBox, QDialogButtonBox, QLabel
+
+        dialog = window.tool_settings_popup
+        assert dialog.objectName() == "toolSettingsDialog"
+        assert dialog.findChild(QLabel, "defaultActionQuestion").text() == window.t(
+            "Export adjacent regions as one?"
+        )
+        combo = dialog.findChild(QComboBox, "defaultAction")
+        assert combo.currentData() is True
+        combo.setCurrentIndex(index)
+        kind = (
+            QDialogButtonBox.StandardButton.Ok if accept else QDialogButtonBox.StandardButton.Cancel
+        )
+        dialog.findChild(QDialogButtonBox).button(kind).click()
+
+    QTimer.singleShot(0, lambda: settings(2, False))
+    window.show_tool_settings("Export selected regions")
+    QApplication.processEvents()
+    assert window.tool_settings_popup is None
     assert load_merge_selected_regions(window.preferences_path) is True
-    QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.No, False))
+    QTimer.singleShot(0, lambda: settings(0, True))
     button = window.export_regions_button
     position = button.rect().center()
     event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse, position, button.mapToGlobal(position)
     )
     QApplication.sendEvent(button, event)
-    assert len(seen) == 3 and load_merge_selected_regions(window.preferences_path) is None
+    QApplication.processEvents()
+    assert len(seen) == 1 and load_merge_selected_regions(window.preferences_path) is None
     assert not window.merge_selected_regions
     tip = window.export_regions_action.toolTip()
     assert tip.startswith(window.t("Export selected regions"))
@@ -122,8 +1326,9 @@ def test_selected_export_question_remember_restart_cancel_and_right_click(window
 
 
 @pytest.mark.parametrize("merge", [True, False])
+@pytest.mark.parametrize("size_to_grid", [False, True])
 def test_selected_export_actual_button_question_worker_png_and_sidebar(
-    window, pair_factory, tmp_path, monkeypatch, merge
+    window, pair_factory, tmp_path, monkeypatch, merge, size_to_grid
 ):
     from itertools import pairwise
 
@@ -135,6 +1340,7 @@ def test_selected_export_actual_button_question_worker_png_and_sidebar(
 
     source = pair_factory(
         size=(240, 160),
+        grid={"size": 40, "type": 1},
         walls=[
             {"c": [*a, *b]}
             for p in (box(30, 30, 100, 100), box(100, 30, 170, 100))
@@ -147,9 +1353,11 @@ def test_selected_export_actual_button_question_worker_png_and_sidebar(
     window.toggle_region_at((150, 50))
     assert len(window.view.region_polygons) == 2
     window.contour_offset.setValue(-3)
+    window.size_to_grid = size_to_grid
     geometry, operations = window.view.session.geometry(), tuple(window.view.session.operations)
     source_bytes = source.image_path.read_bytes(), source.json_path.read_bytes()
-    monkeypatch.setattr("dale.ui.QFileDialog.getExistingDirectory", lambda *args: str(tmp_path))
+    destination = tmp_path / "Chosen export"
+    monkeypatch.setattr("dale.ui.choose_export_directory", lambda *args: destination)
     dialogs = []
 
     def choose():
@@ -164,13 +1372,16 @@ def test_selected_export_actual_button_question_worker_png_and_sidebar(
     QTimer.singleShot(0, choose)
     QTest.mouseClick(window.export_regions_button, Qt.MouseButton.LeftButton)
     assert window.worker is not None and window.worker.merge_adjacent is merge
+    assert window.worker.size_to_grid is size_to_grid
+    window.size_to_grid = not size_to_grid  # Worker owns the frozen export choice.
     for _ in range(500):
         if window.worker is None:
             break
         QTest.qWait(10)
     assert window.worker is None and len(dialogs) == 1
-    (folder,) = tmp_path.glob("*-overlays")
-    manifest = json.loads((folder / "placement.json").read_text())
+    folder = destination
+    assert folder.is_dir() and not list(folder.glob("*-overlays*"))
+    manifest = json.loads(next(folder.glob("*-placement.json")).read_text())
     assert len(manifest["items"]) == (1 if merge else 2)
     bounds = window.bounds_preview.request(
         window.view.session,
@@ -182,7 +1393,26 @@ def test_selected_export_actual_button_question_worker_png_and_sidebar(
         ),
     )
     assert tuple(tuple(item["content_bounds"]) for item in manifest["items"]) == bounds.bounds
-    assert ("PNG: 2" in window.map_info.text()) is (not merge)
+    window.size_to_grid = size_to_grid
+    window.update_map_info()
+    if size_to_grid:
+        padded_bounds = window.bounds_preview.request(
+            window.view.session,
+            tuple(
+                p
+                for _, p in selected_export_regions(
+                    window.view.region_polygons, -3, merge_adjacent=merge
+                )
+            ),
+            size_to_grid=True,
+        )
+        actual = tuple(
+            (item["x"], item["y"], item["x"] + item["width"], item["y"] + item["height"])
+            for item in manifest["items"]
+        )
+        assert actual == padded_bounds.bounds
+        assert all(item["width"] % 40 == item["height"] % 40 == 0 for item in manifest["items"])
+    assert ("PNG: 2 ·" in window.map_info.text()) is (not merge)
     assert window.view.session.geometry() == geometry
     assert tuple(window.view.session.operations) == operations
     assert source_bytes == (source.image_path.read_bytes(), source.json_path.read_bytes())
@@ -195,7 +1425,7 @@ def test_selected_export_cancel_stops_before_folder_dialog(window, pair_factory,
     selection_scene(window, pair_factory, "Select regions")
     window.toggle_region_at((50, 50))
     monkeypatch.setattr(
-        "dale.ui.QFileDialog.getExistingDirectory",
+        "dale.ui.choose_export_directory",
         lambda *args: pytest.fail("Unexpected folder dialog"),
     )
     QTimer.singleShot(
@@ -432,10 +1662,6 @@ def test_connection_question_remember_cancel_and_tool_right_click(window, tool, 
             if tool == "Erase lines"
             else "Connect this point to the other contour with a shared vertex?"
         )
-        if len(seen) == 1:
-            assert dialog.informativeText() == window.t(
-                "Choose the answer for this tool. Clear the checkbox to ask on each contact."
-            )
         assert dialog.checkBox().text() == window.t("Do not ask again")
         dialog.checkBox().setChecked(remember)
         seen.append(kind)
@@ -450,16 +1676,120 @@ def test_connection_question_remember_cancel_and_tool_right_click(window, tool, 
         if tool == "Erase lines"
         else window.geometry_toolbar.widgetForAction(window.mode_actions[tool])
     )
-    QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.Yes, False))
+
+    def settings():
+        from PySide6.QtWidgets import QComboBox, QDialogButtonBox, QLabel
+
+        dialog = window.tool_settings_popup
+        assert dialog.objectName() == "toolSettingsDialog"
+        assert dialog.findChild(QLabel, "defaultActionQuestion").text().endswith("?")
+        combo = dialog.findChild(QComboBox, "defaultAction")
+        assert combo.currentData() is False
+        assert combo.itemText(0) == window.t("Ask every time")
+        combo.setCurrentIndex(0)
+        dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
+
+    QTimer.singleShot(0, settings)
     position = button.rect().center()
     event = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse, position, button.mapToGlobal(position)
     )
     QApplication.sendEvent(button, event)
-    assert len(seen) == 2 and load_connection_choice(window.preferences_path, tool) is None
+    QApplication.processEvents()
+    assert len(seen) == 1 and load_connection_choice(window.preferences_path, tool) is None
     QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.Cancel, True))
     assert window.confirm_contour_connection(tool) is None
     assert load_connection_choice(window.preferences_path, tool) is None
+
+
+@pytest.mark.parametrize("section", ["regions", "figures"])
+@pytest.mark.parametrize("anchor", [(30, 30), (100, 100)])
+def test_pasted_contours_rotate_about_bounds_center_instead_of_grabbed_vertex(
+    window, pair_factory, section, anchor
+):
+    selection_scene(window, pair_factory, "Select regions")
+    window.select_tool_set(section)
+    if section == "figures":
+        window.select_figure_at({"point": (30, 70), "double": True})
+    else:
+        window.toggle_region_at((50, 50))
+    view = window.view
+    original = view.session.geometry()
+    view.cursor_point = anchor
+    assert view.copy_selected_regions() and view.region_clipboard.anchor == anchor
+    assert view.begin_paste_regions()
+    target = (310, 160)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*target))
+    plan = view._region_plan()
+    expected = tuple(65 + target[i] - anchor[i] for i in (0, 1))
+    assert plan.pivot == pytest.approx(expected)
+    pasted = view.session.geometry()
+    window.activate_mode("Rotate figures" if section == "figures" else "Rotate regions")
+    view.transform_regions(angle=90)
+    result = view._region_plan()
+    points = [p for edge in result.moving for p in edge]
+    center = tuple((min(p[i] for p in points) + max(p[i] for p in points)) / 2 for i in (0, 1))
+    assert center == pytest.approx(expected) and result.pivot == pytest.approx(expected)
+    assert view.session.geometry().walls[: len(original.walls)] == original.walls
+    window.history(False)
+    assert view.session.geometry() == pasted
+
+
+@pytest.mark.parametrize("action", ["undo_move", "reopen"])
+def test_contour_center_is_recomputed_after_geometry_change_or_project_reopen(
+    window, pair_factory, tmp_path, action
+):
+    selection_scene(window, pair_factory, "Select figures")
+    window.select_figure_at({"point": (30, 70), "double": True})
+    view = window.view
+    if action == "undo_move":
+        window.activate_mode("Move figures")
+        start, end = view.mapFromScene(50, 30), view.mapFromScene(170, 50)
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), end)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        assert view._region_plan().pivot == pytest.approx((185, 85))
+        window.history(False)
+    else:
+        # A valid current-schema project can contain the former misplaced grab-anchor cache.
+        view.figure_pivot = (30, 30)
+        window.project_path = tmp_path / "Contour pivot.dale"
+        assert window.save_project_file() and window.load_project_file(window.project_path)
+    window.activate_mode("Rotate figures")
+    assert view._region_plan().pivot == pytest.approx((65, 65))
+    view.transform_regions(angle=90)
+    assert view._region_plan().pivot == pytest.approx((65, 65))
+
+
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_asymmetric_contour_rotation_keeps_one_common_bounds_center(
+    window, pair_factory, disconnected
+):
+    import math
+
+    edges = [((40, 40), (140, 40)), ((140, 40), (40, 100)), ((40, 100), (40, 40))]
+    if disconnected:
+        edges.append(((230, 10), (260, 10)))
+    stationary = ((20, 180), (300, 180))
+    source = pair_factory(size=(400, 240), walls=[{"c": [*a, *b]} for a, b in (*edges, stationary)])
+    assert window.load_sources(source.image_path, source.json_path)
+    window.select_tool_set("figures")
+    view = window.view
+    initial = view.session.geometry()
+    view.figure_line_ids = tuple(r.id for r in initial.lineage[: len(edges)])
+    window.update_map_info()
+    expected = (150, 55) if disconnected else (90, 70)
+    assert view._region_plan().pivot == expected
+    window.activate_mode("Rotate figures")
+    for _ in range(120):
+        view.transform_regions(angle=0.1)
+        assert view._region_plan().pivot == expected
+    result = view._region_plan()
+    assert len(view.session.operations) == 1
+    assert result.fixed == (stationary,)
+    assert math.dist(result.moving[0][0], expected) == pytest.approx(
+        math.dist(edges[0][0], expected)
+    )
 
 
 @pytest.mark.parametrize("section", ["regions", "figures"])
@@ -554,7 +1884,9 @@ def test_ctrl_a_selects_current_section_and_height_scope(window, pair_factory, s
         else:
             assert len(view.region_polygons) == (1 if filtered else 2)
             assert window.selected_regions == tuple(range(len(window.regions)))
-        assert view.session.geometry() == before and not view.session.operations
+        assert view.session.geometry() == before
+        assert all(isinstance(op, RasterSelectionEdit) for op in view.session.operations)
+        assert bool(view.session.operations) == (section == "pixels")
         QTest.keyClick(
             view,
             Qt.Key.Key_A,
@@ -629,15 +1961,12 @@ def test_figures_click_double_click_marquee_ctrl_a_and_clear(window, pair_factor
     assert not view.figure_line_ids and not view.session.operations
     for title, action in window.figure_alignment_actions.items():
         button = window.sized_tools[title]
-        assert button.isVisible() and (button.width(), button.height()) == (48, 72)
+        assert button.isVisible() and (button.width(), button.height()) == (48, 60)
         assert action.toolTip().splitlines()[0] == action.text()
         assert "Alt" in action.toolTip() and "Ctrl" in button.toolTip()
     window.figure_guide_distance.setValue(9999)
     assert window.contour_alignment_distance.value() == window.region_guide_distance.value() == 9999
-    editor = window.figure_guide_distance.lineEdit()
-    editor.setFocus()
-    QTest.keyClick(editor, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
-    assert editor.selectedText() == "9999" and not view.figure_line_ids
+    assert not window.figure_guide_distance.isVisible()
     window.activate_mode("Move figures")
     assert view.mode == "Select figures"  # No modal when the selection is empty.
 
@@ -687,12 +2016,13 @@ def test_contour_double_click_locks_first_hit_and_does_not_accumulate_jittered_s
     assert tuple(r.id for r in view.session.geometry().lineage) == ids
     assert not view.session.operations and not view.session.future
     assert view.item.pixmap().toImage() == pixels
-    assert set(view.figure_line_ids) == set(prior_ids) | set(ids[:4])
+    expected = set(prior_ids) ^ set(ids[:4])
+    assert set(view.figure_line_ids) == expected
     assert view.region_clipboard is not None and view.paste_delta is None
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
     QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
-    assert set(view.figure_line_ids) == set(prior_ids) | set(ids[:8])
+    assert set(view.figure_line_ids) == expected | set(ids[4:8])
     assert view.session.geometry() == original and not view.session.operations
 
 
@@ -897,7 +2227,7 @@ def test_figure_rectangles_remain_whole_after_reselection_and_reopen(
     assert len(export_regions(view.session, individual=True)) > len(shapes)
     (tmp_path / "png").mkdir()
     folder = export_overlays(view.session, tmp_path / "png")
-    items = json.loads((folder / "placement.json").read_text())["items"]
+    items = json.loads(next(folder.glob("*-placement.json")).read_text())["items"]
     assert len(items) == len(export_regions(view.session))
     assert source_bytes == (source.image_path.read_bytes(), source.json_path.read_bytes())
 
@@ -942,20 +2272,22 @@ def test_selection_marquee_toggles_frozen_baseline_in_both_directions(
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=points[0])
     assert window.selected_regions == original
     assert view.session.geometry() == before[1] and view.preview.tobytes() == before[2]
-    assert not view.session.operations
+    assert all(isinstance(op, RasterSelectionEdit) for op in view.session.operations)
+    assert len(view.session.operations) == (4 if mode == "Select raster regions" else 0)
     window.selected_regions = ()
     window.update_map_info()
-    assert window.document_state() == before[0]  # Selection is UI state, never geometry history.
+    assert (window.document_state() == before[0]) == (mode == "Select regions")
 
 
 @pytest.mark.parametrize("mode", ["Select regions", "Select raster regions"])
 @pytest.mark.parametrize("zoom", [1, 3])
 def test_selection_threshold_empty_click_and_escape_are_screen_based(
-    window, pair_factory, mode, zoom
+    window, pair_factory, mode, zoom, monkeypatch
 ):
     from PySide6.QtCore import QPoint
 
     _, view = selection_scene(window, pair_factory, mode, zoom)
+    monkeypatch.setattr(window, "question", lambda *args: QMessageBox.StandardButton.Yes)
     start = view.mapFromScene(60, 60)
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
     QTest.mouseMove(view.viewport(), start + QPoint(6, 8))  # Exactly10px remains a click.
@@ -978,7 +2310,8 @@ def test_selection_threshold_empty_click_and_escape_are_screen_based(
     view.highlighted_edges = view.session.walls[:1]
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=a)
     assert window.selected_regions == () and not view.highlighted_edges
-    assert not view.session.operations
+    assert all(isinstance(op, RasterSelectionEdit) for op in view.session.operations)
+    assert len(view.session.operations) == (2 if mode == "Select raster regions" else 0)
 
 
 def test_marquee_escape_restores_frozen_pasted_figure_and_switch_cancels(window, pair_factory):
@@ -997,6 +2330,9 @@ def test_marquee_escape_restores_frozen_pasted_figure_and_switch_cancels(window,
         assert view.detached_selection is None
         if switch:
             window.select_tool_set("pixels")
+            assert view.detached_selection is None and not window.selected_regions
+            assert not view.region_polygons
+            window.select_tool_set("regions")
         else:
             QTest.keyClick(view, Qt.Key.Key_Escape)
         assert not view.active_gesture and window.marquee_selection is None
@@ -1004,6 +2340,184 @@ def test_marquee_escape_restores_frozen_pasted_figure_and_switch_cancels(window,
         assert view.region_polygons == frozen["polygons"]
         QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=b)
     assert len(view.session.operations) == 1
+
+
+@pytest.mark.parametrize("section", ["geometry", "figures", "regions", "pixels"])
+@pytest.mark.parametrize("show_contours", [False, True])
+def test_section_selection_painting_is_isolated_and_restored(
+    window, pair_factory, section, show_contours
+):
+    source, view = selection_scene(window, pair_factory, "Select regions")
+    original = view.session.geometry(), tuple(view.session.operations), view.preview.tobytes()
+    source_bytes = source.image_path.read_bytes(), source.json_path.read_bytes()
+    view.show_walls = show_contours
+
+    def frame():
+        window.activate_mode("Pan")
+        view.cursor_point = None
+        view.update_hover()
+        QApplication.processEvents()
+        return view.viewport().grab().toImage()
+
+    baseline = {}
+    for key in ("geometry", "figures", "regions", "pixels"):
+        window.select_tool_set(key)
+        baseline[key] = frame()
+    window.select_tool_set(section)
+    window.select_all_elements()
+    selected = frame()
+    assert selected != baseline[section]
+    for other in baseline:
+        if other == section:
+            continue
+        window.select_tool_set(other)
+        assert frame() == baseline[other], (section, other, show_contours)
+        # Clearing another section must not discard this section's retained selection.
+        window.clear_selection()
+        window.select_tool_set(section)
+        assert frame() == selected
+    assert (
+        view.session.geometry(),
+        tuple(op for op in view.session.operations if not isinstance(op, RasterSelectionEdit)),
+        view.preview.tobytes(),
+    ) == original
+    assert len(view.session.operations) == (1 if section == "pixels" else 0)
+    assert (source.image_path.read_bytes(), source.json_path.read_bytes()) == source_bytes
+
+
+def test_regions_and_raster_keep_distinct_selections_and_masks(window, pair_factory):
+    from dale.session import ContourMask
+
+    _, view = selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((60, 60))
+    regular = view.region_polygons
+    window.select_tool_set("pixels")
+    assert not window.selected_regions and not view.region_polygons
+    window.toggle_region_at((175, 60))
+    raster = view.region_polygons
+    assert raster != regular
+    window.mask("inside")
+    assert isinstance(view.session.operations[-1], ContourMask)
+    assert view.session.operations[-1].boundary.equals(raster[0])
+    window.select_tool_set("regions")
+    assert view.region_polygons == regular
+    window.clear_selection()
+    assert not window.selected_regions
+    window.select_tool_set("pixels")
+    assert view.region_polygons == raster
+
+
+@pytest.mark.parametrize("active", ["geometry", "figures", "regions", "pixels"])
+def test_section_region_selections_and_detached_shape_roundtrip(
+    window, pair_factory, tmp_path, active
+):
+    _, view = selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((60, 60))
+    assert view.copy_selected_regions()
+    assert view.begin_paste_regions()
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(175, 170))
+    frozen = view.detached_selection
+    assert frozen
+    window.select_tool_set("pixels")
+    window.toggle_region_at((280, 60))
+    raster = view.region_polygons
+    window.select_tool_set(active)
+    window.project_path = tmp_path / f"Selection {active}.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert window.current_tool_set == active
+    window.select_tool_set("pixels")
+    assert view.region_polygons == raster and view.detached_selection is None
+    window.select_tool_set("regions")
+    assert view.region_polygons == frozen["polygons"]
+    assert view.detached_selection["line_ids"] == frozen["line_ids"]
+    assert len(view.session.operations) == 2
+    assert isinstance(view.session.operations[-1], RasterSelectionEdit)
+
+
+def test_hidden_section_selections_cannot_reveal_group_lines(window, pair_factory):
+    _, view = selection_scene(window, pair_factory, "Select figures")
+    window.select_all_elements()
+    ids = view.figure_line_ids
+    window.select_tool_set("geometry")
+    window.create_selection_group()
+    group = window.selection_groups()[0]
+    # Use identical live IDs in this section's group, without selecting them here.
+    window.update_selection_group(group.id, lines=ids)
+    window.toggle_group_manager()
+    view.show_walls = False
+    assert view.figure_line_ids == ids and not view.contour_line_ids
+    assert window.group_overlay() == ((), ())
+    window.select_all_elements()
+    assert window.group_overlay()[0]
+    window.select_tool_set("figures")
+    assert not window.group_overlay()[0]  # No groups from Vertices in Contours.
+
+
+def test_json_only_vertex_view_preserves_hidden_region_selection(window, pair_factory):
+    source = pair_factory()
+    assert window.load_sources(None, source.json_path)
+    window.select_tool_set("regions")
+    window.select_all_elements()
+    selected = window.selected_regions
+    assert selected
+    window.select_tool_set("geometry")
+    assert window.selected_regions == selected
+    assert window.view.selected_path.isEmpty()
+    window.select_tool_set("regions")
+    assert window.selected_regions == selected and window.view.region_polygons
+
+
+def test_section_region_selections_do_not_leak_across_datasets(window, pair_factory, tmp_path):
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    window.select_tool_set("regions")
+    window.select_all_elements()
+    regular = window.selected_regions
+    window.select_tool_set("pixels")
+    assert not window.selected_regions
+    window.select_all_elements()
+    raster = window.selected_regions
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    window.clear_selection()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(base))
+    assert window.selected_regions == raster
+    window.select_tool_set("regions")
+    assert window.selected_regions == regular
+
+
+def test_inactive_cell_indices_are_not_reused_after_topology_changes(window, pair_factory):
+    from dale.editing import add_rectangle
+
+    _, view = selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((60, 60))
+    window.select_tool_set("pixels")
+    window.toggle_region_at((175, 60))
+    window.select_tool_set("figures")
+    view.session.add(add_rectangle(view.session.geometry(), (5, 5), (20, 20)))
+    window.refresh()
+    assert window.ui_state()["section_region_selections"] == {"regions": (), "pixels": ()}
+    for section in ("regions", "pixels"):
+        window.select_tool_set(section)
+        assert not window.selected_regions and not view.region_polygons
+
+
+def test_vertex_commit_also_clears_inactive_raster_cell_selection(window, pair_factory):
+    _, view = selection_scene(window, pair_factory, "Select raster regions")
+    window.toggle_region_at((60, 60))
+    window.select_tool_set("regions")
+    window.toggle_region_at((175, 60))
+    window.activate_mode("New line")
+    a, b = view.mapFromScene(120, 160), view.mapFromScene(220, 180)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=a)
+    QTest.mouseMove(view.viewport(), b)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=b)
+    assert len(view.session.operations) == 2
+    assert isinstance(view.session.operations[0], RasterSelectionEdit)
+    for section in ("regions", "pixels"):
+        window.select_tool_set(section)
+        assert not window.selected_regions and not view.region_polygons
 
 
 @pytest.mark.parametrize("mode", ["inside", "outside"])
@@ -1038,8 +2552,9 @@ def test_raster_selection_is_first_and_masks_only_selected_immutable_cells(
     assert all(command.isEnabled() for command in window.mask_actions.values())
     image_before, json_before = source.image_path.read_bytes(), source.json_path.read_bytes()
     window.mask_actions[mode].trigger()
-    assert len(view.session.operations) == 1
-    mask = view.session.operations[0]
+    assert len(view.session.operations) == 2
+    assert isinstance(view.session.operations[0], RasterSelectionEdit)
+    mask = view.session.operations[1]
     assert isinstance(mask, ContourMask) and mask.boundary.equals(box(30, 30, 100, 100))
     assert mask.mode == mode
     alpha = view.item.pixmap().toImage()
@@ -1057,12 +2572,18 @@ def test_raster_selection_is_first_and_masks_only_selected_immutable_cells(
     save_project(view.session, path, window.ui_state())
     with load_project(path) as loaded:
         assert loaded.ui_state["mode"] == "Select raster regions"
-        assert loaded.session.operations[0].boundary.equals(mask.boundary)
+        assert loaded.session.operations[1].boundary.equals(mask.boundary)
         assert loaded.session.contour_offset == 5
+        loaded.session.undo()
+        assert loaded.session.operations[-1] == mask  # Undo the later selection first.
+        loaded.session.undo()
+        assert not raster_operations(loaded.session.operations)
         loaded.session.undo()
         assert not loaded.session.operations
         loaded.session.redo()
-        assert loaded.session.operations[0] == mask
+        assert isinstance(loaded.session.operations[-1], RasterSelectionEdit)
+        loaded.session.redo()
+        assert loaded.session.operations[-1] == mask
     assert (
         image_before == source.image_path.read_bytes()
         and json_before == source.json_path.read_bytes()
@@ -1078,6 +2599,139 @@ def make_catalog(source, tmp_path):
     additional.add(add_line(additional.geometry(), (100, 120), (200, 120)))
     doc, _ = append_project_document(path, current_contours_document(additional))
     return path, doc
+
+
+@pytest.mark.parametrize("via_manager", [False, True])
+def test_last_dataset_reopens_after_navigation_without_saving_project(
+    window, pair_factory, tmp_path, via_manager
+):
+    from dale.preferences import load_project_dataset
+
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    archive = path.read_bytes()
+    if via_manager:
+        assert window.apply_dataset_manager(window.catalog.fork(), other)
+    else:
+        window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    expected = window.view.session.geometry()
+    assert window.catalog.active_key == other
+    assert window.document_state() == window.saved_state
+    assert load_project_dataset(window.preferences_path, path) == other
+    assert path.read_bytes() == archive
+    with load_project(path) as project:
+        assert project.catalog.active_key == project.catalog.base_key
+    reopened = MainWindow(preferences_path=window.preferences_path)
+    reopened.can_discard = lambda: True
+    try:
+        assert reopened.load_project_file(path)
+        assert reopened.catalog.active_key == other
+        assert reopened.dataset_control.currentData() == other
+        assert reopened.view.session.geometry() == expected
+        assert reopened.view.session is reopened.catalog.current.session
+        assert path.read_bytes() == archive
+    finally:
+        reopened.close()
+        reopened.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_last_dataset_is_independent_for_two_projects_with_the_same_dataset_ids(
+    window, pair_factory, tmp_path
+):
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    copied = tmp_path / "Copy.dale"
+    copied.write_bytes(path.read_bytes())
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    assert window.load_project_file(copied) and window.catalog.active_key == base
+    assert window.load_project_file(path) and window.catalog.active_key == other
+    assert window.load_project_file(copied) and window.catalog.active_key == base
+
+
+def test_last_dataset_archive_choice_survives_save_as_and_stale_local_choice(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from dale.preferences import load_project_dataset, save_project_dataset
+
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    original = path.read_bytes()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    target = tmp_path / "Save As.dale"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *args: (str(target), ""))
+    assert window.save_project_file(save_as=True)
+    assert path.read_bytes() == original
+    assert load_project_dataset(window.preferences_path, target) == other
+    with load_project(target) as project:
+        assert project.catalog.active_key == other and project.catalog.base_key == base
+        assert project.session is project.catalog.current.session
+    save_project_dataset(window.preferences_path, target, "set-" + "f" * 32)
+    saved = target.read_bytes()
+    assert window.load_project_file(target) and window.catalog.active_key == other
+    assert target.read_bytes() == saved
+    assert load_project_dataset(window.preferences_path, target) == other
+
+
+def test_deleted_last_dataset_falls_back_to_first_and_updates_local_choice(
+    window, pair_factory, tmp_path
+):
+    from dale.preferences import load_project_dataset, save_project_dataset
+
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    fork = window.catalog.fork()
+    fork.remove(other)
+    assert window.apply_dataset_manager(fork) and window.catalog.active_key == base
+    assert window.save_project_file()
+    save_project_dataset(window.preferences_path, path, other)
+    saved = path.read_bytes()
+    assert window.load_project_file(path) and window.catalog.active_key == base
+    assert load_project_dataset(window.preferences_path, path) == base
+    assert path.read_bytes() == saved
+
+
+def test_last_dataset_preference_failure_does_not_block_navigation_or_save(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    other = next(key for key in window.catalog.views if key != window.catalog.base_key)
+
+    def fail(*args):
+        raise OSError("Synthetic preference failure")
+
+    monkeypatch.setattr("dale.ui.save_project_dataset", fail)
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    assert window.catalog.active_key == other and window.save_project_file()
+    with load_project(path) as project:
+        assert project.catalog.active_key == other
+
+
+def test_failed_project_open_does_not_change_remembered_dataset(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    previous = window.catalog.active_key
+    settings = window.preferences_path.read_bytes()
+    corrupt = tmp_path / "Corrupt.dale"
+    corrupt.write_bytes(b"Synthetic invalid archive")
+    monkeypatch.setattr(window, "warning", lambda *args: None)
+    assert not window.load_project_file(corrupt)
+    assert window.catalog.active_key == previous
+    assert window.preferences_path.read_bytes() == settings
 
 
 def test_export_json_uses_active_unsaved_draft_alias_and_applied_history(
@@ -1101,6 +2755,7 @@ def test_export_json_uses_active_unsaved_draft_alias_and_applied_history(
         return str(destination), ""
 
     monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", save_dialog)
+    monkeypatch.setattr(window, "confirm_export_file", lambda path: "overwrite")
     monkeypatch.setattr(window, "information", lambda *args: None)
     before = window.document_state(), window.saved_state, window.catalog.active_key
     window.export_json_action.trigger()
@@ -1108,7 +2763,7 @@ def test_export_json_uses_active_unsaved_draft_alias_and_applied_history(
     assert exported.read_bytes() == repaired_json_bytes(window.view.session)[0]
     assert load_pair(None, exported).walls == session.walls
     assert len(session.walls) == 2 and len(session.future) == 1
-    assert Path(dialogs[0][2]).name == "Active draft.json"
+    assert Path(dialogs[0][2]).name == f"Active draft-{window.export_identity()}.json"
     assert dialogs[0][1] == window.t("Export JSON…")
     assert (window.document_state(), window.saved_state, window.catalog.active_key) == before
     assert path.read_bytes() == original_project
@@ -1118,7 +2773,7 @@ def test_export_json_uses_active_unsaved_draft_alias_and_applied_history(
     window.dataset_control.setCurrentIndex(window.dataset_control.findData(window.catalog.base_key))
     window.export_json_action.trigger()
     assert exported.read_bytes() == repaired_json_bytes(window.view.session)[0]
-    assert Path(dialogs[-1][2]).name == "source.json"
+    assert Path(dialogs[-1][2]).name == f"source-{window.export_identity()}.json"
     assert len(load_pair(None, exported).walls) == 4
 
 
@@ -1136,7 +2791,7 @@ def test_export_json_from_image_only_and_cancel(window, pair_factory, tmp_path, 
     destination = tmp_path / "image-contours.json"
 
     def save_dialog(*args):
-        assert Path(args[2]).name == "source.json"
+        assert Path(args[2]).name == f"source-{window.export_identity()}.json"
         return str(destination), ""
 
     monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", save_dialog)
@@ -1196,11 +2851,11 @@ def test_dedicated_top_panel_and_scrollable_rectangle_below_circle(window, langu
         == 48
     )
     assert window.tool_scroll.height() == window.left_panel.height()
-    assert window.tool_scroll.verticalScrollBar().maximum() > 0
-    window.tool_scroll.verticalScrollBar().setValue(
-        window.tool_scroll.verticalScrollBar().maximum()
-    )
-    assert window.global_close_control.isVisible()
+    assert window.tool_scroll.verticalScrollBar().maximum() == 0
+    button = window.sized_tools["Close all contours"]
+    assert button.isVisible() and not window.global_close_control.isVisible()
+    bottom = button.mapTo(window.tool_scroll.viewport(), button.rect().bottomRight())
+    assert window.tool_scroll.viewport().rect().contains(bottom)
 
 
 @pytest.mark.parametrize("enabled,alt", [(True, True), (False, True), (True, False)])
@@ -1282,6 +2937,267 @@ def test_common_clipboard_paste_between_sets_keeps_sources_and_undo(
     assert view.paste_delta is None and len(view.session.operations) == 1
 
 
+@pytest.mark.parametrize("section", ["regions", "figures"])
+@pytest.mark.parametrize("destination", ["geometry", "pixels"])
+def test_keyboard_clipboard_survives_dataset_switch_to_another_section(
+    window, pair_factory, tmp_path, section, destination
+):
+    source = pair_factory(size=(400, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select figures" if section == "figures" else "Select regions")
+    app = QApplication.instance()
+    window.activateWindow()
+    window.view.setFocus()
+    app.processEvents()
+    QTest.keyClick(window.view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClick(window.view, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    clipboard = window.view.region_clipboard
+    assert clipboard and len(clipboard.edges) == 4
+    image = tmp_path / "Target.png"
+    Image.new("RGB", (400, 400), "#254c62").save(image)
+    target = window.catalog.create(
+        "Target",
+        ui={
+            "tool_set": destination,
+            "mode": "Edit points" if destination == "geometry" else "Select raster regions",
+        },
+    )
+    window.catalog.replace_component(target.id, "image", Session(load_pair(image, None)))
+    target.ui["mode"] = "Edit points" if destination == "geometry" else "Select raster regions"
+    window.rebuild_dataset_controls()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(target.id))
+    assert window.current_tool_set == destination
+    assert window.view.region_clipboard is clipboard and window.paste_regions_action.isEnabled()
+    assert window.paste_regions_action.text() == window.t(
+        "Paste contours" if section == "figures" else "Paste region contours"
+    )
+    view = window.view
+    view.setTransform(QTransform())
+    view.centerOn(200, 200)
+    view.cursor_point = (150, 70)
+    view.setFocus()
+    app.processEvents()
+    QTest.keyClick(view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert window.current_tool_set == section and view.paste_delta is not None
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert view.region_clipboard is clipboard and not view.session.operations
+    QTest.keyClick(view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(150, 70))
+    assert len(view.session.walls) == 4 and len(view.session.operations) == 1
+    assert clipboard is view.region_clipboard
+    assert not source.image_path.read_bytes() == image.read_bytes()
+    window.project_path = tmp_path / "Pasted.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert len(window.view.session.walls) == 4
+
+
+@pytest.mark.parametrize("section", ["figures", "regions"])
+def test_application_clipboard_survives_source_project_window_and_extraction_close(
+    window, pair_factory, tmp_path, section
+):
+    source = pair_factory(size=(400, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    window.project_path = tmp_path / "Source project.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    window.activate_mode("Select figures" if section == "figures" else "Select regions")
+    target = MainWindow(preferences_path=tmp_path / "other-settings.json")
+    target.can_discard = lambda: True
+    target.warning = lambda *args: pytest.fail(str(args))
+    target.show()
+    image = tmp_path / "Other project.png"
+    Image.new("RGB", (400, 400), "#254c62").save(image)
+    assert target.load_sources(image, None)
+    target.activate_mode("Edit points")
+    app = QApplication.instance()
+    app.processEvents()
+    window.activateWindow()
+    window.view.setFocus()
+    app.processEvents()
+    QTest.keyClick(window.view, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+    assert window.copy_regions_action.isEnabled()
+    QTest.keyClick(window.view, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    clipboard = window.view.region_clipboard
+    assert clipboard and target.view.region_clipboard is clipboard
+    assert window._clipboard_section == section
+    window.close()
+    assert not window._clipboard_connected
+    target.activateWindow()
+    target.view.setTransform(QTransform())
+    target.view.centerOn(200, 200)
+    target.view.cursor_point = (180, 90)
+    target.view.setFocus()
+    app.processEvents()
+    QTest.keyClick(target.view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
+    assert target.view.paste_delta is not None and target.current_tool_set == section
+    QTest.mouseClick(
+        target.view.viewport(), Qt.MouseButton.LeftButton, pos=target.view.mapFromScene(180, 90)
+    )
+    assert len(target.view.session.walls) == 4
+    assert all(r.sources and r.origin == "editor" for r in target.view.session.geometry().lineage)
+    target.project_path = tmp_path / "Other project.dale"
+    assert target.save_project_file()
+    with load_project(target.project_path) as loaded:
+        assert loaded.session.geometry().lineage == target.view.session.geometry().lineage
+        assert any(d.data == source.json_bytes for d in loaded.session.json_documents)
+        loaded.session.undo()
+        assert not loaded.session.walls
+    target.close()
+    target.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "insert",
+        "move",
+        "delete",
+        "line",
+        "circle",
+        "rectangle",
+        "erase_lines",
+        "erase_vertices",
+    ],
+)
+def test_vertex_geometry_commits_clear_contour_and_region_selection_but_keep_clipboard(
+    window, pair_factory, operation
+):
+    source = pair_factory(size=(500, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select figures")
+    window.select_all_elements()
+    window.copy_region_contours()
+    clipboard = window.view.region_clipboard
+    original = window.view.session.geometry()
+    window.activate_mode("Edit points")
+    window.selected_regions = (0,)
+    window.update_map_info()
+    assert window.selected_regions and window.view.figure_line_ids
+    window.view.detached_selection = {
+        "geometry": original,
+        "polygons": window.view.region_polygons,
+        "line_ids": tuple(r.id for r in original.lineage),
+    }
+    view = window.view
+    view.snap_enabled = False
+    view.setTransform(QTransform())
+    view.centerOn(250, 200)
+    modes = {
+        "insert": "Edit points",
+        "move": "Edit points",
+        "delete": "Edit points",
+        "line": "New line",
+        "circle": "New circle",
+        "rectangle": "New rectangle",
+        "erase_lines": "Erase lines",
+        "erase_vertices": "Erase vertices",
+    }
+    window.activate_mode(modes[operation])
+    QApplication.processEvents()
+    if operation == "delete":
+        QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(10, 20))
+    else:
+        start, end = {
+            "insert": ((35, 20), (35, 20)),
+            "move": ((10, 20), (20, 35)),
+            "line": ((180, 100), (260, 150)),
+            "circle": ((200, 200), (230, 230)),
+            "rectangle": ((180, 100), (260, 150)),
+            "erase_lines": ((35, 20), (35, 20)),
+            "erase_vertices": ((10, 20), (10, 20)),
+        }[operation]
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*start))
+        QTest.mouseMove(view.viewport(), view.mapFromScene(*end))
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*end))
+    assert view.session.geometry() != original
+    assert len(view.session.operations) == 1
+    assert not window.selected_regions and not view.figure_line_ids
+    assert not view.region_polygons and view.selected_path.isEmpty()
+    assert view.detached_selection is None
+    assert view.region_clipboard is clipboard
+    for mode in ("Select figures", "Select regions"):
+        window.activate_mode(mode)
+        assert not window.selected_regions and not view.figure_line_ids
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_vertex_noop_or_cancel_keeps_other_section_selections(window, pair_factory, cancel):
+    source = pair_factory(size=(500, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select figures")
+    window.select_all_elements()
+    ids = window.view.figure_line_ids
+    window.activate_mode("New rectangle")
+    window.selected_regions = (0,)
+    window.update_map_info()
+    view = window.view
+    view.setTransform(QTransform())
+    view.centerOn(250, 200)
+    QApplication.processEvents()
+    point = view.mapFromScene(200, 100)
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    if cancel:
+        QTest.mouseMove(view.viewport(), view.mapFromScene(250, 160))
+        QTest.keyClick(view, Qt.Key.Key_Escape)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    window.history(False)  # No operation available: this is also a no-op.
+    assert not view.session.operations
+    assert view.figure_line_ids == ids and window.selected_regions == (0,)
+
+
+def test_vertex_history_clears_selections_only_when_geometry_changes(window, pair_factory):
+    source = pair_factory(size=(500, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    view.session.add(add_line(view.session.geometry(), (200, 100), (250, 160)))
+    for redo in (False, True):
+        window.activate_mode("Select figures")
+        window.select_all_elements()
+        window.activate_mode("Edit points")
+        window.selected_regions = (0,)
+        window.update_map_info()
+        window.history(redo)
+        assert not view.figure_line_ids and not window.selected_regions
+
+
+@pytest.mark.parametrize("accept", [False, True])
+def test_confirmed_vertex_auto_close_resets_selection_only_after_acceptance(
+    window, pair_factory, monkeypatch, accept
+):
+    coordinates = (
+        [10, 20, 60, 20],
+        [60, 20, 60, 270],
+        [60, 270, 10, 270],
+        [10, 270, 10, 20],
+        [100, 300, 150, 300],
+        [154, 300, 220, 300],
+    )
+    source = pair_factory(size=(500, 400), walls=[{"c": c} for c in coordinates])
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Select figures")
+    window.select_all_elements()
+    ids = window.view.figure_line_ids
+    window.activate_mode("Auto-close")
+    window.selected_regions = (0,)
+    window.update_map_info()
+    window.global_close_control.setValue(10)
+    window.view.setTransform(QTransform())
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda dialog: (
+            QMessageBox.StandardButton.Yes if accept else QMessageBox.StandardButton.Cancel
+        ),
+    )
+    window.close_all_contours()
+    if accept:
+        assert len(window.view.session.operations) == 1
+        assert not window.view.figure_line_ids and not window.selected_regions
+    else:
+        assert not window.view.session.operations
+        assert window.view.figure_line_ids == ids and window.selected_regions == (0,)
+
+
 @pytest.mark.parametrize("enabled,alt", [(True, True), (False, True), (True, False)])
 def test_paste_aligns_whole_copy_and_alt_toggle_keeps_rigid_dimensions(
     window, pair_factory, enabled, alt
@@ -1291,6 +3207,8 @@ def test_paste_aligns_whole_copy_and_alt_toggle_keeps_rigid_dimensions(
     window.activate_mode("Select regions")
     window.toggle_region_at((30, 80))
     window.view.setFocus()
+    QTest.mouseMove(window.view.viewport(), window.view.mapFromScene(30, 80))
+    QTest.mouseMove(window.view.viewport(), window.view.mapFromScene(10, 20))
     QTest.keyClick(window.view, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
     view = window.view
     assert view.region_clipboard
@@ -1300,6 +3218,7 @@ def test_paste_aligns_whole_copy_and_alt_toggle_keeps_rigid_dimensions(
     view.cursor_point = (13, 290)
     QTest.keyClick(view, Qt.Key.Key_V, Qt.KeyboardModifier.ControlModifier)
     assert view.paste_delta is not None
+    view.cursor_point = (13, 290)
     modifier = Qt.KeyboardModifier.AltModifier if alt else Qt.KeyboardModifier.NoModifier
     view._preview_paste((13, 290), modifier)
     assert view.paste_delta[0] == (0 if enabled and alt else 3)
@@ -1365,7 +3284,7 @@ def test_alt_paste_vertex_priority_screen_tolerance_and_whole_shape(
     "points,guides,alt,expected",
     [
         (True, True, True, (200, 350)),
-        (False, True, True, (203, 353)),
+        (False, True, True, (200, 350)),
         (True, False, True, (200, 350)),
         (False, False, True, (203, 353)),
         (True, True, False, (203, 353)),
@@ -1413,7 +3332,7 @@ def test_region_grabbed_vertex_hover_drag_copy_and_two_controls(
         window.figure_alignment_actions if section == "figures" else window.region_alignment_actions
     ):
         tile = window.sized_tools[title]
-        assert tile.isVisible() and (tile.width(), tile.height()) == (48, 72)
+        assert tile.isVisible() and (tile.width(), tile.height()) == (48, 60)
         assert "Alt" in tile.toolTip() and "Ctrl" in tile.toolTip()
     # The bottom-right corner is nearest, although the old clipboard anchor was top-left.
     start = (55, 265)
@@ -1482,13 +3401,7 @@ def test_alignment_toggles_are_independent_and_follow_section_after_project_reop
     for section, (point, guide) in groups.items():
         window.select_tool_set(section)
         before = window.alignment_ui_state()
-        toolbar = (
-            window.geometry_toolbar
-            if section == "geometry"
-            else window.figure_toolbar
-            if section == "figures"
-            else window.toolbars[4]
-        )
+        toolbar = window.alignment_toolbars[section]
         for action in (point, guide):
             name = action.property("dale_tool_key")
             button = window.sized_tools[name]
@@ -1588,8 +3501,8 @@ def test_delete_region_button_and_del_remove_only_selected_boundary_with_undo(
         window.set_language(language, persist=False)
         assert action.text() == label and "Del" in action.toolTip()
         assert "Del:" in window.mode_help.text()
-        button = window.toolbars[4].widgetForAction(action)
-        assert button.isVisible() and (button.width(), button.height()) == (48, 48)
+        button = window.basic_toolbar.widgetForAction(action)
+        assert button.isVisible() and (button.width(), button.height()) == (36, 36)
         assert not button.icon().isNull()
     original = view.session.geometry()
     pixels = view.item.pixmap().toImage()
@@ -1919,7 +3832,8 @@ def test_global_artwork_values_do_not_replace_per_set_values(window, pair_factor
     assert window.contour_offset.value() == 9
     assert window.save_project_file()
     with load_project(path) as loaded:
-        assert loaded.session.contour_offset == 2
+        assert loaded.catalog.base_session.contour_offset == 2
+        assert loaded.catalog.active_key == other_id and loaded.session.contour_offset == 4
         view = loaded.catalog.activate(other_id)
         assert view.session.contour_offset == 4
 
@@ -1967,7 +3881,8 @@ def test_region_stays_whole_over_surroundings_repeated_transforms_and_reopen(
     view.move_related = True
     view.snap_distance = 256
     view.contour_alignment = view.right_angle_alignment = True
-    view.contour_alignment_distance_px = view.right_angle_distance_px = 9999
+    view.contour_alignment_distance_px = 9999
+    view.right_angle_tolerance_deg = 90
     window.activate_mode("Move regions")
     view.setTransform(QTransform.fromScale(1, 1))
     view.centerOn(250, 200)
@@ -1980,7 +3895,7 @@ def test_region_stays_whole_over_surroundings_repeated_transforms_and_reopen(
     assert view.region_polygons[0].equals(translate(initial, xoff=245, yoff=50))
     assert len(view.session.walls) == len(original.walls)
     folder = export_overlays(view.session, tmp_path, selected_polygons=view.region_polygons)
-    item = json.loads((folder / "placement.json").read_text())["items"][0]
+    item = json.loads(next(folder.glob("*-placement.json")).read_text())["items"][0]
     assert (item["x"], item["y"], item["width"], item["height"]) == (264, 69, 102, 102)
     with Image.open(folder / item["file"]) as image:
         assert image.getpixel((362 - item["x"], 100 - item["y"]))[3] == 255
@@ -2008,3 +3923,844 @@ def test_region_stays_whole_over_surroundings_repeated_transforms_and_reopen(
     for _ in range(4):
         window.history(True)
     assert repaired_json_bytes(view.session)[0] == payload
+
+
+@pytest.mark.parametrize("zoom", [1, 3])
+@pytest.mark.parametrize(
+    "tool",
+    ["vertex", "contours", "regions", "paste_contours", "paste_regions", "line", "rectangle"],
+)
+def test_hover_acquires_external_axis_guides_for_all_placement_gestures(
+    window, pair_factory, zoom, tool
+):
+    from itertools import pairwise
+
+    from shapely.geometry import box
+
+    edges = [
+        *pairwise(box(30, 30, 80, 90).exterior.coords),
+        ((250, 180), (280, 200)),
+        ((247, 350), (249, 350)),
+        ((252, 350), (260, 350)),
+    ]
+    source = pair_factory(
+        size=(600, 500),
+        walls=[{"c": [*a, *b]} for a, b in edges],
+        lights=[{"keep": "light"}],
+        tiles=[{"texture": {"src": "keep.webp"}}],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    section = "figures" if "contours" in tool else "regions" if "regions" in tool else "geometry"
+    window.select_tool_set(section)
+    if section == "figures":
+        window.select_figure_at({"point": (30, 50), "double": True})
+        window.activate_mode("Move figures")
+    elif section == "regions":
+        window.toggle_region_at((45, 45))
+        window.activate_mode("Move regions")
+    else:
+        window.activate_mode(
+            {"vertex": "Edit points", "line": "New line", "rectangle": "New rectangle"}[tool]
+        )
+    window.contour_alignment_distance.setValue(6 * zoom)
+    if section == "geometry":
+        window.snap_action.setChecked(False)
+        window.alignment_actions["contour_alignment"].setChecked(True)
+    else:
+        prefix = "Figure" if section == "figures" else "Region"
+        actions = (
+            window.figure_alignment_actions
+            if section == "figures"
+            else window.region_alignment_actions
+        )
+        actions[f"{prefix} point alignment"].setChecked(False)
+        actions[f"{prefix} guide alignment"].setChecked(True)
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(230, 230)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    raster = view.item.pixmap().toImage()
+    before_bytes = source.json_path.read_bytes(), source.image_path.read_bytes()
+    paste = tool.startswith("paste_")
+    start = (78, 88) if tool == "vertex" else (75, 85) if section != "geometry" else (20, 20)
+    for cancel in (True, False):
+        if paste:
+            view.cursor_point = start
+            assert view.copy_selected_regions() and view.begin_paste_regions()
+        else:
+            QTest.mousePress(
+                view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*start)
+            )
+        # Acquire by the actual cursor even when the grabbed vertex has an offset.
+        QTest.mouseMove(view.viewport(), view.mapFromScene(250, 180))
+        assert (250, 180) in view.guide_targets.acquired
+        acquired = set(view.guide_targets.acquired)
+        QTest.mouseMove(view.viewport(), view.mapFromScene(247, 280))
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+        expected = (
+            250,
+            280 if paste or tool in ("line", "rectangle") else 282 if tool == "vertex" else 285,
+        )
+        actual = (
+            view.line_end
+            if tool == "line"
+            else view.rectangle_end
+            if tool == "rectangle"
+            else view.snap
+            if tool == "vertex"
+            else view.region_anchor
+        )
+        assert actual == pytest.approx(expected)
+        guides = (
+            view.alignment_guides
+            if section == "geometry"
+            else tuple((0, p) for p, _ in view.placement_guides)
+        )
+        assert (0, (250, 180)) in guides
+        assert view.guide_targets.last == (250, 180)
+        # Alt release removes the constraint but retains references for this gesture.
+        QTest.keyRelease(view, Qt.Key.Key_Alt)
+        assert view.guide_targets.acquired == acquired
+        QTest.keyPress(view, Qt.Key.Key_Alt)
+        if cancel:
+            QTest.keyClick(view, Qt.Key.Key_Escape)
+        elif paste:
+            QTest.mouseClick(
+                view.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.AltModifier,
+                pos=view.mapFromScene(247, 280),
+            )
+        else:
+            QTest.mouseRelease(
+                view.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.AltModifier,
+                pos=view.mapFromScene(247, 280),
+            )
+        QTest.keyRelease(view, Qt.Key.Key_Alt)
+        assert view.guide_targets is None
+        assert view.item.pixmap().toImage() == raster
+        assert before_bytes == (source.json_path.read_bytes(), source.image_path.read_bytes())
+        if cancel:
+            assert view.session.geometry() == original and not view.session.operations
+    assert len(view.session.operations) == 1
+    result = json.loads(repaired_json_bytes(view.session)[0])
+    assert result["lights"] == source.raw["lights"] and result["tiles"] == source.raw["tiles"]
+    fixed = {r.id: e for r, e in zip(original.lineage[4:], original.walls[4:], strict=True)}
+    current = {
+        r.id: e
+        for r, e in zip(view.session.geometry().lineage, view.session.geometry().walls, strict=True)
+    }
+    assert all(current[i] == e for i, e in fixed.items())
+    view.session.undo()
+    assert view.session.geometry() == original
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_external_guide_tracking_excludes_hidden_floor_and_moving_vertex(
+    window, pair_factory, enabled
+):
+    walls = [
+        {"c": c, "flags": {"wall-height": {"bottom": bottom, "top": bottom + 10}}}
+        for bottom, c in ((0, [40, 40, 80, 90]), (0, [80, 90, 120, 40]), (10, [250, 180, 280, 200]))
+    ]
+    source = pair_factory(size=(600, 500), walls=walls)
+    assert window.load_sources(source.image_path, source.json_path)
+    from dale.source_editing import source_layers
+
+    lower = next(
+        c
+        for c in source_layers(source, window.view.session.geometry())
+        if c.kind == "band" and c.bottom == 0
+    )
+    window.layer_control.setCurrentIndex(window.layer_control.findData(lower.key))
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(False)
+    window.alignment_actions["contour_alignment"].setChecked(enabled)
+    view = window.view
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(220, 230)
+    QApplication.processEvents()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(80, 90))
+    assert (80, 90) not in view.guide_targets.point_set
+    QTest.mouseMove(view.viewport(), view.mapFromScene(250, 180))
+    assert not view.guide_targets.acquired
+    QTest.mouseMove(view.viewport(), view.mapFromScene(40, 40))
+    assert bool(view.guide_targets.acquired) is enabled
+    window.clear_selection()
+    assert view.guide_targets is None and not view.session.operations
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_selected_export_json_checkbox_stages_persists_and_controls_real_worker(
+    window, pair_factory, tmp_path, monkeypatch, language
+):
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from dale.preferences import load_include_json
+
+    source, view = selection_scene(window, pair_factory, "Select regions")
+    window.set_language(language, persist=False)
+    window.toggle_region_at((45, 45))
+    window.remembered_merge_selected_regions = False
+    assert window.include_json and load_include_json(window.preferences_path)
+    dialog = window.show_tool_settings("Export selected regions")
+    QApplication.processEvents()
+    QApplication.processEvents()  # Deliver child LanguageChange after translator replacement.
+    assert dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).text() == (
+        "Применить" if language == "ru" else "Apply"
+    )
+    assert dialog.json_export.text() == (
+        "Выгружать JSON" if language == "ru" else "Export JSON files"
+    )
+    assert dialog.json_export.isChecked()
+    dialog.json_export.setChecked(False)
+    dialog.buttons.button(QDialogButtonBox.StandardButton.Cancel).click()
+    assert window.include_json and load_include_json(window.preferences_path)
+    for include in (False, True):
+        dialog = window.show_tool_settings("Export selected regions")
+        dialog.json_export.setChecked(include)
+        dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
+        assert (
+            window.include_json is include and load_include_json(window.preferences_path) is include
+        )
+        output = tmp_path / ("With JSON" if include else "PNG only")
+        monkeypatch.setattr("dale.ui.choose_export_directory", lambda *args, output=output: output)
+        window.export_regions_action.trigger()
+        assert window.worker is not None and window.worker.include_json is include
+        for _ in range(500):
+            if window.worker is None:
+                break
+            QTest.qWait(10)
+        assert window.worker is None
+        assert len(tuple(output.glob("*.png"))) == 1
+        assert len(tuple(output.glob("*.json"))) == (2 if include else 0)
+        if include:
+            family = f"{window.catalog.name}-{window.export_identity()}"
+            assert (output / f"{family}.json").read_bytes() == repaired_json_bytes(view.session)[0]
+            assert (output / f"{family}-placement.json").exists()
+    assert not view.session.operations
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+def test_scene_json_chooser_matches_png_family_and_uses_png_basename_without_touching_it(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    source, view = selection_scene(window, pair_factory, "Select regions")
+    window.toggle_region_at((45, 45))
+    family = f"{window.catalog.name}-{window.export_identity()}"
+    image = tmp_path / f"{family}-72x72px.png"
+    image.write_bytes(b"existing exported image bytes")
+    suggested = []
+
+    def choose(*args):
+        suggested.append(Path(args[2]).name)
+        assert "*.png" in args[3] and "*.json" in args[3]
+        return str(image), ""
+
+    monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", choose)
+    monkeypatch.setattr(window, "information", lambda *args: None)
+    monkeypatch.setattr(window, "confirm_export_file", lambda path: pytest.fail(str(path)))
+    window.export_json()
+    assert suggested == [family + ".json"]
+    assert image.with_suffix(".json").read_bytes() == repaired_json_bytes(view.session)[0]
+    assert image.read_bytes() == b"existing exported image bytes"
+    assert not (tmp_path / (image.name + ".json")).exists()
+
+
+@pytest.mark.parametrize("section", ["figures", "regions"])
+@pytest.mark.parametrize("target", ["canvas", "sidebar", "direct"])
+@pytest.mark.parametrize("wheel_axis", ["vertical", "windows-alt-horizontal"])
+def test_alt_wheel_rotates_by_45_and_plain_wheel_remains_precise(
+    window, pair_factory, section, target, wheel_axis
+):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+    from shapely.affinity import rotate
+    from shapely.geometry import MultiLineString
+
+    source, view = selection_scene(window, pair_factory, "Select figures")
+    window.select_tool_set(section)
+    if section == "figures":
+        window.select_figure_at({"point": (30, 70), "double": True})
+    else:
+        window.toggle_region_at((50, 50))
+    window.activate_mode("Rotate figures" if section == "figures" else "Rotate regions")
+    original = view.session.geometry()
+    initial = view._region_plan()
+    moving = MultiLineString(initial.moving)
+    fixed = initial.fixed
+    pivot = initial.pivot
+    pixels = view.item.pixmap().toImage()
+    zoom = view.transform()
+    angle = 0
+    for delta, modifiers, expected in (
+        (120, Qt.KeyboardModifier.NoModifier, 0.1),
+        (120, Qt.KeyboardModifier.AltModifier, 45),
+        (240, Qt.KeyboardModifier.AltModifier, 90),
+        (-120, Qt.KeyboardModifier.AltModifier, -45),
+        (-120, Qt.KeyboardModifier.NoModifier, -0.1),
+        (-60, Qt.KeyboardModifier.AltModifier, -45),
+        (0, Qt.KeyboardModifier.AltModifier, 0),
+    ):
+        event = QWheelEvent(
+            QPointF(20, 20),
+            QPointF(20, 20),
+            QPoint(),
+            QPoint(delta, 0)
+            if wheel_axis == "windows-alt-horizontal"
+            and modifiers & Qt.KeyboardModifier.AltModifier
+            else QPoint(0, delta),
+            Qt.MouseButton.NoButton,
+            modifiers,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        if target == "direct":
+            view.wheelEvent(event)
+        else:
+            QApplication.sendEvent(view.viewport() if target == "canvas" else window.info, event)
+        angle += expected
+        plan = view._region_plan()
+        assert plan.pivot == pivot and plan.fixed == fixed
+        assert (
+            MultiLineString(plan.moving).hausdorff_distance(rotate(moving, angle, origin=pivot))
+            < 1e-7
+        )
+        assert view.transform() == zoom and view.item.pixmap().toImage() == pixels
+        assert len(view.session.operations) == 1
+    assert "Alt" in window.mode_help.text()
+    assert source.json_path.read_bytes() == source.json_bytes
+    final = view.session.geometry()
+    window.history(False)
+    assert view.session.geometry() == original
+    window.history(True)
+    assert view.session.geometry() == final
+
+
+@pytest.mark.parametrize("axis", ["vertical", "horizontal"])
+@pytest.mark.parametrize("disconnected", [False, True])
+@pytest.mark.parametrize("height_layers", [False, True])
+def test_mirror_contour_button_uses_common_center_keeps_properties_and_roundtrips(
+    window, pair_factory, tmp_path, axis, disconnected, height_layers
+):
+    from itertools import pairwise
+
+    edges = list(pairwise(((40, 40), (160, 40), (90, 130), (40, 40))))
+    if disconnected:
+        edges.append(((260, 180), (280, 200)))
+    fixed = [((100, 10), (100, 180))]
+    if height_layers:
+        fixed.extend(edges[:3])
+    walls = [
+        {
+            "_id": f"Wall{i:012d}",
+            "c": [*a, *b],
+            "door": int(i == 1),
+            "flags": {"kept": i, "wall-height": {"bottom": 10 if i > len(edges) else 0, "top": 20}}
+            if height_layers
+            else {"kept": i},
+        }
+        for i, (a, b) in enumerate((*edges, *fixed))
+    ]
+    source = pair_factory(
+        size=(400, 300), walls=walls, lights=[{"keep": "light"}], tiles=[{"keep": "tile"}]
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.select_tool_set("figures")
+    view = window.view
+    original = view.session.geometry()
+    view.figure_line_ids = tuple(r.id for r in original.lineage[: len(edges)])
+    window.update_map_info()
+    selected = tuple(view.figure_line_ids)
+    pivot = (160, 120) if disconnected else (100, 85)
+    assert view._region_plan().pivot == pivot
+    expected = {
+        record.id: tuple(
+            (2 * pivot[0] - x, y) if axis == "vertical" else (x, 2 * pivot[1] - y) for x, y in edge
+        )
+        if record.id in selected
+        else edge
+        for record, edge in zip(original.lineage, original.walls, strict=True)
+    }
+    pixels = view.item.pixmap().toImage()
+    before_native = repaired_json_bytes(view.session)[0]
+    action = window.mirror_contour_actions[axis]
+    assert action.isEnabled()
+    button = window.figure_toolbar.widgetForAction(action)
+    assert button.size().width() == button.size().height() == 48
+    assert not button.isCheckable() and not action.icon().isNull()
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    first = view.session.geometry()
+    assert len(view.session.operations) == 1
+    assert dict(zip((r.id for r in first.lineage), first.walls, strict=True)) == expected
+    assert set(first.lineage) == set(original.lineage)
+    assert dict(first.wall_styles) == dict(original.wall_styles)
+    assert view.figure_line_ids == selected and view._region_plan().pivot == pivot
+    assert view.item.pixmap().toImage() == pixels
+    exported = json.loads(repaired_json_bytes(view.session)[0])
+    for key in ("lights", "tiles"):
+        assert exported[key] == source.raw[key]
+    for old, new in zip(source.raw["walls"], exported["walls"], strict=True):
+        assert {k: v for k, v in old.items() if k != "c"} == {
+            k: v for k, v in new.items() if k != "c"
+        }
+    window.project_path = tmp_path / f"Mirror {axis}.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert view.session.geometry() == first and view.figure_line_ids == selected
+    window.mirror_contour_actions[axis].trigger()
+    assert len(view.session.operations) == 2
+    assert json.loads(repaired_json_bytes(view.session)[0]) == json.loads(before_native)
+    window.history(False)
+    assert view.session.geometry() == first
+    window.history(False)
+    assert view.session.geometry() == original
+    window.history(True)
+    window.history(True)
+    assert json.loads(repaired_json_bytes(view.session)[0]) == json.loads(before_native)
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_mirror_controls_are_contextual_and_end_rotation_history(window, pair_factory, language):
+    source, view = selection_scene(window, pair_factory, "Select figures")
+    window.set_language(language, persist=False)
+    assert all(not a.isEnabled() for a in window.mirror_contour_actions.values())
+    window.select_figure_at({"point": (30, 70), "double": True})
+    window.activate_mode("Rotate figures")
+    view.transform_regions(angle=12)
+    before = view.session.geometry()
+    for axis in ("vertical", "horizontal"):
+        action = window.mirror_contour_actions[axis]
+        assert action.isEnabled()
+        tip = action.toolTip()
+        assert tip.startswith(action.text() + "\n")
+        assert ("Назначение:" if language == "ru" else "Purpose:") in tip
+    window.mirror_contour_actions["vertical"].trigger()
+    assert len(view.session.operations) == 2 and view.mode == "Rotate figures"
+    view.transform_regions(angle=0.1)
+    assert len(view.session.operations) == 3
+    window.history(False)
+    window.history(False)
+    assert view.session.geometry() == before
+    # Gesture controls are tested using a real pending paste.
+    assert view.copy_selected_regions() and view.begin_paste_regions()
+    window.update_clipboard_actions()
+    assert all(not a.isEnabled() for a in window.mirror_contour_actions.values())
+    original = view.session.geometry()
+    window.mirror_contours("horizontal")
+    assert view.session.geometry() == original
+    window.clear_selection()
+    window.select_tool_set("regions")
+    assert all(not a.isEnabled() for a in window.mirror_contour_actions.values())
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("section", ["figures", "regions"])
+@pytest.mark.parametrize("zoom,dpr", [(1, 1), (3, 2)])
+def test_rotation_caption_is_cumulative_signed_centered_and_has_one_pixel_shadow(
+    window, pair_factory, section, zoom, dpr
+):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QFontMetricsF, QImage, QPainter
+
+    class RecordingPainter(QPainter):
+        def drawText(self, point, text):
+            self.calls.append((QPointF(point), text, self.pen().color().name(), self.font()))
+            return super().drawText(point, text)
+
+    source, view = selection_scene(window, pair_factory, "Select figures", zoom)
+    window.select_tool_set(section)
+    if section == "figures":
+        window.select_figure_at({"point": (30, 70), "double": True})
+    else:
+        window.toggle_region_at((50, 50))
+    window.activate_mode("Rotate figures" if section == "figures" else "Rotate regions")
+    original = view.session.geometry()
+    pixels = view.item.pixmap().toImage()
+    pivot = view._region_plan().pivot
+    view.centerOn(*pivot)
+    assert view.rotation_caption() is None
+    for steps, modifier, caption in (
+        (1, Qt.KeyboardModifier.AltModifier, "45.00°"),
+        (1, Qt.KeyboardModifier.AltModifier, "90.00°"),
+        (-3, Qt.KeyboardModifier.AltModifier, "-45.00°"),
+        (1, Qt.KeyboardModifier.NoModifier, "-44.90°"),
+        (-1, Qt.KeyboardModifier.NoModifier, "-45.00°"),
+    ):
+        view.rotate_by_wheel(steps, modifier)
+        assert view.rotation_caption() == caption and view.rotation_pivot == pivot
+        assert len(view.session.operations) == 1
+    view.transform_regions(angle=0.01)
+    assert view.rotation_caption() == "-44.99°"
+    view.transform_regions(angle=-0.02)
+    assert view.rotation_caption() == "-45.01°"
+    image = QImage(
+        view.viewport().width() * dpr, view.viewport().height() * dpr, QImage.Format.Format_ARGB32
+    )
+    image.setDevicePixelRatio(dpr)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = RecordingPainter(image)
+    painter.calls = []
+    painter.setWorldTransform(view.viewportTransform())
+    center = painter.worldTransform().map(QPointF(*pivot))
+    view.draw_rotation_caption(painter)
+    painter.end()
+    shadow, text = painter.calls
+    assert shadow[1:3] == ("-45.01°", "#000000") and text[1:3] == ("-45.01°", "#ffffff")
+    assert (shadow[0].x() - text[0].x()) * dpr == pytest.approx(-1)
+    assert (shadow[0].y() - text[0].y()) * dpr == pytest.approx(1)
+    assert text[3].pixelSize() == 14
+    assert (
+        text[0] + QFontMetricsF(text[3]).boundingRect(text[1]).center() - center
+    ).manhattanLength() < 1e-6
+    assert any(
+        image.pixelColor(x, y).alpha() for x in range(image.width()) for y in range(image.height())
+    )
+    assert view.item.pixmap().toImage() == pixels
+    view.finish_rotation()
+    assert view.rotation_caption() is None and view.rotation_angle == 0
+    window.history(False)
+    assert view.session.geometry() == original
+    window.history(True)
+    assert view.rotation_caption() is None
+    if section == "regions":
+        window.toggle_region_at(pivot)
+        window.activate_mode("Rotate regions")
+    view.rotate_by_wheel(-1, Qt.KeyboardModifier.AltModifier)
+    assert view.rotation_caption() == "-45.00°" and len(view.session.operations) == 2
+    window.activate_mode("Move figures" if section == "figures" else "Move regions")
+    assert view.rotation_caption() is None
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_circle_detail_slider_stages_keyboard_changes_and_roundtrips(
+    window, pair_factory, tmp_path, language
+):
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    source, view = selection_scene(window, pair_factory, "New circle")
+    window.set_language(language, persist=False)
+    button = window.tool_settings_buttons["New circle"]
+    assert button.size().width() == button.size().height() == 48
+    assert button.findChild(QWidget, "toolSettingsCorner") is not None
+    QApplication.sendEvent(
+        button,
+        QContextMenuEvent(
+            QContextMenuEvent.Reason.Mouse, QPoint(24, 24), button.mapToGlobal(QPoint(24, 24))
+        ),
+    )
+    popup = window.tool_settings_popup
+    slider = popup.circle_detail
+    assert slider.minimum() == 0 and slider.maximum() == 95
+    assert slider.singleStep() == 1 and slider.value() == 0
+    assert slider.pageStep() == 1
+    assert popup.circle_detail_label.text() == window.t(
+        "Multiplier: ×{factor}", factor="1,0" if language == "ru" else "1.0"
+    )
+    assert not popup.isModal()
+    original = view.session.geometry()
+    QTest.keyClick(slider, Qt.Key.Key_Right)
+    assert slider.value() == 1 and view.circle_detail_steps == 0
+    assert ("1,2" if language == "ru" else "1.2") in popup.circle_detail_label.text()
+    QTest.keyClick(slider, Qt.Key.Key_End)
+    assert slider.value() == 95
+    assert ("20,0" if language == "ru" else "20.0") in popup.circle_detail_label.text()
+    popup.buttons.button(QDialogButtonBox.StandardButton.Cancel).click()
+    assert (
+        view.circle_detail_steps == 0 and window.current_tool_values()["circle_detail_steps"] == 0
+    )
+    popup = window.show_tool_settings("New circle")
+    popup.circle_detail.setValue(2)
+    popup.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
+    assert view.circle_detail_steps == 2
+    assert view.session.geometry() == original and not view.session.operations
+    window.project_path = tmp_path / "Circle detail.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert view.circle_detail_steps == 2 and window.circle_detail_control.value() == 2
+    assert (
+        view.session.geometry() == original and source.json_path.read_bytes() == source.json_bytes
+    )
+    assert (
+        window.t("Right-click: open tool settings.") in window.mode_actions["New circle"].toolTip()
+    )
+
+
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize("detail_steps", [1, 95])
+def test_circle_detail_preview_equals_commit_and_cancel_preserves_source(
+    window, pair_factory, monkeypatch, native, zoom, detail_steps
+):
+    from dale.editing import circle_points
+
+    source = pair_factory(size=(600, 500), walls=[], grid={"size": 100}, lights=[{"keep": True}])
+    assert window.load_sources(source.image_path, source.json_path)
+    window.configure_json_repair(native)
+    window.activate_mode("New circle")
+    window.circle_detail_control.setValue(detail_steps)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(250, 250)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    image = view.item.pixmap().toImage()
+    painted = []
+
+    def capture(*args, **kwargs):
+        result = circle_points(*args, **kwargs)
+        painted.append(result)
+        return result
+
+    monkeypatch.setattr("dale.canvas.circle_points", capture)
+    start, end = view.mapFromScene(250, 250), view.mapFromScene(325, 250)
+    for cancel in (True, False):
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(view.viewport(), end)
+        view.viewport().grab()
+        expected = painted[-1]
+        count = 10 if detail_steps == 1 else 160
+        assert len(expected) == count + 1
+        assert view.circle_radius == 75 and not view.session.operations
+        assert view.session.geometry() == original
+        if cancel:
+            QTest.keyClick(view, Qt.Key.Key_Escape)
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=end)
+        if cancel:
+            assert not view.session.operations and view.session.geometry() == original
+    assert view.session.geometry().walls == tuple(zip(expected, expected[1:], strict=False))
+    assert len(view.session.operations) == 1
+    assert view.item.pixmap().toImage() == image
+    assert json.loads(repaired_json_bytes(view.session)[0])["lights"] == source.raw["lights"]
+    assert source.json_path.read_bytes() == source.json_bytes
+    view.session.undo()
+    assert view.session.geometry() == original
+    view.session.redo()
+    assert len(view.session.geometry().walls) == count
+
+
+def test_circle_detail_project_values_survive_global_overrides(window, pair_factory, tmp_path):
+    from dale.preferences import load_tool_values
+
+    selection_scene(window, pair_factory, "New circle")
+    window.circle_detail_control.setValue(2)
+    window.set_global_tool_settings(True)
+    window.circle_detail_control.setValue(5)
+    assert window.view.circle_detail_steps == 5
+    assert load_tool_values(window.preferences_path)["circle_detail_steps"] == 5
+    window.project_path = tmp_path / "Local and global circle detail.dale"
+    assert window.save_project_file()
+    with load_project(window.project_path) as project:
+        assert project.ui_state["circle_detail_steps"] == 2
+    assert window.load_project_file(window.project_path)
+    assert window.view.circle_detail_steps == 5
+    window.set_global_tool_settings(False)
+    assert window.view.circle_detail_steps == 2
+
+
+@pytest.mark.parametrize("invalid", [-1, 96, True, 1.5, float("nan"), float("inf"), "1", None])
+def test_circle_detail_rejects_invalid_project_and_preference_values(invalid, tmp_path):
+    from dale.preferences import load_tool_values, save_tool_value
+    from dale.project_io import _load_ui
+
+    with pytest.raises(ValueError):
+        _load_ui({"circle_detail_steps": invalid})
+    with pytest.raises(ValueError):
+        save_tool_value(tmp_path / "settings.json", "circle_detail_steps", invalid)
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"tool_values": {"circle_detail_steps": invalid}}))
+    assert load_tool_values(settings)["circle_detail_steps"] == 0
+    assert _load_ui({})["circle_detail_steps"] == 0
+
+
+def test_circle_detail_restores_independent_dataset_values(window, pair_factory, tmp_path):
+    path, _ = make_catalog(pair_factory(size=(400, 400)), tmp_path)
+    assert window.load_project_file(path)
+    base = window.catalog.base_key
+    other = next(key for key in window.catalog.views if key != base)
+    window.circle_detail_control.setValue(2)
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    assert window.view.circle_detail_steps == 0
+    window.circle_detail_control.setValue(5)
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(base))
+    assert window.view.circle_detail_steps == 2
+    assert window.save_project_file() and window.load_project_file(path)
+    assert window.view.circle_detail_steps == 2
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other))
+    assert window.view.circle_detail_steps == 5
+
+
+@pytest.mark.parametrize("section", ["figures", "regions"])
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_rotation_settings_stage_decimal_steps_and_roundtrip(
+    window, pair_factory, tmp_path, section, language
+):
+    from PySide6.QtCore import QPoint, QPointF
+    from PySide6.QtGui import QContextMenuEvent, QWheelEvent
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    source, view = selection_scene(window, pair_factory, "Select figures")
+    window.select_tool_set(section)
+    if section == "figures":
+        window.select_figure_at({"point": (30, 70), "double": True})
+    else:
+        window.toggle_region_at((50, 50))
+    mode = "Rotate figures" if section == "figures" else "Rotate regions"
+    window.activate_mode(mode)
+    window.set_language(language, persist=False)
+    button = window.tool_settings_buttons[mode]
+    QApplication.sendEvent(
+        button,
+        QContextMenuEvent(
+            QContextMenuEvent.Reason.Mouse, QPoint(24, 24), button.mapToGlobal(QPoint(24, 24))
+        ),
+    )
+    dialog = window.tool_settings_popup
+    assert dialog is not None and dialog.width() == 416
+    assert [c.value() for c in dialog.rotation_values] == [0.1, 45]
+    assert all(c.decimals() == 2 and c.minimum() == 0.01 for c in dialog.rotation_values)
+    dialog.rotation_values[0].setValue(0.01)
+    dialog.rotation_values[1].setValue(7.25)
+    dialog.reject()
+    assert view.rotation_steps[mode] == (0.1, 45)
+    dialog = window.show_tool_settings(mode)
+    dialog.rotation_values[0].setValue(0.01)
+    dialog.rotation_values[1].setValue(7.25)
+    dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).click()
+    assert view.rotation_steps[mode] == (0.01, 7.25)
+    other = "Rotate regions" if section == "figures" else "Rotate figures"
+    assert view.rotation_steps[other] == (0.1, 45)
+    for delta, modifiers in (
+        (QPoint(0, 120), Qt.KeyboardModifier.NoModifier),
+        (QPoint(120, 0), Qt.KeyboardModifier.AltModifier),
+    ):
+        event = QWheelEvent(
+            QPointF(20, 20),
+            QPointF(20, 20),
+            QPoint(),
+            delta,
+            Qt.MouseButton.NoButton,
+            modifiers,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(view.viewport(), event)
+    assert view.rotation_caption() == "7.26°" and len(view.session.operations) == 1
+    window.project_path = tmp_path / f"Decimal rotation {section}.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert view.rotation_steps[mode] == (0.01, 7.25) and view.rotation_steps[other] == (0.1, 45)
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+def test_rotation_project_steps_stay_separate_from_numeric_global_overrides(
+    window, pair_factory, tmp_path
+):
+    from dale.preferences import load_tool_values
+
+    selection_scene(window, pair_factory, "Select figures")
+    key = "figure_rotation_step_cdeg"
+    window.rotation_value_controls[key].setValue(125)
+    window.set_global_tool_settings(True)
+    window.rotation_value_controls[key].setValue(250)
+    assert window.view.rotation_steps["Rotate figures"][0] == 2.5
+    assert load_tool_values(window.preferences_path)[key] == 250
+    window.project_path = tmp_path / "Project and global rotation.dale"
+    assert window.save_project_file()
+    with load_project(window.project_path) as project:
+        assert project.ui_state[key] == 125
+    assert window.load_project_file(window.project_path)
+    assert window.view.rotation_steps["Rotate figures"][0] == 2.5
+    window.set_global_tool_settings(False)
+    assert window.view.rotation_steps["Rotate figures"][0] == 1.25
+
+
+@pytest.mark.parametrize("invalid", [0, 36001, True, 1.5, float("nan"), float("inf"), "100", None])
+def test_rotation_centidegree_fields_reject_invalid_project_values(invalid):
+    from dale.preferences import ROTATION_VALUE_RANGES
+    from dale.project_io import _load_ui
+
+    for key in ROTATION_VALUE_RANGES:
+        with pytest.raises(ValueError):
+            _load_ui({key: invalid})
+
+
+def test_own_angle_priority_is_independent_per_dataset_with_global_numbers_enabled(
+    window, pair_factory, tmp_path
+):
+    source = pair_factory(size=(400, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    first = window.catalog.active_key
+    window.set_global_tool_settings(True)
+    dialog = window.show_tool_settings("Right-angle alignment")
+    dialog.own_angle_priority.setChecked(False)
+    dialog.accept()
+    assert not window.view.right_angle_own_priority
+    other = window.catalog.create("Other", ui=window.project_ui_state())
+    other.ui.update(right_angle_own_priority=True, mode="Edit points")
+    window.rebuild_dataset_controls()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other.id))
+    assert window.view.right_angle_own_priority
+    dialog = window.show_tool_settings("Right-angle alignment")
+    assert dialog.own_angle_priority.isChecked()
+    dialog.reject()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(first))
+    assert not window.view.right_angle_own_priority
+    window.project_path = tmp_path / "Angle priority.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert not window.view.right_angle_own_priority
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other.id))
+    assert window.view.right_angle_own_priority
+    window.set_global_tool_settings(False)
+    assert window.view.right_angle_own_priority
+
+
+def test_contour_guide_toggle_survives_editing_and_restores_per_dataset_state(
+    window, pair_factory, tmp_path
+):
+    source, view = selection_scene(window, pair_factory, "Select figures")
+    guide = window.figure_alignment_actions["Figure guide alignment"]
+    guide.setChecked(True)
+    transitions = []
+    guide.toggled.connect(transitions.append)
+    for section in ("geometry", "regions", "pixels", "figures"):
+        window.select_tool_set(section)
+        assert guide.isEnabled() and guide.isChecked()
+    for language in ("en", "ru", "en", "ru"):
+        window.set_language(language, persist=False)
+    for apply in (False, True):
+        dialog = window.show_tool_settings("Figure guide alignment")
+        dialog.value.setValue(17)
+        dialog.accept() if apply else dialog.reject()
+        assert guide.isChecked() and view.contour_alignment
+    window.select_figure_at({"point": (30, 70), "double": True})
+    window.activate_mode("Move figures")
+    view.transform_regions(scale=1.05)
+    window.history(False)
+    window.history(True)
+    window.clear_selection()
+    window.refresh()
+    window.show_sidebar("settings")
+    window.show_sidebar("project")
+    assert guide.isEnabled() and guide.isChecked() and not transitions
+    window.catalog.capture(window.project_ui_state())
+    first = window.catalog.active_key
+    second = window.catalog.create("Independent settings")
+    window.catalog.activate(second.id)
+    # Each dataset deliberately owns its own flags. Restoring a saved false value
+    # is the only non-click path that should turn this independent toggle off.
+    second.ui = {**window.project_ui_state(), "figure_guide_alignment": False}
+    window.show_catalog_view(second, load_preview(second.session.source), True)
+    assert not guide.isChecked()
+    window.catalog.capture(window.project_ui_state())
+    draft = window.catalog.activate(first)
+    window.show_catalog_view(draft, load_preview(draft.session.source), True)
+    assert guide.isChecked() and view.contour_alignment
+    window.project_path = tmp_path / "Guide states.dale"
+    assert window.save_project_file() and window.load_project_file(window.project_path)
+    assert guide.isChecked() and view.contour_alignment
+    assert source.json_path.read_bytes() == source.json_bytes

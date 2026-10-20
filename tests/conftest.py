@@ -1,9 +1,17 @@
 import json
+import sys
 
 import pytest
 from PIL import Image
 
 from dale.scene import load_pair
+
+if sys.platform == "win32":
+    import ctypes
+
+    # Automated failures must report to pytest rather than opening a desktop
+    # Windows Error Reporting dialog over the owner's running editor.
+    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
 
 
 @pytest.fixture

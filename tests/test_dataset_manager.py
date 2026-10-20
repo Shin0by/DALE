@@ -13,6 +13,8 @@ from PySide6.QtGui import QDropEvent, QTransform
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QPushButton
 
 from dale.dataset_manager import MIME, DatasetManager
+from dale.editing import add_line
+from dale.json_repair import repaired_json_bytes
 from dale.project_io import load_project, save_project
 from dale.session import Session, Stroke
 from dale.ui import MainWindow, configure_application
@@ -214,7 +216,7 @@ def test_rename_labels_export_uses_set_name_and_safe_json_values_unchanged(
     field = manager.file_fields["json"]
     field.setText("Internal label")
     manager.rename_file("json")
-    assert manager.export_names.text() == "Physical name.json"
+    assert manager.export_names.text() == "Physical name"
     manager.apply(False)
     output = tmp_path / "export.json"
     suggested = []
@@ -225,7 +227,7 @@ def test_rename_labels_export_uses_set_name_and_safe_json_values_unchanged(
 
     monkeypatch.setattr("dale.ui.QFileDialog.getSaveFileName", choose)
     window.export_json_action.trigger()
-    assert suggested == ["Physical name.json"]
+    assert suggested == [f"Physical name-{window.export_identity()}.json"]
     assert output.read_bytes() == source.json_path.read_bytes()
     assert window.catalog.current.filename("json") == "Internal label.json"
     manager.close()
@@ -334,6 +336,12 @@ def test_component_transfer_button_keeps_its_kind(window, pair_factory, kind):
         assert dialog.windowTitle() == window.t(
             "Transfer image" if kind == "image" else "Transfer JSON"
         )
+        merges = [
+            b for b in dialog.findChildren(QPushButton) if b.text() == window.t("Merge contours")
+        ]
+        assert len(merges) == (1 if kind == "json" else 0)
+        if merges:
+            assert not merges[0].isEnabled()
         copy = next(
             button
             for button in dialog.findChildren(QPushButton)
@@ -414,6 +422,76 @@ def test_occupied_transfer_cancel_keeps_both_components(window, pair_factory):
     manager.close()
 
 
+@pytest.mark.parametrize("general_target", [False, True])
+def test_drop_json_merges_current_edits_without_replacing_either_dataset(
+    window, pair_factory, tmp_path, general_target
+):
+    source = pair_factory(size=(400, 400), lights=[{"x": 90, "y": 80}], tiles=[{"name": "Keep"}])
+    window.load_sources(source.image_path, source.json_path)
+    manager = DatasetManager(window)
+    source_id = manager.selected
+    target = manager.catalog.create("Destination").id
+    manager.catalog.transfer(source_id, target, "json")
+    manager.catalog.transfer(source_id, target, "image")
+    destination = manager.catalog.views[target].session
+    if general_target:
+        destination.add(add_line(destination.geometry(), (300, 300), (350, 300)))
+    destination.add(Stroke(((10, 15),), 4))
+    destination_before = destination.geometry()
+    old_operations = tuple(destination.operations)
+    incoming = manager.catalog.views[source_id].session
+    incoming.add(add_line(incoming.geometry(), (150, 150), (180, 150)))
+    incoming.add(Stroke(((40, 45),), 3))
+    source_before = manager.catalog.state()[0]
+    original = window.document_state()
+    manager.rebuild()
+
+    def merge():
+        dialog = QApplication.activeModalWidget()
+        button = next(
+            b for b in dialog.findChildren(QPushButton) if b.text() == window.t("Merge contours")
+        )
+        assert button.isEnabled()
+        button.click()
+
+    mime = QMimeData()
+    mime.setData(MIME, json.dumps([manager.tree.token, source_id, "json"]).encode())
+    item = manager.tree.topLevelItem(1)
+    point = manager.tree.visualItemRect(item).center()
+    event = QDropEvent(
+        QPointF(point),
+        Qt.DropAction.CopyAction | Qt.DropAction.MoveAction,
+        mime,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QTimer.singleShot(0, merge)
+    manager.tree.dropEvent(event)
+    assert event.isAccepted()
+    destination = manager.catalog.views[target].session
+    assert len(destination.walls) == len(destination_before.walls) + 1
+    assert tuple(destination.operations[:-1]) == old_operations
+    assert manager.catalog.state()[0] == source_before
+    assert window.document_state() == original
+    assert destination.source.image_path.read_bytes() == source.image_path.read_bytes()
+    payload = json.loads(repaired_json_bytes(destination)[0])
+    assert payload["lights"] == source.raw["lights"] and payload["tiles"] == source.raw["tiles"]
+    assert any(wall["c"] == [150, 150, 180, 150] for wall in payload["walls"])
+    before_repeat = tuple(destination.operations)
+    assert manager.catalog.add_json(target, manager.catalog.views[source_id].session) == 0
+    assert tuple(destination.operations) == before_repeat
+    destination.undo()
+    assert destination.geometry() == destination_before
+    destination.redo()
+    manager.apply(False)
+    path = tmp_path / "merged.dale"
+    save_project(window.catalog.current.session, path, catalog=window.catalog)
+    with load_project(path) as loaded:
+        assert loaded.catalog.views[source_id].session.geometry() == incoming.geometry()
+        assert json.loads(repaired_json_bytes(loaded.catalog.views[target].session)[0]) == payload
+    manager.close()
+
+
 @pytest.mark.parametrize("language", ["ru", "en", "ru"])
 def test_standard_discard_button_and_dismiss_translation(window, language):
     window.set_language(language, persist=False)
@@ -465,7 +543,8 @@ def test_manager_button_tooltips_start_with_their_actual_names(
         assert lines[0] == button.text()
         assert lines[1].startswith("Назначение:" if language == "ru" else "Purpose:")
         assert len(lines) == len(set(lines))
-        assert button.toolTip().count("Условие:" if language == "ru" else "Condition:") == 1
+        assert button.toolTip().count("Условие:" if language == "ru" else "Condition:") <= 1
+        assert "No additional conditions." not in button.toolTip()
     manager.close()
 
 
@@ -492,40 +571,68 @@ def test_right_panel_toggle_releases_canvas_and_survives_restart(window, pair_fa
     assert window.sidebar_toggle.toolTip().splitlines()[0] == "Hide right panel"
 
 
+def camera_pixel_offset(view, point):
+    # QRect.center truncates each even viewport dimension, adding a pixel of
+    # bias per axis before measuring QGraphicsView's own subpixel rounding.
+    midpoint = QPointF(view.viewport().width() / 2, view.viewport().height() / 2)
+    return (view.viewportTransform().map(QPointF(*point)) - midpoint).manhattanLength()
+
+
 @pytest.mark.parametrize("with_image", [False, True])
-def test_dataset_open_centers_camera_but_apply_retains_pan(window, pair_factory, with_image):
+def test_dataset_switch_and_manager_restore_each_saved_camera(window, pair_factory, with_image):
     source = pair_factory(size=(600, 400))
     assert window.load_sources(source.image_path if with_image else None, source.json_path)
     window.view.setTransform(QTransform.fromScale(2, 2))
     window.view.centerOn(40, 70)
     window.catalog.capture(window.project_ui_state())
     base = window.catalog.base_key
-    other = window.catalog.create("Other", ui={**window.project_ui_state(), "zoom": 3})
+    other = window.catalog.create(
+        "Other", ui={**window.project_ui_state(), "zoom": 3, "center": [480, 310]}
+    )
     window.catalog.transfer(base, other.id, "json")
     if with_image:
         window.catalog.transfer(base, other.id, "image")
     window.rebuild_dataset_controls()
-    for identifier, zoom in ((other.id, 3), (base, 2), (other.id, 3)):
+    cameras = {base: (2, (40, 70)), other.id: (3, (480, 310))}
+    for identifier in (other.id, base, other.id, base, other.id):
         window.dataset_control.setCurrentIndex(window.dataset_control.findData(identifier))
         QApplication.processEvents()
         view = window.view
-        center = view.mapFromScene(view.image_rect.center())
-        assert (center - view.viewport().rect().center()).manhattanLength() <= 2
+        zoom, point = cameras[identifier]
+        assert camera_pixel_offset(view, point) <= 2
         assert view.transform().m11() == zoom
-        view.centerOn(40, 70)
+        # Leaving the set must capture subsequent pan/zoom, not just its initial view.
+        cameras[identifier] = (zoom + 0.5, (point[0] + 20, point[1] - 10))
+        view.setTransform(QTransform.fromScale(zoom + 0.5, zoom + 0.5))
+        view.centerOn(*cameras[identifier][1])
     before = window.view.mapToScene(window.view.viewport().rect().center())
+    zoom = window.view.transform().m11()
+    window.catalog.capture(window.project_ui_state())
     manager = DatasetManager(window)
     manager.apply(False)
     after = window.view.mapToScene(window.view.viewport().rect().center())
     assert (after - before).manhattanLength() <= 1
     manager.apply(True)
     QApplication.processEvents()
-    center = window.view.mapFromScene(window.view.image_rect.center())
-    assert (center - window.view.viewport().rect().center()).manhattanLength() <= 2
-    assert window.view.transform().m11() == 3
+    after = window.view.mapToScene(window.view.viewport().rect().center())
+    assert (after - before).manhattanLength() * zoom <= 2
+    assert window.view.transform().m11() == zoom
+    manager = DatasetManager(window)
+    manager.selected = base
+    manager.refresh_fields()
+    manager.apply(True)
+    QApplication.processEvents()
+    zoom, point = cameras[base]
+    assert camera_pixel_offset(window.view, point) <= 2
+    assert window.view.transform().m11() == zoom
+    stable = window.view.camera_center()
+    for _ in range(20):
+        for identifier in (other.id, base):
+            window.dataset_control.setCurrentIndex(window.dataset_control.findData(identifier))
+        assert (window.view.camera_center() - stable).manhattanLength() * zoom <= 1
 
 
-def test_project_reopen_centers_first_dataset_without_changing_saved_assets(
+def test_project_reopen_restores_first_dataset_camera_without_changing_saved_assets(
     window, pair_factory, tmp_path
 ):
     source = pair_factory(size=(600, 400))
@@ -537,8 +644,58 @@ def test_project_reopen_centers_first_dataset_without_changing_saved_assets(
     original = window.project_path.read_bytes()
     assert window.load_project_file(window.project_path)
     QApplication.processEvents()
-    center = window.view.mapFromScene(window.view.image_rect.center())
-    assert (center - window.view.viewport().rect().center()).manhattanLength() <= 2
+    assert camera_pixel_offset(window.view, (40, 70)) <= 2
     assert window.view.transform().m11() == 2
     assert window.project_path.read_bytes() == original
     assert window.document_state() == window.saved_state
+
+
+@pytest.mark.parametrize("global_values", [False, True])
+def test_camera_roundtrip_keeps_inactive_dataset_views_and_sidebar_changes(
+    window, pair_factory, tmp_path, global_values
+):
+    from dale.project_io import load_project
+
+    source = pair_factory(size=(600, 400))
+    assert window.load_sources(source.image_path, source.json_path)
+    window.set_global_tool_settings(global_values)
+    base = window.catalog.base_key
+    view = window.view
+    view.setTransform(QTransform.fromScale(2.5, 2.5))
+    view.centerOn(80, 110)
+    window.catalog.capture(window.project_ui_state())
+    other = window.catalog.create(
+        "Other camera", ui={**window.project_ui_state(), "zoom": 4, "center": [510, 300]}
+    )
+    window.catalog.transfer(base, other.id, "json")
+    window.catalog.transfer(base, other.id, "image")
+    window.rebuild_dataset_controls()
+    window.dataset_control.setCurrentIndex(window.dataset_control.findData(other.id))
+    QApplication.processEvents()
+    view.setTransform(QTransform.fromScale(3.5, 3.5))
+    view.centerOn(520, 320)
+    expected = {base: (2.5, (80, 110)), other.id: (3.5, (520, 320))}
+    window.project_path = tmp_path / "Independent cameras.dale"
+    assert window.save_project_file()
+    before = window.project_path.read_bytes()
+    with load_project(window.project_path) as project:
+        for identifier, (zoom, point) in expected.items():
+            state = project.catalog.views[identifier].ui
+            assert state["zoom"] == zoom
+            assert sum(abs(state["center"][i] - point[i]) for i in (0, 1)) * zoom <= 2
+    # Change viewport dimensions before reopen; restore the saved scene-space center.
+    window.sidebar_toggle.click()
+    window.resize(1400, 900)
+    QApplication.processEvents()
+    assert window.load_project_file(window.project_path)
+    QApplication.processEvents()
+    assert window.catalog.active_key == other.id
+    for identifier in (base, other.id, base):
+        window.dataset_control.setCurrentIndex(window.dataset_control.findData(identifier))
+        QApplication.processEvents()
+        zoom, point = expected[identifier]
+        assert view.transform().m11() == zoom
+        assert camera_pixel_offset(view, point) <= 2
+    assert window.project_path.read_bytes() == before
+    assert source.json_path.read_bytes() == source.json_bytes
+    assert not view.session.operations

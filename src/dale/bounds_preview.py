@@ -5,9 +5,10 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QObject, QThread, Signal
 
+from dale.export_grid import export_grid
 from dale.overlay_export import prepare_overlay
-from dale.raster import ExportCancelled
-from dale.session import ContourMask, Session, Stroke
+from dale.raster import ExportCancelled, raster_operations
+from dale.session import Session
 
 INLINE_PIXEL_LIMIT = 262_144
 
@@ -18,13 +19,17 @@ class BoundsResult:
     error: str = ""
 
 
-def calculate_bounds(session, polygons, cancelled=None):
+def calculate_bounds(session, polygons, cancelled=None, *, size_to_grid=False, grid_size=None):
+    if size_to_grid:
+        export_grid(session, grid_size)
     bounds = []
     for polygon in polygons:
         if cancelled and cancelled():
             raise ExportCancelled("PNG bounds calculation cancelled.")
         try:
-            result, _, _ = prepare_overlay(session, polygon, cancelled)
+            result, _, _ = prepare_overlay(
+                session, polygon, cancelled, size_to_grid=size_to_grid, grid_size=grid_size
+            )
             if result is not None:
                 bounds.append(result)
         except ValueError:
@@ -35,15 +40,21 @@ def calculate_bounds(session, polygons, cancelled=None):
 
 
 class BoundsWorker(QThread):
-    def __init__(self, key, session, polygons, parent):
+    def __init__(self, key, session, polygons, parent, size_to_grid=False, grid_size=None):
         super().__init__(parent)
         self.key, self.session, self.polygons = key, session, polygons
+        self.size_to_grid = size_to_grid
+        self.grid_size = grid_size
         self.result = None
 
     def run(self):
         try:
             self.result = calculate_bounds(
-                self.session, self.polygons, self.isInterruptionRequested
+                self.session,
+                self.polygons,
+                self.isInterruptionRequested,
+                size_to_grid=self.size_to_grid,
+                grid_size=self.grid_size,
             )
         except ExportCancelled:
             pass
@@ -64,13 +75,19 @@ class BoundsPreview(QObject):
         self.current_key = None
         self.closed = False
 
-    def request(self, session, polygons):
+    def request(self, session, polygons, *, size_to_grid=False, grid_size=None):
         polygons = tuple(polygons)
         if not polygons:
             self.clear()
             return BoundsResult(())
-        raster = tuple(op for op in session.operations if isinstance(op, (ContourMask, Stroke)))
+        raster = raster_operations(session.operations, session.contour_offset)
+        try:
+            grid = export_grid(session, grid_size) if size_to_grid else None
+        except ValueError as exc:
+            self.clear()
+            return BoundsResult((), str(exc))
         key = (
+            grid,
             session.source.image_path,
             session.source.size,
             session.analysis().area.wkb,
@@ -107,7 +124,9 @@ class BoundsPreview(QObject):
             if self.worker:
                 self.worker.requestInterruption()
             try:
-                result = calculate_bounds(snapshot, polygons)
+                result = calculate_bounds(
+                    snapshot, polygons, size_to_grid=size_to_grid, grid_size=grid_size
+                )
             except Exception as exc:
                 result = BoundsResult((), str(exc))
             self._remember(key, result)
@@ -130,7 +149,14 @@ class BoundsPreview(QObject):
             return
         key, session, polygons = self.pending
         self.pending = None
-        worker = BoundsWorker(key, session, polygons, self)
+        worker = BoundsWorker(
+            key,
+            session,
+            polygons,
+            self,
+            size_to_grid=key[0] is not None,
+            grid_size=key[0].scene_cell if key[0] is not None else None,
+        )
         self.worker = worker
         worker.finished.connect(lambda: self._finished(worker))
         worker.start()

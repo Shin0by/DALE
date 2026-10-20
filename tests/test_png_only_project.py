@@ -41,7 +41,7 @@ def test_static_image_only_project_keeps_exact_source_bytes_and_manual_geometry(
         assert restored.operations == session.operations and restored.future == session.future
         assert restored.operations[-1].boundary.equals(session.operations[-1].boundary)
         folder = export_overlays(restored, tmp_path)
-        item = json.loads((folder / "placement.json").read_text())["items"][0]
+        item = json.loads(next(folder.glob("*-placement.json")).read_text())["items"][0]
         with Image.open(folder / item["file"]) as png:
             assert item["file"].endswith(f"-{png.width}x{png.height}px.png")
     with zipfile.ZipFile(path) as archive:
@@ -68,9 +68,9 @@ def test_png_original_alpha_caps_restore_and_defines_exact_export_name(tmp_path)
     for a, b in zip(points, (*points[1:], points[0]), strict=True):
         session.add(add_line(session.geometry(), a, b))
     folder = export_overlays(session, tmp_path)
-    item = json.loads((folder / "placement.json").read_text())["items"][0]
+    item = json.loads(next(folder.glob("*-placement.json")).read_text())["items"][0]
     assert (item["x"], item["y"], item["width"], item["height"]) == (20, 15, 40, 40)
-    assert item["file"] == "alpha-part-001-40x40px.png"
+    assert item["file"] == f"alpha-{item['region_id']}-40x40px.png"
     with Image.open(folder / item["file"]) as png:
         assert png.getchannel("A").getextrema() == (128, 128)
 

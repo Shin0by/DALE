@@ -19,6 +19,282 @@ from PySide6.QtWidgets import (
 )
 
 RUSSIAN = {
+    "View": "Вид",
+    "Top panels": "Верхние панели",
+    "Regions is active, a region is selected and no gesture or export is in progress.": (
+        "Включён режим «Области», выбрана область, нет незавершённого действия или экспорта."
+    ),
+    "Scroll the top panels horizontally with the mouse wheel.": (
+        "Прокручивать верхние панели по горизонтали колесом мыши."
+    ),
+    "Navigate, select, copy, delete and configure the current editing mode.": (
+        "Перемещать сцену, выбирать, копировать и удалять элементы текущего режима; "
+        "открывать настройки."
+    ),
+    "Fit the scene and configure contours, guides, background and image resolution.": (
+        "Вместить сцену и настроить показ контуров, направляющие, фон и разрешение изображения."
+    ),
+    "Snap the highlighted vertex or common center to an existing point.": (
+        "Притянуть подсвеченную вершину или общий центр к существующей вершине."
+    ),
+    "The nearest vertex or common center is highlighted; "
+    "dragging keeps this point as the anchor.": (
+        "Ближайшая вершина или общий центр подсвечены; "
+        "при перетаскивании эта точка остаётся опорной."
+    ),
+    "The nearest vertex or common center is highlighted and stays the grab point while dragging.": (
+        "Ближайшая вершина или общий центр подсвечены и остаются опорной точкой при перетаскивании."
+    ),
+    "Angled contour guides": "Наклонные направляющие контура",
+    "Guide targets": "Цели привязки",
+    "Connected by contours": "Связаны контуром",
+    "Snap the highlighted vertex or common center to a stationary line's "
+    "virtual extension at any angle. No lines are added.": (
+        "Притянуть подсвеченную вершину или общий центр к виртуальному продолжению "
+        "неподвижного отрезка под любым углом. Новые линии не создаются."
+    ),
+    "Use only lines touching the moved selection through a chain of contours "
+    "before the gesture. Independent contours are excluded.": (
+        "Использовать только линии, связанные с выделением цепочкой касающихся "
+        "контуров до начала действия. Независимые контуры исключаются."
+    ),
+    "Number: perpendicular distance to a virtual line, in screen pixels.": (
+        "Значение: расстояние до виртуальной линии по перпендикуляру в экранных пикселях."
+    ),
+    "Vertices alignment": "Привязки вершин",
+    "Contours alignment": "Привязки контуров",
+    "Regions alignment": "Привязки областей",
+    "Configure alignment while editing contour vertices and lines.": (
+        "Настроить привязки при редактировании вершин и линий контура."
+    ),
+    "Configure alignment while moving or pasting contours.": (
+        "Настроить привязки при перемещении и вставке контуров."
+    ),
+    "Configure alignment while moving or pasting regions.": (
+        "Настроить привязки при перемещении и вставке областей."
+    ),
+    "Do you want to deselect all regions?": "Желаете отменить выделение всех областей?",
+    "Click to toggle a region; drag over 10 screen pixels to invert regions in a box. "
+    "Empty click asks before clearing selection. Undo/redo includes selection changes.": (
+        "Клик меняет выбор области; перетаскивание дальше 10 экранных пикселей "
+        "инвертирует выбор в рамке. Клик по пустому месту запрашивает снятие выделения. "
+        "Изменения выбора можно отменять и возвращать."
+    ),
+    "Click a region: select/deselect. Empty click: ask before clearing selection.": (
+        "Клик по области: выбрать или снять выбор. Клик по пустому месту: "
+        "запросить снятие выделения."
+    ),
+    "Not enough temporary disk space for native image preview.": (
+        "Недостаточно места на диске для кэша исходного изображения в папке программы."
+    ),
+    "Native preview requires an uncompressed BMP image.": (
+        "Для просмотра BMP в исходном разрешении нужен файл без сжатия."
+    ),
+    "px": "пкс",
+    "ft": "фут",
+    "cm": "см",
+    "mm": "мм",
+    "Raster crosshair": "Перекрестие курсора",
+    "Show dashed one-pixel cursor axes across the scene editing area.": (
+        "Показать пунктирные оси толщиной в один пиксель через курсор во всех разделах."
+    ),
+    "Raster rulers": "Линейки и направляющие",
+    "Move guides": "Перемещение направляющих",
+    "Modes": "Режимы",
+    "Canvas background": "Фон рабочей области",
+    "Checkerboard": "Шахматный фон",
+    "Solid color": "Сплошной цвет",
+    "Background color": "Цвет фона",
+    "Choose a checkerboard or solid canvas background for this dataset.": (
+        "Выбрать шахматный или одноцветный фон рабочей области для текущего набора."
+    ),
+    "Choose the canvas background for this dataset. Exported pixels stay unchanged.": (
+        "Выбрать фон рабочей области для этого набора. Пиксели экспорта не меняются."
+    ),
+    "Choose a solid preview background color.": "Выбрать цвет фона предпросмотра.",
+    "Move raster regions": "Перемещение областей с растром",
+    "Rotate raster regions": "Вращение областей с растром",
+    "Scale raster regions": "Масштабирование областей с растром",
+    "Raster artwork offset": "Отступ изображения областей",
+    "Show selected raster regions": "Показать растр выбранных областей",
+    "Preview selected regions": "Предпросмотр выбранных областей",
+    "Region output": "Экспорт областей",
+    "Raster output": "Предпросмотр растра",
+    "Move selected boundaries together with their current image pixels.": (
+        "Перемещать выбранные границы вместе с текущими пикселями изображения."
+    ),
+    "Rotate selected boundaries and their image pixels around their common center.": (
+        "Вращать выбранные границы и их изображение вокруг общего центра."
+    ),
+    "Resize selected boundaries together with their image pixels.": (
+        "Менять размер выбранных границ вместе с их изображением."
+    ),
+    "Preview only selected region imagery; show the whole image when selection is empty.": (
+        "Показать только изображение выбранных областей. Без выбора показать всё."
+    ),
+    "Wheel: resize selected raster regions.": "Колесо: масштабировать выбранные области с растром.",
+    "Select and reposition ruler guides without editing the scene.": (
+        "Выбирать и перемещать направляющие линеек, не изменяя сцену."
+    ),
+    "Rulers are visible and guide editing is enabled.": (
+        "Линейки показаны, режим перемещения направляющих включён."
+    ),
+    "Drag a guide: move it.": "Перетаскивание направляющей: переместить.",
+    "Double-click a guide: delete it.": "Двойной клик по направляющей: удалить.",
+    "Native raster resolution": "Исходное разрешение",
+    "Square raster eraser": "Квадратный ластик растра",
+    "Square raster restore": "Квадратное восстановление растра",
+    "Erase image pixels with an axis-aligned square brush.": (
+        "Удалить пиксели изображения квадратной кистью."
+    ),
+    "Restore image pixels with an axis-aligned square brush.": (
+        "Восстановить пиксели изображения квадратной кистью."
+    ),
+    "Show dashed one-pixel cursor axes across the Raster editing area.": (
+        "Показать пунктирные оси толщиной в один пиксель через курсор в рабочей области."
+    ),
+    "Measure the scene and drag horizontal or vertical guides from the rulers.": (
+        "Измерять сцену и вытягивать из линеек горизонтальные и вертикальные направляющие."
+    ),
+    "Show visible image tiles at source resolution with current raster edits.": (
+        "Показать видимую часть изображения в исходном разрешении с текущими правками растра."
+    ),
+    "Raster is active and a scene image is open.": ("Открыты раздел «Растр» и изображение сцены."),
+    "Drag from this ruler to create a scene-anchored guide.": (
+        "Вытянуть из линейки направляющую, закреплённую в координатах сцены."
+    ),
+    "Drag from a ruler: create a guide.": "Перетаскивание из линейки: создать направляющую.",
+    "Ctrl+drag a guide: move it; return it to a ruler to delete.": (
+        "Ctrl+перетаскивание направляющей: переместить; вернуть на линейку для удаления."
+    ),
+    "Escape: cancel the guide drag.": "Escape: отменить перемещение направляющей.",
+    "Ctrl+wheel: change brush diameter.": "Ctrl+колесо: изменить диаметр кисти.",
+    "Alt+wheel: change feather width.": "Alt+колесо: изменить ширину мягкой кромки.",
+    "Escape: cancel the stroke.": "Escape: отменить мазок.",
+    "Ruler units": "Единицы линейки",
+    "Source pixels": "Исходные пиксели",
+    "Feet": "Футы",
+    "Centimeters": "Сантиметры",
+    "Millimeters": "Миллиметры",
+    "World distances use the scene JSON grid. Ruler zero is the image origin.": (
+        "Игровые расстояния рассчитываются по сетке JSON сцены. Ноль - начало изображения."
+    ),
+    "One game foot: {x} × {y} source px.": "Один игровой фут: {x} × {y} исходных пикселей.",
+    "World rulers require scene JSON grid size, distance and units.": (
+        "Для игровых единиц нужны размер клетки, расстояние и единицы сетки из JSON сцены."
+    ),
+    "Scene grid units cannot be converted to feet or centimeters.": (
+        "Единицы сетки сцены невозможно перевести в футы или сантиметры."
+    ),
+    "Snap guides to whole ruler values": "Привязка направляющих к целым значениям",
+    "Round a dragged guide to a whole value in the selected ruler unit.": (
+        "Округлять положение направляющей до целого значения выбранной единицы."
+    ),
+    "Automatic grid": "Автоматическая сетка",
+    "Show automatic grid": "Показать автоматическую сетку",
+    "Grid spacing in the selected units": "Шаг сетки в выбранных единицах",
+    "Grid spacing": "Шаг сетки",
+    "Set the spacing of scene-anchored grid lines in the selected units.": (
+        "Задать расстояние между линиями сетки в выбранных единицах."
+    ),
+    "Show a solid translucent grid over the scene image.": (
+        "Показать поверх изображения сетку из сплошных полупрозрачных линий."
+    ),
+    "Dense grid lines are thinned only on screen at low zoom.": (
+        "При отдалении частые линии прореживаются только на экране."
+    ),
+    "Brush shape": "Форма кисти",
+    "Circle": "Круг",
+    "Square": "Квадрат",
+    "Choose the round or square tool for this raster operation.": (
+        "Выбрать круглую или квадратную кисть для этой операции с растром."
+    ),
+    "Feather width (%)": "Ширина мягкой кромки (%)",
+    "Brush pressure (%)": "Нажим кисти (%)",
+    "Keep a solid center and soften only the outer band.": (
+        "Сохранить плотную середину и размыть только внешнюю кромку."
+    ),
+    "Set the strength of each erase or restore stroke.": (
+        "Задать силу удаления или восстановления за один мазок."
+    ),
+    "Not enough memory for native raster resolution.": (
+        "Недостаточно памяти для отображения растра в исходном разрешении."
+    ),
+    "Too many guides. Remove a guide before creating another.": (
+        "Слишком много направляющих. Удалите одну перед созданием новой."
+    ),
+    "The raster guide limit has been reached.": "Достигнут предел числа направляющих растра.",
+    "Circle detail": "Детализация круга",
+    "Maximum: 4096 segments.": "Максимум: 4096 отрезков.",
+    "More segments make the contour smoother without changing its radius.": (
+        "Больше отрезков делают контур плавнее, не меняя его радиус."
+    ),
+    "Multiplier: ×{factor}": "Множитель: ×{factor}",
+    "Increase the automatic segment count. Multiplier 1.0 keeps current detail.": (
+        "Увеличить автоматически рассчитанное число отрезков. "
+        "Множитель 1,0 сохраняет текущую детализацию."
+    ),
+    "Left/Right: change the multiplier by 0.2.": ("Влево/Вправо: изменить множитель на 0,2."),
+    "Home/End: minimum/maximum detail.": ("Home/End: минимальная/максимальная детализация."),
+    "Right-click the circle button: adjust detail.": (
+        "Правый клик по кнопке круга: настроить детализацию."
+    ),
+    "Current dataset data exceeds the project limit even without undo history.": (
+        "Текущие данные наборов превышают лимит проекта даже без истории отмены."
+    ),
+    "Invalid project undo checkpoint.": "Некорректная граница истории отмены в проекте.",
+    "Groups": "Группы",
+    "Resize group manager": "Изменить размер менеджера групп",
+    "Change the width and height of the group manager.": (
+        "Изменить ширину и высоту менеджера групп."
+    ),
+    "Manage dataset selection groups and choose a group to select.": (
+        "Управлять группами текущего набора и выбирать их элементы."
+    ),
+    "Group manager": "Менеджер групп",
+    "Groups: {section}": "Группы: {section}",
+    "Group {number}": "Группа {number}",
+    "+ New group": "+ Новая группа",
+    "Rename group": "Переименовать группу",
+    "Group name": "Название группы",
+    "Group color": "Цвет группы",
+    "Delete group": "Удалить группу",
+    "Add selection": "Добавить выбранное",
+    "Exclude selection": "Исключить выбранное",
+    "All group colors": "Все цвета групп",
+    "Cannot update group": "Не удалось изменить группу",
+    "Show or hide the floating group manager and group colors.": (
+        "Показать или скрыть менеджер групп и окраску групп на карте."
+    ),
+    "Select a group's elements. Each section of this dataset has its own groups.": (
+        "Выбрать элементы группы. У каждого раздела этого набора свои группы."
+    ),
+    "Close group mode and restore ordinary selection colors.": (
+        "Закрыть менеджер и вернуть обычные цвета выделения."
+    ),
+    "Create an empty group in this section of the current dataset.": (
+        "Создать пустую группу в текущем разделе этого набора."
+    ),
+    "Create a group, then add selected scene elements with +.": (
+        "Создайте группу, выберите элементы сцены и добавьте их кнопкой +."
+    ),
+    "Choose the color of this group.": "Изменить цвет этой группы.",
+    "Select this group's elements in the current section.": (
+        "Выбрать элементы этой группы в текущем разделе."
+    ),
+    "Double-click: rename this group.": "Двойной клик: переименовать группу.",
+    "Add the currently selected elements to this group.": (
+        "Добавить выбранные элементы в эту группу."
+    ),
+    "Remove the currently selected elements from this group.": (
+        "Исключить выбранные элементы из этой группы."
+    ),
+    "Delete this group, keeping all scene elements.": (
+        "Удалить только группу. Элементы сцены останутся."
+    ),
+    'Delete group "{name}"? Scene elements will remain.': (
+        'Удалить группу "{name}"? Элементы сцены останутся.'
+    ),
     "Export adjacent regions as one?": "Выгрузить смежные области как одну?",
     (
         "Yes: one PNG per connected group of selected regions. No: one PNG per region. "
@@ -91,8 +367,8 @@ RUSSIAN = {
     "Click: toggle the line under the cursor.": (
         "Клик: выбрать или снять выбор отрезка под курсором."
     ),
-    "Double-click: select all lines connected by shared vertices.": (
-        "Двойной клик: выбрать все линии, связанные общими вершинами."
+    "Double-click: select or deselect all lines connected by shared vertices.": (
+        "Двойной клик: выбрать или снять выбор всех линий, связанных общими вершинами."
     ),
     "Drag over 10 screen pixels: invert lines intersecting the box.": (
         "Перетаскивание дальше 10 экранных пикселей: инвертировать выбор отрезков в рамке."
@@ -120,6 +396,50 @@ RUSSIAN = {
     "Rotate contours": "Вращение контуров",
     "Contour point alignment": "К точкам контура",
     "Contour guide alignment": "По направляющим контура",
+    "Mirror contours about vertical axis": "Отразить контуры по вертикальной оси",
+    "Mirror contours about horizontal axis": "Отразить контуры по горизонтальной оси",
+    (
+        "Swap left and right about the vertical axis through the common contour center. "
+        "Keep image pixels and unselected lines in place."
+    ): (
+        "Поменять левую и правую стороны относительно вертикальной оси через общий центр контуров. "
+        "Изображение и невыбранные линии остаются на месте."
+    ),
+    (
+        "Swap top and bottom about the horizontal axis through the common contour center. "
+        "Keep image pixels and unselected lines in place."
+    ): (
+        "Поменять верхнюю и нижнюю стороны относительно горизонтальной оси "
+        "через общий центр контуров. "
+        "Изображение и невыбранные линии остаются на месте."
+    ),
+    "Cannot transform contours": "Не удалось преобразовать контуры",
+    "Choose a vertical or horizontal mirror axis.": "Выберите вертикальную или горизонтальную ось.",
+    "Rotation step (degrees)": "Шаг вращения (градусы)",
+    "Wheel": "Колесо",
+    "Alt+wheel": "Alt+колесо",
+    "Degrees per wheel notch. Apply to remember this rotation step.": (
+        "Градусы за деление колеса. Нажмите «Применить», чтобы сохранить шаг."
+    ),
+    "Invalid project rotation step.": "Некорректный шаг вращения в проекте.",
+    "Rotate selected region contours around their common center.": (
+        "Вращать контуры выбранных областей вокруг их общего центра."
+    ),
+    "Wheel: rotate by the configured step.": "Колесо: вращать с настроенным шагом.",
+    "Alt+wheel: rotate by the configured Alt step.": "Alt+колесо: вращать с настроенным шагом Alt.",
+    (
+        "Wheel: rotate selected contour lines by the configured step around their common center."
+    ): "Колесо: вращение выбранных линий вокруг общего центра с настроенным шагом.",
+    (
+        "Wheel: rotate selected regions by the configured step around their common center."
+    ): "Колесо: вращение выбранных областей вокруг общего центра с настроенным шагом.",
+    (
+        "The center label shows the total angle since this rotation started; "
+        "negative is counterclockwise."
+    ): (
+        "Число в центре - суммарный угол от начала вращения; "
+        "отрицательный угол означает вращение против часовой стрелки."
+    ),
     "Figure point alignment": "К точкам",
     "Figure guide alignment": "По направляющим",
     "Copy contours": "Копировать контуры",
@@ -156,6 +476,7 @@ RUSSIAN = {
     ),
     "Contours enclose a closed figure.": "Контуры образуют замкнутую фигуру.",
     "At least one contour line is selected.": "Выбрана хотя бы одна линия контура.",
+    "Alt+wheel: rotate by 45 degrees per notch.": "Alt+колесо: вращать с шагом 45°.",
     "Wheel: rotate selected contours by 0.1 degrees.": (
         "Колесо: вращать выбранные контуры с шагом 0,1 градуса."
     ),
@@ -634,6 +955,9 @@ RUSSIAN = {
         "проекта. Иначе настройки хранятся в файле проекта."
     ),
     "Clear selection": "Снять выделение",
+    "Deselect elements in the current section; cancel the current gesture.": (
+        "Снять выделение элементов текущего раздела и отменить текущий жест."
+    ),
     (
         "Clear selected regions and contour highlights. Cancel the "
         "current gesture without changing saved geometry or raster."
@@ -1105,6 +1429,52 @@ RUSSIAN = {
         "Замкнутая область исчезла. Уменьшите отступ внутрь или замкните контур."
     ),
     "Export separate PNGs": "Экспорт отдельных PNG",
+    "Export": "Экспортировать",
+    "Export folder": "Папка экспорта",
+    "Export folder:": "Папка экспорта:",
+    "File already exists": "Файл уже существует",
+    'Overwrite file "{name}"?': "Перезаписать файл «{name}»?",
+    "Folder: {folder}": "Папка: {folder}",
+    "Overwrite": "Перезаписать",
+    "Create copy": "Создать копию",
+    "Replace only this exported file.": "Заменить только этот экспортируемый файл.",
+    "Keep the existing file and save a copy with a free name.": (
+        "Сохранить прежний файл и создать копию со свободным именем."
+    ),
+    "Cancel this export and keep existing files unchanged.": (
+        "Отменить этот экспорт, сохранив прежние файлы."
+    ),
+    "File export cancelled.": "Экспорт отменён.",
+    "Only a regular export file can be overwritten.": "Можно перезаписать только обычный файл.",
+    "Export destination changed. Try exporting again.": (
+        "Файл назначения изменился. Повторите экспорт."
+    ),
+    "Export cannot replace an imported source file.": (
+        "Экспорт не может заменить импортированный исходный файл."
+    ),
+    "&Look in:": "Папка:",
+    "Files of &type:": "Тип файлов:",
+    "All Files (*)": "Все файлы (*)",
+    "Back": "Назад",
+    "Forward": "Вперёд",
+    "Parent Directory": "На папку выше",
+    "Create New Folder": "Создать папку",
+    "List View": "Список",
+    "Detail View": "Таблица",
+    "Name": "Имя",
+    "Size": "Размер",
+    "Type": "Тип",
+    "Date Modified": "Дата изменения",
+    "Computer": "Компьютер",
+    "My Computer": "Мой компьютер",
+    "Choose an existing folder or a new folder inside it.": (
+        "Выберите существующую папку или укажите новую папку внутри неё."
+    ),
+    (
+        "Choose an existing folder or enter a new folder name. "
+        "PNG files are saved directly inside it."
+    ): ("Выберите существующую папку или введите имя новой. PNG сохраняются прямо в неё."),
+    "The export destination must be a folder.": "Путь экспорта должен указывать на папку.",
     "Exporting separate PNGs…": "Экспорт отдельных PNG…",
     "Export failed": "Ошибка экспорта",
     "Exported {path}": "Экспортировано: {path}",
@@ -1294,6 +1664,14 @@ RUSSIAN.update(
         "Delete": "Удалить",
         "Add…": "Добавить…",
         "Export filenames": "Имена при экспорте",
+        "Export filename prefix": "Начало имени при экспорте",
+        (
+            "Exports add the selected-region number and PNG dimensions. "
+            "Names and paths inside JSON are preserved."
+        ): (
+            "При экспорте добавляются номер выбранных областей и размеры PNG. "
+            "Имена и пути внутри JSON сохраняются."
+        ),
         "Names and paths inside JSON are preserved.": "Имена и пути внутри JSON сохраняются.",
         "Import datasets from project…": "Импорт наборов из проекта…",
         "Export dataset to project…": "Экспорт набора в проект…",
@@ -1331,6 +1709,46 @@ RUSSIAN.update(
         ),
         "Replace and move": "Заменить и перенести",
         "Replace and copy": "Заменить и копировать",
+        "PNG naming": "Именование PNG",
+        "Which name should a region matching a group use?": (
+            "Как назвать область, совпадающую с группой?"
+        ),
+        "Dataset name": "Имя набора",
+        "Group name": "Имя группы",
+        (
+            "Dataset: {dataset}\nGroups: {groups}\nUnique numbers and PNG dimensions are kept."
+        ): "Набор: {dataset}\nГруппы: {groups}\nУникальные номера и размеры PNG сохраняются.",
+        ("Remember this naming choice. Right-click Export selected regions to change it."): (
+            "Запомнить способ именования. Изменить его можно правым кликом по кнопке "
+            "«Экспорт выбранных областей»."
+        ),
+        (
+            "Choose the filename prefix for an exact group boundary match. "
+            "Other regions keep the dataset name."
+        ): (
+            "Выбрать начало имени файла при точном совпадении границы с группой. "
+            "Остальные области используют имя набора."
+        ),
+        "Use the dataset name for every exported PNG.": (
+            "Использовать имя набора для всех выгружаемых PNG."
+        ),
+        "Use matching group names; other PNGs keep the dataset name.": (
+            "Использовать имена совпавших групп. Остальные PNG используют имя набора."
+        ),
+        "The destination already contains JSON. Replace it, merge contours or cancel.": (
+            "В выбранном наборе уже есть JSON. Замените его, объедините контуры "
+            "или отмените действие."
+        ),
+        (
+            "Add the current source contours to the destination without replacing its "
+            "contours or image. Keep the source dataset unchanged."
+        ): (
+            "Добавить текущие контуры к контурам выбранного набора. Его изображение "
+            "и исходный набор сохраняются."
+        ),
+        "The destination already has JSON or drawn contours.": (
+            "В выбранном наборе уже есть JSON или нарисованные контуры."
+        ),
         "Dataset changes applied. Save the project to write them to disk.": (
             "Изменения наборов применены. Сохраните проект для записи на диск."
         ),
@@ -1406,8 +1824,11 @@ RUSSIAN.update(
         "Toggle snapping to existing points and lines. Points take priority.": (
             "Включить или выключить прилипание к точкам и линиям. Точки имеют приоритет."
         ),
-        ("Make a right angle with adjacent contour lines, including rotated contours."): (
-            "Выставить прямой угол относительно соседних линий контура, в том числе повёрнутого."
+        "Make a right angle while moving a vertex or drawing a line from a contour.": (
+            "Выставить прямой угол при перемещении вершины или рисовании линии от контура."
+        ),
+        "This button is enabled and a point is being moved or a line is being drawn.": (
+            "Кнопка включена; перемещается вершина или рисуется новая линия."
         ),
         "Align a point or shape with other vertices horizontally or vertically.": (
             "Выровнять точку или фигуру по горизонтали или вертикали с другими вершинами."
@@ -1527,8 +1948,8 @@ RUSSIAN.update(
         "Right-click this button: choose whether connected lines follow.": (
             "Правый клик по кнопке задаёт, перемещать ли связанные линии."
         ),
-        "Number: snap distance to a right angle, in screen pixels.": (
-            "Значение: допуск до прямого угла в экранных пикселях."
+        "Number: angular deviation from 90 degrees, in degrees.": (
+            "Значение: отклонение от 90° в градусах."
         ),
         "Number: snap distance to horizontal/vertical guides, in screen pixels.": (
             "Значение: допуск до горизонтали или вертикали вершины в экранных пикселях."
@@ -1695,6 +2116,138 @@ RUSSIAN.update(
 )
 
 
+RUSSIAN.update(
+    {
+        "Right-click: open tool settings.": "Правый клик: открыть настройки инструмента.",
+        "Ask every time": "Спрашивать каждый раз",
+        "Default action": "Действие по умолчанию",
+        "Connect contours": "Связывать контуры",
+        "Keep contours independent": "Оставлять контуры независимыми",
+        "One PNG per adjacent group": "Один PNG для каждой смежной группы",
+        "One PNG per region": "Отдельный PNG для каждой области",
+        "Size to grid": "Размер под сетку",
+        "Scene grid": "Сетка",
+        "Grid color": "Цвет сетки",
+        "Grid transparency": "Прозрачность сетки",
+        "Grid line thickness (screen pixels)": "Толщина линий сетки (экранные пиксели)",
+        "0% shows opaque grid lines; 100% hides them. PNG pixels stay unchanged.": (
+            "0%: непрозрачные линии; 100%: невидимые. Пиксели PNG не изменяются."
+        ),
+        "Keep grid line thickness constant on screen when zooming the map.": (
+            "Сохранять толщину линий сетки на экране при изменении масштаба карты."
+        ),
+        "Choose the grid line color for this dataset. PNG pixels stay unchanged.": (
+            "Выбрать цвет линий сетки для текущего набора. Цвет пикселей PNG не изменяется."
+        ),
+        "Show the square grid used by PNG export and preview.": (
+            "Показать квадратную сетку, используемую экспортом PNG и предпросмотром."
+        ),
+        "Grid cell size (scene pixels)": "Размер клетки (пиксели сцены)",
+        (
+            "Use one cell size for both axes. The grid starts at the scene origin "
+            "and controls PNG padding when Size to grid is enabled."
+        ): (
+            "Один размер клетки для обеих осей. Сетка начинается от начала сцены "
+            "и определяет прозрачные поля PNG при включённом «Размер под сетку»."
+        ),
+        "PNG dimensions": "Размер PNG",
+        (
+            "PNG bounds retain every nonzero alpha pixel after artwork offset, "
+            "then expand to grid lines with transparent padding."
+        ): (
+            "Размер PNG учитывает все непрозрачные пиксели после отступа области, "
+            "затем расширяется до линий сетки прозрачными полями."
+        ),
+        "Use this action automatically, or show the question on every operation.": (
+            "Выполнять выбранное действие автоматически или задавать вопрос при каждой операции."
+        ),
+        (
+            "Add transparent padding after artwork offset "
+            "so both PNG corners lie on scene grid lines."
+        ): (
+            "Добавить прозрачные поля после учёта отступа области, "
+            "чтобы оба угла PNG совпали с узлами сетки сцены."
+        ),
+        "Apply these tool settings.": "Применить настройки этого инструмента.",
+        "Leave tool settings unchanged.": "Закрыть без изменения настроек инструмента.",
+        "Close without applying settings.": "Закрыть без применения настроек.",
+        "Artwork offset (source pixels)": "Отступ области (пиксели изображения)",
+        "Brush diameter (source pixels)": "Диаметр кисти (пиксели изображения)",
+        "Brush diameter (screen pixels)": "Диаметр кисти (экранные пиксели)",
+        "Snap distance (screen pixels)": "Допуск прилипания (экранные пиксели)",
+        "Angular tolerance (degrees)": "Угловой допуск (градусы)",
+        "Export files": "Файлы экспорта",
+        "Different regions generated the same export filename.": (
+            "Разные области получили одинаковое имя файла экспорта."
+        ),
+        "Export JSON files": "Выгружать JSON",
+        ("Include the current scene JSON and PNG placement JSON. When off, export only PNGs."): (
+            "Добавить текущий JSON сцены и JSON размещения PNG. Без галочки выгружаются только PNG."
+        ),
+        "Export assets (*.json *.png)": "Ассеты экспорта (*.json *.png)",
+        "Export assets (*.json *.png);;Scene JSON (*.json);;All files (*)": (
+            "Ассеты экспорта (*.json *.png);;JSON сцены (*.json);;Все файлы (*)"
+        ),
+        (
+            "Hover a stationary vertex during placement to keep its X/Y guides "
+            "until the gesture ends."
+        ): (
+            "Наведите курсор на неподвижную вершину при размещении: её направляющие "
+            "X/Y сохранятся до конца жеста."
+        ),
+        (
+            "With guide alignment enabled, hover stationary vertices while dragging "
+            "or placing. Their X/Y guides stay available until the gesture ends; "
+            "hold Alt to align."
+        ): (
+            "При включённой привязке по направляющим наводите курсор на неподвижные "
+            "вершины во время перемещения или размещения. Их направляющие X/Y "
+            "запоминаются до конца жеста; для выравнивания зажмите Alt."
+        ),
+        "Alt: use guide alignment while drawing.": (
+            "Alt: применить привязку по направляющим при рисовании."
+        ),
+        "At adjacent vertices": "По соседним вершинам",
+        "Own right-angle priority": "Приоритет собственного прямого угла",
+        (
+            "Prefer the dragged vertex's right angle. When off, adjacent angles "
+            "and horizontal/vertical guides take priority."
+        ): (
+            "Сначала сохранять прямой угол перемещаемой вершины. Без галочки приоритет "
+            "получают соседние углы и горизонтальные/вертикальные направляющие."
+        ),
+        (
+            "Also square angles at neighbouring vertices. When off, only angles "
+            "at the dragged vertex are considered."
+        ): (
+            "Учитывать углы в соседних вершинах. Без галочки учитываются только "
+            "углы в перемещаемой вершине."
+        ),
+        "Maximum endpoint movement (screen pixels)": (
+            "Максимальное смещение вершины (экранные пиксели)"
+        ),
+        "Grid: {width} × {height} source px. Origin: {x}, {y}.": (
+            "Клетка: {width} × {height} пикселей изображения. Начало сетки: {x}, {y}."
+        ),
+        "Size to grid requires a scene JSON with a valid grid size.": (
+            "Для размера под сетку нужен JSON сцены с корректным размером клетки."
+        ),
+        "Size to grid requires a square scene grid.": (
+            "Для размера под сетку нужна квадратная сетка сцены."
+        ),
+        "Size to grid does not support nonzero legacy scene shifts.": (
+            "Размер под сетку не поддерживает ненулевые shiftX/shiftY старого формата сцены."
+        ),
+        "Grid boundaries fall between source pixels; exact grid padding is unavailable.": (
+            "Границы сетки проходят между пикселями изображения. Точные поля под сетку недоступны."
+        ),
+        "Grid cell size is outside the supported source-pixel range.": (
+            "Размер клетки выходит за допустимый диапазон пикселей изображения."
+        ),
+    }
+)
+
+
 def translate(text: str, language: str, **values) -> str:
     result = RUSSIAN.get(text, text) if language == "ru" else text
     return result.format(**values) if values else result
@@ -1710,14 +2263,15 @@ def format_tooltip(
     caption = title or shortcut_label
     lines = [translate(caption, language).replace("&", "")] if caption else []
     lines.append(translate("Purpose: {description}", language, description=purpose))
-    lines.append(
-        translate(
-            "Condition: {description}",
-            language,
-            description=translate(condition or "No additional conditions.", language),
+    if condition:
+        lines.append(
+            translate(
+                "Condition: {description}",
+                language,
+                description=translate(condition, language),
+            )
         )
-    )
-    key_lines = [translate(key, language) for key in dict.fromkeys(keys)]
+    key_lines = [translate(key, language) for key in dict.fromkeys(keys) if key]
     if shortcut is not None and not shortcut.isEmpty():
         sequence = shortcut.toString(QKeySequence.SequenceFormat.PortableText)
         key_lines.insert(
@@ -1726,8 +2280,6 @@ def format_tooltip(
     if key_lines:
         lines.append(translate("Keys:", language))
         lines.extend(f"- {line}" for line in key_lines)
-    else:
-        lines.append(translate("Keys: no dedicated shortcut.", language))
     return "\n".join(
         chunk
         for line in lines

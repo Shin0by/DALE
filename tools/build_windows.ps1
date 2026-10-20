@@ -28,7 +28,8 @@ try {
     & $projectPython -m PyInstaller --noconfirm --windowed "--$Mode" --noupx `
         --name DALE --paths src --distpath $distributionPath --workpath $buildPath `
         --icon $appIconPath --add-data "${appAssetPath}:dale/assets" `
-        --specpath $buildPath --collect-binaries shapely tools/desktop_entry.py
+        --specpath $buildPath --collect-binaries shapely --collect-all pyvips `
+        --copy-metadata pyvips-binary --hidden-import _cffi_backend tools/desktop_entry.py
     if ($LASTEXITCODE -ne 0) { throw 'Windows application build failed.' }
     if ($Mode -eq 'onedir') {
         New-Item -ItemType Directory -Path $portablePath -Force | Out-Null

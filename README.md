@@ -4,7 +4,7 @@ DALE is a local desktop editor that extracts separate transparent PNGs from scen
 
 DALE - локальный редактор для извлечения отдельных прозрачных PNG по замкнутым контурам. Исправляйте контуры, очищайте растр и экспортируйте все объекты или выбранные области с точными размерами в именах файлов. Этажи и свойства стен настраиваются вручную в Foundry.
 
-The application title is **Dungeon Alchemist Levels Export (v.x.xx.xxx)**. Normal Windows builds automatically advance only the revision; major and minor versions change only on the owner's explicit instruction. The owner-requested1.03 promotion retains revision083; see [release notes](docs/releases/1.03.083.md).
+The application title is **Dungeon Alchemist Levels Export (v.x.xx.xxx)**. Normal Windows builds automatically advance only the revision; major and minor versions change only on the owner's explicit instruction. See the [1.03.085 release notes](docs/releases/1.03.085.md).
 
 The owner's supplied ICO is used unchanged for application windows and the Windows executable. Both the ICO and original PNG reference are preserved in [application assets](src/dale/assets/README.md).
 
@@ -41,7 +41,7 @@ Line erasing stops at intersections, including crossings without existing vertic
 
 Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains language, related-line choice, two input/output folders and optional global numeric tool values. Switch language in the right Settings block; hover over controls for help.
 
-The generated portable folder is ignored by Git. Repository updates must rebuild it using the command below. Build provenance is recorded in `DALE/build-info.json`; refresh preserves `UserData` and user projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
+The complete portable runtime is tracked in `DALE/`, including on the development branch. Clone or download the repository and run `DALE/DALE.exe` directly on Windows x64. UserData, cache, projects and release ZIPs remain ignored. Repository updates refresh the runtime using the command below. Git preserves its exact bytes without line-ending conversion; bundled third-party Python is excluded from source linting. Build provenance is recorded in `DALE/build-info.json`; refresh preserves existing UserData and projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
 
 ## Development and packaging
 

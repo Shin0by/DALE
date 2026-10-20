@@ -74,7 +74,7 @@ try {
             foreach ($directory in @('src\dale', 'docs', 'tools', 'tests', 'project', '.github', 'skills')) {
                 Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse | Where-Object { $_.Extension -in @('.py', '.ps1', '.cmd', '.json', '.md', '.txt', '.yml', '.png', '.ico') }
             }
-            foreach ($file in @('AGENTS.md', 'README.md', '.gitattributes', '.githooks\pre-push', 'pyproject.toml', 'requirements-build.lock', 'requirements-dev.lock', 'tools\build_windows.ps1', 'tools\desktop_entry.py', 'project\index.json', 'project\state.json')) {
+            foreach ($file in @('AGENTS.md', 'README.md', '.gitignore', '.gitattributes', '.githooks\pre-push', 'pyproject.toml', 'requirements-build.lock', 'requirements-dev.lock', 'tools\build_windows.ps1', 'tools\desktop_entry.py', 'project\index.json', 'project\state.json')) {
                 Get-Item -LiteralPath (Join-Path $projectRoot $file)
             }
         )
@@ -83,12 +83,19 @@ try {
             $relative = $file.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')
             $fingerprints[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         }
+        $runtimeFingerprints = [ordered]@{}
+        Get-ChildItem -LiteralPath $bundlePath -File -Recurse | Sort-Object FullName | ForEach-Object {
+            $relative = $_.FullName.Substring($bundlePath.Length + 1).Replace([char]92, [char]47)
+            $runtimeFingerprints[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        $runtimeFingerprints['START-HERE.txt'] = (Get-FileHash -LiteralPath (Join-Path $portablePath 'START-HERE.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
         $buildInfo = [ordered]@{
             format = 'dale-portable-build'
             version = $buildVersion
             built_utc = [DateTime]::UtcNow.ToString('o')
             mode = $Mode
             source_sha256 = $fingerprints
+            runtime_sha256 = $runtimeFingerprints
         }
         $buildInfo | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $portablePath 'build-info.json') -Encoding UTF8
         Write-Output (Join-Path $portablePath 'DALE.exe')

@@ -137,6 +137,7 @@ from dale.raster import ExportCancelled, load_preview
 from dale.raster_brush import RASTER_BRUSHES, brush_settings
 from dale.region_groups import assign_region_cells, matched_cells
 from dale.region_transform import delete_figures, delete_regions
+from dale.registration import register_current_product
 from dale.scene import load_pair
 from dale.selection_groups import (
     SelectionGroup,
@@ -5494,6 +5495,7 @@ def main():
             window.load_sources(None, options.project)
         else:
             window.load_project_file(options.project)
+    register_current_product(verification=options.smoke_report is not None)
     if options.smoke_report:
 
         def smoke_report():

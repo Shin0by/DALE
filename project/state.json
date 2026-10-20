@@ -1,11 +1,13 @@
 {
   "schema_version": 1,
   "updated": "2026-10-20",
-  "phase": "group_sorting_portable_ready",
+  "phase": "release_1_03_085_prepared",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
+    "ADR-102 / FR-164: owner explicitly adds the complete ready DALE folder to the repository, including development. Track the333-file Windows x64 runtime byte for byte with binary Git attributes; exclude UserData, cache, projects, private assets and release ZIPs. Exclude bundled third-party Python from Ruff and retain source/build provenance. Preserve validated1.03.085 runtime and revision; release-only policy/docs/provenance changes do not rebuild application code. Prepare exact development/release plans and ask the separately required pinned release confirmation; remove only old GitHub release v1.03.084 after the new release passes publication validation, keeping tags/history.",
+    "ADR-101 / FR-163: owner approves registry implementation and application. Normal packaged Windows startup registers last-copy product metadata and App Paths in HKCU with independent best-effort HKLM mirrors, existing token only and64-bit view. Stable ProductId, padded version, actual executable path and UTC time; no elevation/ACL/PATH/association/Uninstall changes. Python/tests/smoke runs skip writes. Preserve portable UserData, schema7, source assets and running editors; rebuild normally. No push requested.",
     "ADR-100 / FR-162: owner adds a square Sorting toggle left of the group manager create + footer button. Replace swatches with drag grips, disable row actions, show a light insertion line and auto-scroll list edges. Commit only valid drops; preserve immutable group values, active choice, scene selection and metadata ordering per dataset/section in schema7. Escape/outside/close/scope changes cancel. Rebuild portable runtime normally once; no push requested.",
     "Owner release promotion2026-10-20: promote major/minor to1.03 and retain current revision083 exactly. Repack with PyInstaller directly, without invoking the normal revision-incrementing build_windows.ps1. Prepare a clean portable ZIP without UserData/cache/private projects, commit all accumulated editor work, perform one authorized development push, then request the required separate confirmation of the exact release commit/archive/publication plan. No force or automatic push retries.",
     "ADR-099 / FR-161: owner requests a white Scene grid icon and configurable transparency/thickness. Add staged synchronized0..100% transparency slider/spin and1..16 cosmetic screen-pixel width, dataset-local and shared across modes. Default56%/1px preserves prior112/255 appearance. Keep existing RGB/shared project Custom Colors and current schema7 with strictly validated optional fields. Only the export-grid overlay pen changes; other guide pens, source pixels, PNG/placement, geometry/history remain. No push or user-process control.",
@@ -95,6 +97,20 @@
     "Every packaging invocation advances revision once; complete portable folder refresh preserves user processes/preferences/projects and supplied ICO bytes. No push without a fresh explicit owner request."
   ],
   "validated": [
+    {
+      "check": "tracked_portable_release_1_03_085",
+      "date": "2026-10-20",
+      "result": "1670 full source tests and43 focused Git-delivery/text/push-policy tests pass, including12 new tracked-runtime cases. The333-file Windows x64 payload is complete, preserves exact Git blob bytes, has no LFS dependency and excludes UserData/cache/projects. Ruff excludes vendor Python; normal runtime remains the validated1.03.085 build with14 compiled registration tests and successful ordinary launch. Release ZIP extraction is checked separately in ignored evidence. Owner requests development/release delivery and removal of the one old GitHub release after replacement; publication awaits separate exact-commit confirmation.",
+      "evidence": "artifacts/release-1.03.085/full-tests.log",
+      "portable_evidence": "artifacts/release-1.03.085/archive-validation.json"
+    },
+    {
+      "check": "windows_product_registration",
+      "date": "2026-10-20",
+      "result": "153 source UI/registration tests and14 actual compiled-module tests pass. Two standalone bilingual smoke runs leave registry unchanged. One authorized ordinary packaged EXE launch writes all8 typed HKCU metadata values and DALE.exe App Paths, then closes gracefully. HKLM mirror is denied with existing user rights, without UAC/ACL changes. Full1.03.085 portable rebuild preserves UserData, cache and original Qt/PE icons/artwork. Python/development paths skip registration; current project schema7 remains unchanged. No push.",
+      "evidence": "artifacts/registry/source-tests.log",
+      "portable_evidence": "artifacts/registry/portable/validation.json"
+    },
     {
       "check": "group_sorting_portable",
       "date": "2026-10-20",
@@ -963,7 +979,7 @@
     "decision": "ADR-020",
     "resumption_authorized": false
   },
-  "current_version": "1.3.84",
+  "current_version": "1.3.85",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -3219,5 +3235,90 @@
     "userdata_preserved": true,
     "original_assets_preserved": true,
     "portable_cache_preserved": true
+  },
+  "windows_registration": {
+    "requirement": "FR-163",
+    "decision": "ADR-101",
+    "status": "implemented_portable_ready_applied_hkcu",
+    "source_tests": 153,
+    "registry_schema": 1,
+    "project_schema": 7,
+    "keys": [
+      "HKCU/Software/Shin0by/DALE",
+      "HKLM/Software/Shin0by/DALE",
+      "HKCU/Software/Microsoft/Windows/CurrentVersion/App Paths/DALE.exe",
+      "HKLM/Software/Microsoft/Windows/CurrentVersion/App Paths/DALE.exe"
+    ],
+    "remaining": [],
+    "evidence": [
+      "artifacts/registry/source-tests.log",
+      "artifacts/registry/build.log",
+      "artifacts/registry/portable-check.log",
+      "artifacts/registry/portable/validation.json",
+      "artifacts/registry/portable/registry-after.json"
+    ],
+    "push": false,
+    "version": "1.3.85",
+    "new_cases": 14,
+    "compiled_tests": 14,
+    "fresh_smoke_exe_cases": 2,
+    "normal_exe_registration": true,
+    "hkcu_metadata_and_app_paths": true,
+    "hklm_metadata_and_app_paths": false,
+    "hklm_reason": "Existing Windows user token cannot create machine Software keys: PermissionError WinError5. No elevation or ACL change attempted.",
+    "no_windows_elevation": true,
+    "registry_view": 64,
+    "userdata_preserved": true,
+    "original_assets_preserved": true,
+    "source_hashes_verified": true,
+    "sandbox_note": "Restricted registry profile denied HKCU/HKLM writes with WinError5. Authorized ordinary EXE verification outside the filesystem sandbox applied HKCU under the existing owner token, without UAC; isolated smoke and compiled tests left discovery unchanged."
+  },
+  "tracked_portable": {
+    "requirement": "FR-164",
+    "decision": "ADR-102",
+    "status": "implemented_validated",
+    "version": "1.3.85",
+    "runtime_files": 333,
+    "largest_file_bytes": 20639544,
+    "git_binary_attributes": true,
+    "git_lfs_required": false,
+    "vendor_python_lint_excluded": true,
+    "userdata_cache_projects_ignored": true,
+    "new_tests": 12,
+    "focused_policy_tests": 43,
+    "remaining": [],
+    "evidence": [
+      "artifacts/release-1.03.085/portable-policy-tests.log",
+      "artifacts/release-1.03.085/archive-validation.json"
+    ]
+  },
+  "release_1_03_085": {
+    "version": "1.3.85",
+    "display_version": "1.03.085",
+    "archive_name": "DALE-1.03.085-Windows-x64-portable.zip",
+    "source_full_tests": 1670,
+    "additional_delivery_tests": 12,
+    "total_unique_source_tests": 1682,
+    "focused_policy_tests": 43,
+    "compiled_registration_tests": 14,
+    "runtime_revision_preserved": true,
+    "status": "validated_candidate_pending_separate_owner_release_confirmation",
+    "destinations": [
+      "origin/development",
+      "origin/release"
+    ],
+    "old_release_to_delete": {
+      "tag": "v1.03.084",
+      "release_id": 418419186,
+      "after": "New release published and assets validated",
+      "delete_tag": false
+    },
+    "evidence": [
+      "artifacts/release-1.03.085/full-tests.log",
+      "artifacts/release-1.03.085/portable-policy-tests.log",
+      "artifacts/registry/portable/validation.json",
+      "artifacts/release-1.03.085/archive-validation.json"
+    ],
+    "publication_policy": "Pinned separate release confirmation required; fresh explicit push authorization per attempt. Publication and cleanup receipts remain ignored artifacts."
   }
 }

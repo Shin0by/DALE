@@ -164,3 +164,7 @@ Main: Hand, Select all, Clear selection, Copy, Delete, Settings. View holds disp
 
 Minimum editor window:1024x768. The top panels scroll horizontally with the mouse wheel.
 Минимальное окно редактора:1024x768. Колесо мыши прокручивает верхние панели по горизонтали.
+
+On a normal Windows launch, DALE records product identification and its current EXE path in HKCU Software/Shin0by/DALE and App Paths/DALE.exe. It also attempts HKLM with existing rights, without an administrator prompt. Settings remain in portable UserData. Moving the folder is supported; the next normal launch updates the recorded path.
+
+При обычном запуске в Windows DALE записывает сведения о продукте и путь к EXE в HKCU Software/Shin0by/DALE и App Paths/DALE.exe. Также выполняется попытка записи в HKLM с имеющимися правами, без запроса прав администратора. Настройки остаются в портейбл-папке UserData. После перемещения папки следующий обычный запуск обновляет путь в реестре.

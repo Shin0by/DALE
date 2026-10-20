@@ -231,3 +231,11 @@ The editor can be reduced to1024x768. Scroll over the top panels with the mouse 
 Scene grid's toolbar icon is white regardless of its chosen line color. Right-click its settings to adjust transparency (0% opaque,100% invisible) and thickness (1..16 screen pixels). Apply saves both values for the dataset across every mode; Cancel discards the staged change. Thickness stays constant while zooming and the settings do not alter exported PNGs.
 
 In the group manager, enable Sorting using the square up/down button left of +. Color swatches become drag handles and group actions are temporarily disabled. Drag a handle up or down; the light line shows where the group will be inserted on release. Hold near the list's top/bottom edge to scroll a long list. Escape or releasing outside the list cancels the drag. Disable Sorting to restore colors and actions. Order is saved separately for each dataset and mode, and the group dropdown follows the same order.
+
+## Windows product discovery
+
+Normal packaged launches update the current user's Shin0by/DALE product metadata and DALE.exe App Paths registration, with best-effort machine mirrors when already permitted. No administrator prompt is requested. Settings remain in portable UserData. See [Windows product discovery](windows-registration.md) for keys, fields and last-launched-copy behavior.
+
+## Run the repository's portable copy
+
+The development and release branches include the complete Windows x64 DALE runtime. Clone or download the repository and run DALE/DALE.exe without Python, build scripts or LFS downloads. Keep the complete _internal folder. UserData, Cache, imported assets and projects remain local and ignored. Git preserves every bundled file byte for byte, including vendor code/licenses. Maintainers run source checks against authored source and verify the refreshed portable payload before committing it.

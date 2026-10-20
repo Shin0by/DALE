@@ -22,7 +22,9 @@
     "git_push_skill": "skills/dale-push/SKILL.md",
     "scene_templates": "docs/scene-templates.md",
     "wall_assignments": "docs/wall-assignments.md",
-    "release_1_03_083": "docs/releases/1.03.083.md"
+    "release_1_03_083": "docs/releases/1.03.083.md",
+    "windows_product_registration": "docs/windows-registration.md",
+    "release_1_03_085": "docs/releases/1.03.085.md"
   },
   "code": {
     "import_and_coordinates": "src/dale/scene.py",
@@ -101,7 +103,10 @@
     "arbitrary_angle_guides": "src/dale/extension_guides.py",
     "guide_center_exclusivity_tests": "tests/test_extension_guides.py",
     "main_view_scroll_and_copy_tests": "tests/test_main_view_panels.py",
-    "grid_color_and_shared_palette_tests": "tests/test_grid_color.py"
+    "grid_color_and_shared_palette_tests": "tests/test_grid_color.py",
+    "windows_product_registration": "src/dale/registration.py",
+    "windows_registration_tests": "tests/test_registration.py",
+    "tracked_portable_tests": "tests/test_portable_repository.py"
   },
   "read_policy": "Read entrypoint and state, then only paths relevant to the current task. Do not recursively ingest examples, artifacts, .venv, or .git.",
   "build_environment_lock": "requirements-build.lock"

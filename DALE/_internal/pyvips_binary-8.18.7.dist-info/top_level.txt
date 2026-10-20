@@ -1,0 +1,4 @@
+_libvips
+build
+tmp
+wheelhouse

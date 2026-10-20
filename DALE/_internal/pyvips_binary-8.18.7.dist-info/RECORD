@@ -1,0 +1,10 @@
+.load-order-pyvips_binary-8.18.7,sha256=XO0sPteZPsNaJ6dUs2qOEqS6_1I2GxhuJhzXtmv_J7Y,48
+_libvips.pyd,sha256=bKw2-PtniO2mOdwOaEJRx4t6-wZXC5COvhb2cvAYJ3U,90112
+libvips-42-06dab07cc386748513337a31672b1d52.dll,sha256=BtqwfMOGdIUTM3oxZysdUmn7x3ChT_QDCAV1ZlvwgT8,19018240
+pyvips_binary-8.18.7.dist-info/DELVEWHEEL,sha256=dA-UvG2Km-OwgdyK8vywsoX1FO3AYVKyQT0vxKLATPU,16
+pyvips_binary-8.18.7.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+pyvips_binary-8.18.7.dist-info/METADATA,sha256=ubcyPg3mRG_0V95PcmPylyAxMmWH0QWQE4F3mWIQmIs,2455
+pyvips_binary-8.18.7.dist-info/RECORD,,
+pyvips_binary-8.18.7.dist-info/WHEEL,sha256=F5uksnhgCfg-8VyFXi8OdcTfQkhz5c2qKkNvV6yloms,99
+pyvips_binary-8.18.7.dist-info/licenses/LICENSE,sha256=c9WJfY3lUyIuXwswV8rJQaCfVkhCUcauunR1iTo2M1w,1107
+pyvips_binary-8.18.7.dist-info/top_level.txt,sha256=Xyqw72ECkWMc7fXllwHZVShGGP8sQX5z19MH-vevN98,30

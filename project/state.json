@@ -3172,6 +3172,14 @@
     "archive_name": "DALE-1.03.083-Windows-x64-portable.zip",
     "source_tests": 1645,
     "compiled_tests": 279,
+    "ci_followup": {
+      "initial_commit": "7627bd8fd2fcb4d80778c1533a3d0342a34c7d8c",
+      "initial_run": "https://github.com/Shin0by/DALE/actions/runs/39420917422",
+      "initial_failure": "Ruff found an obsolete dale.placement import in the source inspection utility; a stale local Ruff cache had hidden it.",
+      "local_fix": "Remove the retired import/placement argument/metadata assertion. The current source inspection and PNG export API passes synthetic preview/export and unchanged-source hash checks.",
+      "verification": "Full Ruff check and format check pass with --no-cache. Application/runtime code is unchanged from the 1645-test and 279-compiled-test candidate.",
+      "publication": "No automatic retry. A fresh owner push request and new exact-commit release confirmation are required."
+    },
     "evidence": [
       "artifacts/release-1.03.083/full-tests-final.log",
       "artifacts/release-1.03.083/portable/validation.json",

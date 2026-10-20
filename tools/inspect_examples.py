@@ -13,7 +13,6 @@ from pathlib import Path
 from PIL import Image, ImageDraw, JpegImagePlugin
 
 from dale.geometry import analyze_regions
-from dale.placement import Placement
 from dale.raster import export_png, load_preview
 from dale.scene import MAX_SIDE, load_pair, open_source
 from dale.session import ContourMask
@@ -148,7 +147,6 @@ def verify_export(json_path: Path, output: Path, inspection: dict) -> dict:
         [ContourMask(analysis.area, "outside")],
         destination,
         progress=progress,
-        placement=Placement(14, 17),
     )
     seconds = round(time.perf_counter() - started, 2)
     interior = analysis.area.representative_point()
@@ -160,7 +158,6 @@ def verify_export(json_path: Path, output: Path, inspection: dict) -> dict:
             assert image.size == source.size and image.mode == "RGBA"
             assert image.getpixel((0, 0))[3] == 0
             assert image.getpixel(point)[3] == 255
-            assert image.info["DALE.ElevationFeet"] == "17"
     finally:
         Image.MAX_IMAGE_PIXELS = previous
     assert fingerprint(image_path) == inspection["sources"]["image_sha256"]
@@ -176,7 +173,6 @@ def verify_export(json_path: Path, output: Path, inspection: dict) -> dict:
             "dimensions",
             "alpha_outside",
             "alpha_inside",
-            "placement_metadata",
             "source_hashes",
         ],
         "scope": "Image pipeline check; not a finished floor mask or a Foundry import test.",

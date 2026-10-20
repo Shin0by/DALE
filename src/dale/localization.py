@@ -252,6 +252,15 @@ RUSSIAN = {
         "Управлять группами текущего набора и выбирать их элементы."
     ),
     "Group manager": "Менеджер групп",
+    "Sorting": "Сортировка",
+    "Move group": "Переместить группу",
+    "Reorder groups by dragging their handles. Group actions are disabled while sorting.": (
+        "Менять порядок групп перетаскиванием за ручки. Действия групп на это время отключены."
+    ),
+    "Drag up or down. The light line marks the new group position.": (
+        "Перетащите вверх или вниз. Светлая линия показывает новое место группы."
+    ),
+    "Escape: cancel this drag.": "Escape: отменить перетаскивание.",
     "Groups: {section}": "Группы: {section}",
     "Group {number}": "Группа {number}",
     "+ New group": "+ Новая группа",

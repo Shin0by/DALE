@@ -229,3 +229,5 @@ Right-click Scene grid also changes its line color. Apply stores the chosen colo
 The editor can be reduced to1024x768. Scroll over the top panels with the mouse wheel to reach controls beyond the visible row.
 
 Scene grid's toolbar icon is white regardless of its chosen line color. Right-click its settings to adjust transparency (0% opaque,100% invisible) and thickness (1..16 screen pixels). Apply saves both values for the dataset across every mode; Cancel discards the staged change. Thickness stays constant while zooming and the settings do not alter exported PNGs.
+
+In the group manager, enable Sorting using the square up/down button left of +. Color swatches become drag handles and group actions are temporarily disabled. Drag a handle up or down; the light line shows where the group will be inserted on release. Hold near the list's top/bottom edge to scroll a long list. Escape or releasing outside the list cancels the drag. Disable Sorting to restore colors and actions. Order is saved separately for each dataset and mode, and the group dropdown follows the same order.

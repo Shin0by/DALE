@@ -232,6 +232,13 @@ def tool_icon(name):
         for x, dx in ((3, 3), (21, -3)):
             line((x, 21), (x + dx, 18.5))
             line((x, 21), (x + dx, 23))
+    elif name == "Sorting":
+        line((7, 3), (7, 21))
+        line((3, 7), (7, 3))
+        line((11, 7), (7, 3))
+        line((17, 3), (17, 21))
+        line((13, 17), (17, 21))
+        line((21, 17), (17, 21))
     elif name == "Move regions":
         line((12, 3), (12, 21))
         line((3, 12), (21, 12))

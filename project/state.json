@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
   "updated": "2026-10-20",
-  "phase": "release_1_03_083_validated",
+  "phase": "group_sorting_portable_ready",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
+    "ADR-100 / FR-162: owner adds a square Sorting toggle left of the group manager create + footer button. Replace swatches with drag grips, disable row actions, show a light insertion line and auto-scroll list edges. Commit only valid drops; preserve immutable group values, active choice, scene selection and metadata ordering per dataset/section in schema7. Escape/outside/close/scope changes cancel. Rebuild portable runtime normally once; no push requested.",
     "Owner release promotion2026-10-20: promote major/minor to1.03 and retain current revision083 exactly. Repack with PyInstaller directly, without invoking the normal revision-incrementing build_windows.ps1. Prepare a clean portable ZIP without UserData/cache/private projects, commit all accumulated editor work, perform one authorized development push, then request the required separate confirmation of the exact release commit/archive/publication plan. No force or automatic push retries.",
     "ADR-099 / FR-161: owner requests a white Scene grid icon and configurable transparency/thickness. Add staged synchronized0..100% transparency slider/spin and1..16 cosmetic screen-pixel width, dataset-local and shared across modes. Default56%/1px preserves prior112/255 appearance. Keep existing RGB/shared project Custom Colors and current schema7 with strictly validated optional fields. Only the export-grid overlay pen changes; other guide pens, source pixels, PNG/placement, geometry/history remain. No push or user-process control.",
     "ADR-098 / NFR-007, FR-039/149/158: owner restores minimum1024px window width because the top row now scrolls. Keep768px minimum height and initial1280x860 size. Existing bilingual responsive and wheel tests cover all modes at1024x768; all top panels/controls remain reachable without wrapping. No source/data/editing/schema/settings changes, process termination or push.",
@@ -94,6 +95,13 @@
     "Every packaging invocation advances revision once; complete portable folder refresh preserves user processes/preferences/projects and supplied ICO bytes. No push without a fresh explicit owner request."
   ],
   "validated": [
+    {
+      "check": "group_sorting_portable",
+      "date": "2026-10-20",
+      "result": "897 related source regressions,11 final drag cases and231 actual compiled-module tests pass. Real press/move/release checks cover all four sections, selected-object preservation, cancellation, edge scrolling and saved order. Synthetic source and compiled bilingual QA each render12 screenshots with an exact light insertion line and compact footer. Two fresh hidden DALE.exe launches without Python PATH verify v.1.03.084 and unchanged fixture archives. Complete portable runtime, exact Qt/PE icons, shin0by artwork, UserData and live cache are preserved. No source geometry/raster/history/schema changes or push.",
+      "evidence": "artifacts/group-sort-source-tests.log",
+      "portable_evidence": "artifacts/group-sort/portable/validation.json"
+    },
     {
       "check": "owner_version1_03_current_revision083_portable_release_candidate",
       "date": "2026-10-20",
@@ -955,7 +963,7 @@
     "decision": "ADR-020",
     "resumption_authorized": false
   },
-  "current_version": "1.3.83",
+  "current_version": "1.3.84",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -3186,5 +3194,30 @@
       "artifacts/release-1.03.083/archive-validation.json"
     ],
     "publication_policy": "Development is owner-authorized; release requires separate exact-commit confirmation. Publication receipts are stored with ignored artifacts."
+  },
+  "group_sorting": {
+    "requirement": "FR-162",
+    "decision": "ADR-100",
+    "status": "implemented_portable_ready",
+    "schema": 7,
+    "remaining": [],
+    "evidence": [
+      "artifacts/group-sort-source-tests.log",
+      "artifacts/group-sort-final-targeted.log",
+      "artifacts/group-sort/source/validation.json",
+      "artifacts/group-sort/build.log",
+      "artifacts/group-sort/portable/validation.json"
+    ],
+    "source_tests": 897,
+    "new_cases": 11,
+    "bilingual_screenshots": 12,
+    "version": "1.3.84",
+    "compiled_tests": 231,
+    "fresh_exe_cases": 2,
+    "compiled_bilingual_screenshots": 12,
+    "source_hashes_verified": true,
+    "userdata_preserved": true,
+    "original_assets_preserved": true,
+    "portable_cache_preserved": true
   }
 }

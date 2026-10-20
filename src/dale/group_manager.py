@@ -1,8 +1,9 @@
 """Compact persistent map overlay for editing dataset selection groups."""
 
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QPainter, QPalette
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -15,6 +16,70 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from dale.toolbar import tool_icon
+
+
+class GroupDragHandle(QToolButton):
+    """A color swatch in ordinary mode, a drag-only grip while sorting."""
+
+    def __init__(self, manager, identifier, parent):
+        super().__init__(parent)
+        self.manager, self.identifier = manager, identifier
+        self.setFixedSize(24, 26)
+
+    def choose_color(self):
+        if not self.manager.sorting:
+            self.manager.owner.change_group_color(self.identifier)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.manager.sorting:
+            painter = QPainter(self)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self.palette().color(QPalette.ColorRole.ButtonText))
+            for x in (self.width() // 2 - 4, self.width() // 2 + 2):
+                for y in (self.height() // 2 - 6, self.height() // 2 - 1, self.height() // 2 + 4):
+                    painter.drawEllipse(x, y, 2, 2)
+
+    def mousePressEvent(self, event):
+        if self.manager.sorting and event.button() == Qt.MouseButton.LeftButton:
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.manager.begin_group_drag(self.identifier, event.globalPosition().toPoint())
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.manager.sorting:
+            self.manager.update_group_drag(event.globalPosition().toPoint())
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.manager.sorting and event.button() == Qt.MouseButton.LeftButton:
+            self.manager.finish_group_drag(event.globalPosition().toPoint())
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def event(self, event):
+        if (
+            event.type() == QEvent.Type.ShortcutOverride
+            and event.key() == Qt.Key.Key_Escape
+            and self.manager.drag_group is not None
+        ):
+            event.accept()
+            return True
+        return super().event(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.manager.drag_group is not None:
+            self.manager.cancel_group_drag()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class GroupNameButton(QPushButton):
@@ -87,6 +152,12 @@ class GroupManager(QFrame):
         self.user_sized = False
         self.drag_offset = None
         self.dock_x = self.dock_y = 0
+        self.sorting = False
+        self.sort_context = None
+        self.drag_group = None
+        self.drag_origin = self.drag_position = None
+        self.drop_index = None
+        self.dragging = False
         self.setObjectName("groupsManager")
         self.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation)
         self.setStyleSheet(
@@ -122,6 +193,14 @@ class GroupManager(QFrame):
         self.rows.setSpacing(3)
         self.rows.addStretch()
         self.scroll.setWidget(self.content)
+        self.drop_indicator = QWidget(self.scroll.viewport())
+        self.drop_indicator.setObjectName("groupDropIndicator")
+        self.drop_indicator.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.drop_indicator.setStyleSheet("background: #e4e8ed;")
+        self.drop_indicator.hide()
+        self.drag_scroll = QTimer(self)
+        self.drag_scroll.setInterval(30)
+        self.drag_scroll.timeout.connect(self.scroll_group_drag)
         self.row_controls = {}
         self.scroll_position = None
         self.scroll_restore = QTimer(self)
@@ -129,9 +208,18 @@ class GroupManager(QFrame):
         self.scroll_restore.timeout.connect(self.restore_scroll_position)
         layout.addWidget(self.scroll)
         self.new_button = QPushButton(self)
+        self.new_button.setFixedHeight(26)
         self.new_button.clicked.connect(owner.create_selection_group)
+        self.sort_button = QToolButton(self)
+        self.sort_button.setFixedSize(26, 26)
+        self.sort_button.setIcon(tool_icon("Sorting"))
+        self.sort_button.setIconSize(QSize(20, 20))
+        self.sort_button.setCheckable(True)
+        self.sort_button.toggled.connect(self.set_sorting)
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
+        bottom.setSpacing(3)
+        bottom.addWidget(self.sort_button)
         bottom.addWidget(self.new_button, 1)
         self.size_grip = GroupSizeGrip(self)
         bottom.addWidget(self.size_grip, 0, Qt.AlignmentFlag.AlignBottom)
@@ -143,6 +231,8 @@ class GroupManager(QFrame):
 
     def rebuild(self):
         owner, t = self.owner, self.owner.t
+        if self.sort_context != self.group_context():
+            self.set_sorting(False)
         section = owner.tool_set_actions[owner.current_tool_set].text()
         self.title.setText(t("Groups: {section}", section=section))
         self.close_button.setToolTip(
@@ -151,6 +241,15 @@ class GroupManager(QFrame):
             )
         )
         self.new_button.setText("+")
+        self.sort_button.setText(t("Sorting"))
+        self.sort_button.setAccessibleName(t("Sorting"))
+        self.sort_button.setToolTip(
+            owner.control_help(
+                "Reorder groups by dragging their handles. "
+                "Group actions are disabled while sorting.",
+                title="Sorting",
+            )
+        )
         self.new_button.setToolTip(
             owner.control_help(
                 "Create an empty group in this section of the current dataset.", title="+ New group"
@@ -163,8 +262,11 @@ class GroupManager(QFrame):
             )
         )
         groups = owner.selection_groups()
+        if not groups and self.sorting:
+            self.set_sorting(False)
         identifiers = {group.id for group in groups}
         if tuple(self.row_controls) != tuple(group.id for group in groups):
+            self.cancel_group_drag()
             if self.scroll_position is None:
                 self.scroll_position = self.scroll.verticalScrollBar().value()
             self.scroll_restore.start(0)
@@ -183,11 +285,8 @@ class GroupManager(QFrame):
                 cells = QHBoxLayout(row)
                 cells.setContentsMargins(3, 3, 3, 3)
                 cells.setSpacing(3)
-                swatch = QToolButton(row)
-                swatch.setFixedSize(24, 26)
-                swatch.clicked.connect(
-                    lambda checked=False, i=group.id: owner.change_group_color(i)
-                )
+                swatch = GroupDragHandle(self, group.id, row)
+                swatch.clicked.connect(swatch.choose_color)
                 name = GroupNameButton(group.name, row)
                 name.setFixedHeight(26)
                 name.setMinimumWidth(60)
@@ -219,12 +318,7 @@ class GroupManager(QFrame):
             row.setStyleSheet(
                 f"QFrame#{group.id} {{ border: 1px solid #555555; border-radius: 3px; }}"
             )
-            swatch.setStyleSheet(
-                f"QToolButton {{ background: {group.color}; border: 1px solid #aaaaaa; }}"
-            )
-            swatch.setToolTip(
-                owner.control_help("Choose the color of this group.", title="Group color")
-            )
+            self.update_handle(swatch, group)
             name.setText(group.name)
             name.setChecked(group.id == owner.active_selection_group())
             name.setToolTip(
@@ -283,12 +377,23 @@ class GroupManager(QFrame):
         selection = self.owner.group_selection_ids()
         blocked = bool(self.owner.worker or self.owner.view.active_gesture)
         groups = {g.id: g for g in self.owner.selection_groups()}
+        self.sort_button.setEnabled(bool(groups) and not blocked)
+        if blocked:
+            self.cancel_group_drag()
         geometry = self.owner.view.editing_geometry() if self.owner.view.session else None
         for identifier, controls in self.row_controls.items():
             swatch, name, add, remove, delete = controls
+            if identifier not in groups:
+                for control in controls:
+                    control.setEnabled(False)
+                continue
             swatch.setEnabled(not blocked)
-            name.setEnabled(not blocked)
+            name.setEnabled(not blocked and not self.sorting)
             name.setChecked(identifier == self.owner.active_selection_group())
+            if self.sorting or blocked:
+                for button in (add, remove, delete):
+                    button.setEnabled(False)
+                continue
             members = self.owner.resolved_group_members(identifier)
             if self.owner.current_tool_set in ("regions", "pixels"):
                 from dale.region_groups import matched_cells
@@ -302,6 +407,132 @@ class GroupManager(QFrame):
                 add.setEnabled(not blocked and bool(selection - members))
                 remove.setEnabled(not blocked and bool(selection & members))
             delete.setEnabled(not blocked)
+
+    def group_context(self):
+        catalog = self.owner.catalog
+        return id(catalog), catalog.current.id if catalog else None, self.owner.current_tool_set
+
+    def set_sorting(self, enabled):
+        self.cancel_group_drag()
+        self.sorting = enabled
+        self.sort_context = self.group_context()
+        blocked = self.sort_button.blockSignals(True)
+        self.sort_button.setChecked(enabled)
+        self.sort_button.blockSignals(blocked)
+        self.update_actions()
+        for group in self.owner.selection_groups():
+            if group.id in self.row_controls:
+                self.update_handle(self.row_controls[group.id][0], group)
+
+    def update_handle(self, handle, group):
+        owner = self.owner
+        if self.sorting:
+            handle.setStyleSheet("")
+            handle.setAccessibleName(owner.t("Move group"))
+            handle.setToolTip(
+                owner.control_help(
+                    "Drag up or down. The light line marks the new group position.",
+                    title="Move group",
+                    keys=("Escape: cancel this drag.",),
+                )
+            )
+            handle.setCursor(
+                Qt.CursorShape.ClosedHandCursor
+                if self.drag_group == group.id
+                else Qt.CursorShape.OpenHandCursor
+            )
+        else:
+            handle.setStyleSheet(
+                f"QToolButton {{ background: {group.color}; border: 1px solid #aaaaaa; }}"
+            )
+            handle.setAccessibleName(owner.t("Group color"))
+            handle.setToolTip(
+                owner.control_help("Choose the color of this group.", title="Group color")
+            )
+            handle.unsetCursor()
+        handle.update()
+
+    def begin_group_drag(self, identifier, position):
+        if not self.sorting or self.owner.worker or self.owner.view.active_gesture:
+            return
+        self.cancel_group_drag()
+        self.drag_group, self.drag_origin, self.drag_position = identifier, position, position
+        self.row_controls[identifier][0].setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def update_group_drag(self, position):
+        if self.drag_group is None:
+            return
+        if (
+            self.sort_context != self.group_context()
+            or self.owner.worker
+            or self.owner.view.active_gesture
+        ):
+            self.cancel_group_drag()
+            return
+        self.drag_position = position
+        if not self.dragging:
+            self.dragging = (
+                position - self.drag_origin
+            ).manhattanLength() >= QApplication.startDragDistance()
+        if not self.dragging:
+            return
+        viewport = self.scroll.viewport()
+        point = viewport.mapFromGlobal(position)
+        if not viewport.rect().contains(point):
+            self.drop_index = None
+            self.drop_indicator.hide()
+            self.drag_scroll.stop()
+            return
+        rows = [
+            controls[0].parentWidget()
+            for i, controls in self.row_controls.items()
+            if i != self.drag_group
+        ]
+        y = self.content.mapFromGlobal(position).y()
+        self.drop_index = next(
+            (i for i, row in enumerate(rows) if y < row.geometry().center().y()), len(rows)
+        )
+        line_y = (
+            rows[self.drop_index].y() - 2
+            if self.drop_index < len(rows)
+            else rows[-1].geometry().bottom() + 2
+            if rows
+            else 0
+        )
+        line_y = self.content.mapTo(viewport, QPoint(0, line_y)).y()
+        self.drop_indicator.setGeometry(
+            0, max(0, min(line_y, viewport.height() - 2)), viewport.width(), 2
+        )
+        self.drop_indicator.show()
+        self.drop_indicator.raise_()
+        if point.y() < 18 or point.y() > viewport.height() - 18:
+            self.drag_scroll.start()
+        else:
+            self.drag_scroll.stop()
+
+    def scroll_group_drag(self):
+        if self.drag_position is None:
+            return
+        viewport = self.scroll.viewport()
+        y = viewport.mapFromGlobal(self.drag_position).y()
+        bar = self.scroll.verticalScrollBar()
+        bar.setValue(bar.value() + (-8 if y < 18 else 8))
+        self.update_group_drag(self.drag_position)
+
+    def cancel_group_drag(self):
+        self.drag_scroll.stop()
+        self.drop_indicator.hide()
+        if self.drag_group in self.row_controls:
+            self.row_controls[self.drag_group][0].setCursor(Qt.CursorShape.OpenHandCursor)
+        self.drag_group = self.drag_origin = self.drag_position = self.drop_index = None
+        self.dragging = False
+
+    def finish_group_drag(self, position):
+        self.update_group_drag(position)
+        identifier, index = self.drag_group, self.drop_index
+        self.cancel_group_drag()
+        if identifier is not None and index is not None:
+            self.owner.reorder_selection_group(identifier, index)
 
     def constrain_position(self, point, *, dock=True):
         viewport = self.map_viewport
@@ -390,6 +621,7 @@ class GroupManager(QFrame):
         event.accept()
 
     def hideEvent(self, event):
+        self.set_sorting(False)
         super().hideEvent(event)
         self.owner.group_manager_button.setChecked(False)
         self.owner.update_group_rendering()

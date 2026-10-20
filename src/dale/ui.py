@@ -3959,6 +3959,18 @@ class MainWindow(QMainWindow):
             )
         )
 
+    def reorder_selection_group(self, identifier, index):
+        if self.worker or self.view.active_gesture:
+            return
+        groups = list(self.selection_groups())
+        group = next((g for g in groups if g.id == identifier), None)
+        if group is None or not 0 <= index < len(groups):
+            return
+        groups.remove(group)
+        groups.insert(index, group)
+        if tuple(groups) != self.selection_groups():
+            self.store_selection_groups(tuple(groups))
+
     def rename_selection_group(self, identifier):
         group = next(g for g in self.selection_groups() if g.id == identifier)
         name, accepted = QInputDialog.getText(

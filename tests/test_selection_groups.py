@@ -97,6 +97,166 @@ def populated_scroll_manager(window, pair_factory, section, fraction):
     return manager, groups, visible, ids
 
 
+def move_group_handle(manager, identifier, destination):
+    handle = manager.row_controls[identifier][0]
+    QTest.mousePress(handle, Qt.MouseButton.LeftButton)
+    QTest.mouseMove(handle, handle.mapFromGlobal(destination))
+    return handle
+
+
+@pytest.mark.parametrize("section", ["geometry", "figures", "regions", "pixels"])
+def test_sorting_grip_reorders_without_editing_selection_members_or_scene(
+    window, pair_factory, section, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    source, ids = scene(window, pair_factory)
+    window.select_tool_set(section)
+    groups = tuple(
+        replace(SelectionGroup.create(f"Order {i}"), lines=ids, priority=i + 4) for i in range(3)
+    )
+    window.store_selection_groups(groups)
+    window.select_selection_group(groups[1].id)
+    window.rebuild_group_controls()
+    window.toggle_group_manager()
+    manager = window.group_manager
+    QApplication.processEvents()
+    state = window.catalog.state()
+    geometry = window.view.session.geometry()
+    operations = tuple(window.view.session.operations)
+    native = repaired_json_bytes(window.view.session)
+    image = source.image_path.read_bytes()
+    selection = window.group_selection_ids()
+    monkeypatch.setattr(window, "change_group_color", lambda *a: pytest.fail("Color dialog opened"))
+    assert manager.sort_button.width() == manager.sort_button.height()
+    assert manager.sort_button.geometry().right() < manager.new_button.geometry().left()
+    assert manager.new_button.width() > manager.sort_button.width()
+    QTest.mouseClick(manager.sort_button, Qt.MouseButton.LeftButton)
+    assert manager.sorting
+    for handle, *buttons in manager.row_controls.values():
+        assert handle.isEnabled() and not handle.styleSheet()
+        assert all(not button.isEnabled() for button in buttons)
+    handle = manager.row_controls[groups[0].id][0]
+    QTest.keyClick(handle, Qt.Key.Key_Space)
+    QTest.mouseClick(handle, Qt.MouseButton.LeftButton)
+    assert window.catalog.state() == state
+    last_row = manager.row_controls[groups[-1].id][0].parentWidget()
+    destination = last_row.mapToGlobal(QPoint(12, last_row.height() - 2))
+    handle = move_group_handle(manager, groups[0].id, destination)
+    assert manager.drop_indicator.isVisible() and manager.drop_index == 2
+    assert window.selection_groups() == groups
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=handle.mapFromGlobal(destination))
+    QApplication.processEvents()
+    expected = groups[1:] + groups[:1]
+    assert window.selection_groups() == expected
+    assert tuple(manager.row_controls) == tuple(g.id for g in expected)
+    assert not manager.drop_indicator.isVisible()
+    assert window.active_selection_group() == groups[1].id
+    assert window.group_selection_ids() == selection
+    assert window.view.session.geometry() == geometry
+    assert tuple(window.view.session.operations) == operations
+    assert repaired_json_bytes(window.view.session) == native
+    assert source.image_path.read_bytes() == image
+    assert window.catalog.state() != state
+    path = tmp_path / "sorted.dale"
+    save_project(window.view.session, path, window.project_ui_state(), catalog=window.catalog)
+    loaded = load_project(path)
+    try:
+        assert decode_groups(loaded.catalog.current.ui["groups"]) == expected
+    finally:
+        loaded.close()
+    QTest.mouseClick(manager.sort_button, Qt.MouseButton.LeftButton)
+    assert not manager.sorting
+    assert all(controls[1].isEnabled() for controls in manager.row_controls.values())
+    assert all(g.color in manager.row_controls[g.id][0].styleSheet() for g in groups)
+
+
+@pytest.mark.parametrize("cancel", ["escape", "outside", "toggle", "hide", "section"])
+def test_sorting_cancel_does_not_move_a_group(window, pair_factory, cancel):
+    _, ids = scene(window, pair_factory)
+    window.view.figure_line_ids = ids
+    groups = tuple(SelectionGroup.create(f"Order {i}") for i in range(3))
+    window.store_selection_groups(groups)
+    window.toggle_group_manager()
+    manager = window.group_manager
+    QTest.mouseClick(manager.sort_button, Qt.MouseButton.LeftButton)
+    QApplication.processEvents()
+    row = manager.row_controls[groups[0].id][0].parentWidget()
+    destination = row.mapToGlobal(QPoint(12, 1))
+    handle = move_group_handle(manager, groups[-1].id, destination)
+    assert manager.drop_indicator.isVisible()
+    if cancel == "escape":
+        QTest.keyClick(handle, Qt.Key.Key_Escape)
+    elif cancel == "outside":
+        destination = manager.mapToGlobal(QPoint(-20, -20))
+    elif cancel == "toggle":
+        manager.sort_button.setChecked(False)
+    elif cancel == "hide":
+        manager.hide()
+    else:
+        window.activate_mode("Select regions")
+    if cancel != "section":
+        QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=handle.mapFromGlobal(destination))
+    QApplication.processEvents()
+    assert manager.drag_group is None
+    assert not manager.drop_indicator.isVisible() and not manager.drag_scroll.isActive()
+    if cancel == "section":
+        assert not manager.sorting
+        window.activate_mode("Select figures")
+    assert window.selection_groups() == groups
+    assert window.view.figure_line_ids == ids
+
+
+def test_sorting_scrolls_at_list_edges_and_keeps_the_new_scroll_position(window, pair_factory):
+    manager, groups, visible, _ = populated_scroll_manager(window, pair_factory, "figures", 0.5)
+    QTest.mouseClick(manager.sort_button, Qt.MouseButton.LeftButton)
+    viewport = manager.scroll.viewport()
+    destination = viewport.mapToGlobal(QPoint(12, viewport.height() - 3))
+    handle = move_group_handle(manager, visible[0].id, destination)
+    bar = manager.scroll.verticalScrollBar()
+    before = bar.value()
+    assert manager.drag_scroll.isActive()
+    QTest.qWait(120)
+    assert bar.value() > before
+    index = manager.drop_index
+    scrolled = bar.value()
+    QTest.mouseRelease(handle, Qt.MouseButton.LeftButton, pos=handle.mapFromGlobal(destination))
+    QApplication.processEvents()
+    assert window.selection_groups()[index].id == visible[0].id
+    assert bar.value() == scrolled
+    assert len(window.selection_groups()) == len(groups)
+    assert not manager.drag_scroll.isActive()
+
+
+def test_sorted_order_is_scoped_to_dataset_and_section(window, pair_factory):
+    scene(window, pair_factory)
+    figures = tuple(SelectionGroup.create(f"Contours {i}") for i in range(3))
+    window.store_selection_groups(figures)
+    window.activate_mode("Select regions")
+    regions = tuple(SelectionGroup.create(f"Regions {i}") for i in range(3))
+    window.store_selection_groups(regions)
+    window.reorder_selection_group(regions[-1].id, 0)
+    assert window.selection_groups() == regions[-1:] + regions[:-1]
+    window.activate_mode("Select figures")
+    assert window.selection_groups() == figures
+    original = window.catalog.active_key
+    window.catalog.capture(window.project_ui_state())
+    other = window.catalog.create("Other order")
+    window.catalog.activate(other.id)
+    window.show_catalog_view(other, load_preview(other.session.source), False)
+    assert not window.selection_groups()
+    window.reorder_selection_group(figures[-1].id, 0)
+    assert not window.selection_groups()
+    window.catalog.activate(original)
+    window.show_catalog_view(
+        window.catalog.current, load_preview(window.catalog.current.session.source), True
+    )
+    window.activate_mode("Select figures")
+    assert window.selection_groups() == figures
+    window.activate_mode("Select regions")
+    assert window.selection_groups() == regions[-1:] + regions[:-1]
+
+
 @pytest.mark.parametrize("section", ["geometry", "figures", "regions", "pixels"])
 @pytest.mark.parametrize("fraction", [0, 0.5, 1])
 def test_group_click_keeps_list_scroll_and_row_identity(window, pair_factory, section, fraction):

@@ -7,6 +7,7 @@
 - Read project/index.json, then project/state.json, then task-relevant indexed files. Use targeted rg; exclude artifacts, environments, private examples. Keep stable FR/NFR IDs, active decisions, evidence, remaining work.
 - Do not spawn agents without explicit owner instruction.
 - Git pushes require a fresh explicit owner request for each attempt. Never auto-push after edits, builds, commits or CI fixes. Default destination is origin/development. Only an explicit release request selects origin/release, and it requires a separate affirmative confirmation of the concrete commit/plan before pushing. Use skills/dale-push/SKILL.md and its helper/pre-push guard for every push. Previous requests and configuring these rules do not authorize a new push. No force/bypass/automatic retries; local Git configuration only.
+- Ask separate release confirmation through a choice question with Подтверждаю пуш в release / Не подтверждаю. Include the pinned commit and complete publication plan; wait for a submitted answer. A preselected choice is not approval.
 - Every tools/build_windows.ps1 invocation increments revision once through tools/bump_revision.py. Never bump revision manually; major/minor only on explicit instruction, no automatic rollover. Synchronize package, pyproject, state.
 - Fixed title: Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>).
 

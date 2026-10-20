@@ -1013,7 +1013,12 @@
     "release_separate_confirmation": true,
     "automatic_push": false,
     "automatic_retry": false,
-    "global_git_changes": false
+    "global_git_changes": false,
+    "release_confirmation_interface": "submitted_choice_question",
+    "release_confirmation_choices": [
+      "Подтверждаю пуш в release",
+      "Не подтверждаю"
+    ]
   },
   "validation_history_note": "Older records describe historical product scopes/versions; current active scope is ADR-020. Historical test counts do not validate the simplified editor; see latest validation/build records.",
   "decisions_scope": "ADR-021 is the planned narrow coordinate-repair exception to ADR-020. Current portable0.3.24 remains the PNG editor; full level/preset/Scene-generation features remain cancelled.",
@@ -3302,7 +3307,7 @@
     "focused_policy_tests": 43,
     "compiled_registration_tests": 14,
     "runtime_revision_preserved": true,
-    "status": "validated_candidate_pending_separate_owner_release_confirmation",
+    "status": "validated_candidate_pending_owner_choice_confirmation",
     "destinations": [
       "origin/development",
       "origin/release"
@@ -3319,6 +3324,7 @@
       "artifacts/registry/portable/validation.json",
       "artifacts/release-1.03.085/archive-validation.json"
     ],
-    "publication_policy": "Pinned separate release confirmation required; fresh explicit push authorization per attempt. Publication and cleanup receipts remain ignored artifacts."
+    "publication_policy": "Pinned separate release confirmation required; fresh explicit push authorization per attempt. Publication and cleanup receipts remain ignored artifacts.",
+    "confirmation_interface": "Owner requests a repeat through explicit affirmative/negative choices after the skill update. Earlier plain-text confirmation is not consumed for the changed commit."
   }
 }

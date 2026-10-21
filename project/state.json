@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated": "2026-10-20",
-  "phase": "release_1_03_085_prepared",
+  "updated": "2026-10-21",
+  "phase": "readme_owner_approved_for_development",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
@@ -3326,5 +3326,31 @@
     ],
     "publication_policy": "Pinned separate release confirmation required; fresh explicit push authorization per attempt. Publication and cleanup receipts remain ignored artifacts.",
     "confirmation_interface": "Owner requests a repeat through explicit affirmative/negative choices after the skill update. Earlier plain-text confirmation is not consumed for the changed commit."
+  },
+  "readme_preview": {
+    "status": "owner_approved_for_development",
+    "scope": "Owner approves the reviewed PDF content for the Git README. Publish the matching bilingual README and17 universal English screenshots to origin/development through the single-attempt push guard. Keep PDF/HTML proofs and the private source project local. Application code and runtime version are unchanged.",
+    "screenshots": 17,
+    "screenshot_language": "en",
+    "shared_images": "Both README languages reuse one English-only screenshot set, including translated group display names in the in-memory capture copy. The private project is unchanged.",
+    "pdf_pages": 12,
+    "latest_owner_edits": "Use the owner headline about Dungeon Alchemist or any ordinary image in both languages. Add actual before/after examples of a30-degree raster-image rotation with scene contours unchanged, and two selected adjacent regions becoming one after deletion of their shared internal boundary. All screenshots remain English and shared by both text languages.",
+    "source_example_modified": false,
+    "application_code_changed": false,
+    "runtime_rebuilt": false,
+    "version_changed": false,
+    "publication_target": "origin/development",
+    "publication_receipt": "artifacts/readme-redesign/push-result.json",
+    "remaining": [],
+    "evidence": [
+      "artifacts/readme-redesign/capture-validation.json",
+      "artifacts/readme-redesign/universal-captures.json",
+      "artifacts/readme-redesign/more-examples-validation.json",
+      "artifacts/readme-redesign/review-validation.json",
+      "artifacts/readme-redesign/pdf-validation.json",
+      "artifacts/readme-redesign/export-evidence.json",
+      "output/pdf/DALE-README-preview.html",
+      "output/pdf/DALE-README-preview.pdf"
+    ]
   }
 }

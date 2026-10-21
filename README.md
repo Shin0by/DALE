@@ -1,120 +1,437 @@
+[English](#english) | [Русский](#russian)
+
 # DALE
 
-DALE is a local desktop editor that extracts separate transparent PNGs from scene images using editable closed contours. Repair imported contours, clean raster alpha, and export all connected regions or selected cells with exact pixel dimensions in filenames.
+<a id="english"></a>
 
-DALE - локальный редактор для извлечения отдельных прозрачных PNG по замкнутым контурам. Исправляйте контуры, очищайте растр и экспортируйте все объекты или выбранные области с точными размерами в именах файлов. Этажи и свойства стен настраиваются вручную в Foundry.
+## English
 
-The application title is **Dungeon Alchemist Levels Export (v.x.xx.xxx)**. Normal Windows builds automatically advance only the revision; major and minor versions change only on the owner's explicit instruction. See the [1.03.085 release notes](docs/releases/1.03.085.md).
+**From Dungeon Alchemist or any ordinary image - straight to your Foundry scene.**
 
-The owner's supplied ICO is used unchanged for application windows and the Windows executable. Both the ICO and original PNG reference are preserved in [application assets](src/dale/assets/README.md).
+A roof you can place separately. A building without the surrounding terrain. A room cut to its own outline. **DALE (Dungeon Alchemist Levels Export)** is a Windows desktop editor for preparing these assets from Dungeon Alchemist exports or ordinary images for use in Foundry VTT.
 
-## Development status
+<img src="docs/images/readme/hero.png" alt="A working scene from village-port.dale. Contours outline the buildings; the selected building is tinted cyan." width="1000">
 
-Native-resolution viewing streams source pixels through a lossless disk cache beside the portable executable, instead of allocating two whole-image RAM copies. Cache image files are removed on project/source replacement and exit; stale crashed caches are recovered while live editors keep their leases. View contains crosshair, ruler/guide and scene-grid buttons for every editing mode. Settings remain per dataset. Raster brush numeric fields are compact and stay inside their tool buttons.
+*A working scene from village-port.dale. Contours outline the buildings; the selected building is tinted cyan.*
 
-Исходное разрешение использует дисковый кэш рядом с DALE.exe и читает нужные фрагменты карты без двух полных копий в RAM. Кэш очищается при смене проекта и закрытии, остатки после сбоя удаляются при следующем открытии. Перекрестие, линейки, направляющие и сетка находятся в панели «Вид» и работают во всех режимах; настройки остаются отдельными для наборов.
+Work on the image and its contours together: repair boundaries, choose the parts you need, refine transparency and export separate PNGs at the source resolution. An optional Scene JSON supplies editable walls; you can also start with an image alone.
 
-Tool settings: square48px icon buttons have a filled lower-right corner when right-click opens options. Nonmodal containers appear beside the button inside the map where space permits, with a custom title and small X. Standard numeric values, default-action dropdowns and export options stack vertically in group boxes without extra lines. Every container has equal-size Apply/Cancel footer buttons. Cancel, X, Escape or an outside click discards staged changes. Automatic questions and remember checkboxes still appear when configured to Ask every time. Numeric values keep project/global scope; alignment switches stay independent by section.
+**Open a map. Prepare its boundaries. Export the parts.** Keep ground, upper floors, roofs and other variations together as datasets, then place the resulting images in Foundry using your preferred scene setup.
 
-PNG export proposes a free folder name in the remembered output parent. Type a name or select an existing folder to save directly inside it. Other PNG/JSON assets can share that folder. Filename conflicts ask Overwrite/Create copy/Cancel, naming only the file and its containing folder. Existing unrelated assets stay unchanged; cancelled or failed PNG publication restores earlier files.
+**Start on Windows x64:** open [DALE/DALE.exe](DALE/DALE.exe). Keep the entire DALE folder together; Python installation is not required. Projects and source files stay local.
 
-PNG Size to grid adds transparent padding after the exact artwork/alpha crop. Both corners align to the current square scene grid, including background offset and scene/image scale; no image resampling. View's Scene grid settings choose one cell size, RGB, transparency and screen-pixel line thickness for every mode in the dataset. The default size comes from scene JSON; an explicit custom size can be supplied. PNG filenames and the named placement JSON contain padded dimensions and coordinates. Subpixel grid boundaries are rejected rather than approximated. Grid appearance never changes exported pixels.
+**For your Foundry workflow:** import the prepared images and configure their placement, levels and gameplay in Foundry. DALE edits supplied wall geometry and preserves other source Scene JSON data; it does not generate lights, portals or a finished scene. Placement JSON is a coordinate reference for manual setup.
 
-Named datasets: one top Dataset dropdown opens its image and contours together. The36px manager button on its left opens a transactional tree dialog: create empty sets, rename sets/files, delete components, drag Move/Copy with explicit replacement, append JSON contours, and import/export complete datasets between projects. Physical export filenames use the set name; internal native JSON names/paths stay unchanged. Quick JSON/PNG export and project commands remain in File. See [the workflow](docs/workflow.md#manage-named-datasets).
+[Editing workflow](docs/workflow.md) | [Portable startup notes](docs/portable-start.txt) | [Project format](docs/project-format.md) | [Architecture](docs/architecture.md)
 
+Examples below show actual editor states from village-port.dale.
 
-File > Export JSON (Ctrl+Shift+J) exports the active dataset's edited Scene JSON whenever a source JSON exists. You can move, split, add and erase walls while retaining all non-wall bytes, lights, tiles, regions, internal names/paths and opaque wall settings. Without a source JSON it exports DALE contours. Original files stay unchanged. Height filtering controls only visible editing, never export completeness. Regions move as whole independent figures; two numeric alignment toggles use Alt and the highlighted vertex nearest the cursor for both move and paste.
+<details>
+<summary><strong>Vertices - make the boundary fit the map</strong></summary>
 
-Экспорт JSON сохраняет прочие данные исходной сцены, включая свет, тайлы и регионы. Стены можно изменять, разбивать, добавлять и удалять. В «Областях» две кнопки привязки с Alt работают от подсвеченной вершины, ближайшей к курсору, и сдвигают фигуру целиком.
+Work at the level of individual points and edges when an imported outline needs a more precise fit.
 
-The current scope is a single-scene contour/raster editor with separate transparent PNG export. Open one image and optional scene JSON, join/close contours, select all connected objects or individual cells, and clean alpha. Every PNG filename includes its exact final pixel dimensions, for example `map-part-001-702x702px.png`; `placement.json` retains coordinates for manual placement. Levels, wall/floor presets, portals and generation of new native Foundry Scene settings remain outside the task. Configure them manually in Foundry. See [ADR-020](docs/architecture.md#adr-020-return-to-a-single-scene-png-contour-editor).
+- Move or insert vertices, draw lines, rectangles and polygonal circles, and erase line sections up to intersections.
+- Close gaps and use point, line, guide and right-angle alignment to keep edits controlled. Angle references can include neighbouring corners.
 
-Vertices edits individual vertices and lines. Contours sits between Vertices and Regions. Click toggles one segment, double-click selects or deselects a complete contour connected by shared vertices, and a selection rectangle inverts intersected segments. Move, scale, rotate and copy exact selected lines, including open/disconnected contours, without changing neighbours or raster. Two numeric Alt-only alignment controls share numeric tolerances; their on/off states are independent in Vertices, Contours and Regions and save with each dataset. Regions and PNG export keep standard polygonized cells. The top Main Select all button, immediately left of Clear selection, and Ctrl+A select all current-section elements in the chosen height layer; Ctrl+Shift+A clears selection. Text fields keep ordinary text selection.
+<details>
+<summary>See the example</summary>
 
-File/Edit/About and persistent Recent projects remain. Top panels are Modes (Vertices/Contours/Regions/Raster), Main (Hand/Select all/Clear/Copy/Delete/Settings), View, Groups and Dataset. One horizontally scrolling row supports a1024x768 minimum window. Right Project and Settings share contextual Information; language switches English/Russian. Local/whole-map directional closure with extension or shortening of free ends, vertex-first snapping, point/line/circle/rectangle tools, region selection/transforms, raster erase/restore, signed Artwork offset and undo/redo preserve source bytes and line ancestry. Exact PNG crops retain every nonzero alpha pixel, including1/255, with minimal2x/bicubic edge smoothing and native RGB/source alpha. Large exact bounds run in a cancellable background worker; contour-only edits reuse raster previews.
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/vertices-before.png" alt="Before: the original corner." width="330"><br><em>Before: the original corner.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/vertices-align.png" alt="During editing: the two reference legs are highlighted while right-angle alignment is active." width="330"><br><em>During editing: the two reference legs are highlighted while right-angle alignment is active.</em></td>
+</tr>
+</table>
 
-Current `.dale` schema7 stores exact source assets/catalog, geometry/property ownership/ancestry, history/redo/settings and immutable mask snapshots. Detached transformed region selections survive archive reopen. No templates/assignments or older-schema migrations. ADR-028 documents NEXT-009 isolation evidence; historical Foundry research is not an application-feature backlog.
+</details>
 
-Line erasing stops at intersections, including crossings without existing vertices. Point/cut contacts can explicitly connect figures or leave coincident points independent; each tool remembers its answer and reopens it on button right-click. Editing groups persist in .dale, while global Regions/masks/PNG still use all geometry. Consecutive rotation wheel updates share one undo entry.
+</details>
 
-## Run on Windows
+<details>
+<summary><strong>Contours - arrange linework as a whole</strong></summary>
 
-Open **`DALE/DALE.exe`** in the local portable package. Python installation and launch scripts are not required. Copy the **entire `DALE` folder**, including `_internal`, to move the program. `UserData/settings.json` retains language, related-line choice, two input/output folders and optional global numeric tool values. Switch language in the right Settings block; hover over controls for help.
+Treat selected edges as a working shape, whether they form a closed outline, an open contour or several separate pieces.
 
-The complete portable runtime is tracked in `DALE/`, including on the development branch. Clone or download the repository and run `DALE/DALE.exe` directly on Windows x64. UserData, cache, projects and release ZIPs remain ignored. Repository updates refresh the runtime using the command below. Git preserves its exact bytes without line-ending conversion; bundled third-party Python is excluded from source linting. Build provenance is recorded in `DALE/build-info.json`; refresh preserves existing UserData and projects. See [portable startup notes](docs/portable-start.txt) and [the workflow](docs/workflow.md).
+- Move, scale, rotate and mirror a combined selection around its shared logical centre.
+- Copy contours between datasets or open projects. The image stays in place while you adjust its linework.
 
-## Development and packaging
+<details>
+<summary>See the example</summary>
 
-The implementation uses Python 3.11+, native Qt widgets via PySide6, Pillow, and Shapely. This Python environment is for development only:
+<img src="docs/images/readme/contours-rotate.png" alt="A small contour rotated as one selection. The centre and cumulative rotation angle remain visible." width="660">
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.lock
-.\.venv\Scripts\python.exe -m pip install --no-deps -e .
-.\.venv\Scripts\python.exe -m dale
-```
+*A small contour rotated as one selection. The centre and cumulative rotation angle remain visible.*
 
-After project changes, run checks, then refresh the complete portable package:
+</details>
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-build.lock
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_windows.ps1
-```
+</details>
 
-Packaging uses PyInstaller's directory bundle, including the Python runtime and native libraries. An optional `-Mode onefile` build is a separate artifact; the maintained user delivery is `DALE/`. `tools/run_development.cmd` is a development convenience only.
+<details>
+<summary><strong>Regions - turn closed spaces into transparent assets</strong></summary>
 
-`tools/build_windows.ps1` first runs `tools/bump_revision.py`, synchronizing the new revision in the package, `pyproject.toml`, and project state before packaging. Keep these generated version updates in the source commit. Version display pads minor to two digits and revision to three; revision never automatically rolls over major/minor.
+Choose the enclosed parts of the map you want to use separately in Foundry: a building, a roof, a room or a custom set of cells.
 
-Generate an optional synthetic demonstration (not a Dungeon Alchemist export):
+- Export selected cells individually or merge adjacent selections. Keep unselected inner cells as holes; save a reusable inclusion/exclusion choice in a group.
+- Adjust the artwork offset at the edge. Optional grid-sized output adds transparent padding so both corners land on scene-grid boundaries.
+- PNG names contain a stable selection number and the actual image dimensions. Optional JSON output includes placement coordinates and, when supplied, the edited source Scene JSON.
 
-```powershell
-.\.venv\Scripts\python.exe tools/create_demo.py
-```
+<details>
+<summary>See the example</summary>
 
-Open the generated `artifacts/demo/demo.jpg` and `demo.json` in the editor. See [the workflow](docs/workflow.md) for editing controls and [requirements](docs/requirements.md) for scope and acceptance criteria.
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/regions.png" alt="Selected closed cells make up the building." width="330"><br><em>Selected closed cells make up the building.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/export-preview.png" alt="An isolated preview reveals the retained image and transparency before export." width="330"><br><em>An isolated preview reveals the retained image and transparency before export.</em></td>
+</tr>
+</table>
 
-## Map dimensions
+</details>
 
-Foundry has no single fixed map size. Image limits depend on each participant's GPU/browser; its documentation describes approximately 8,000 pixels per side on older hardware and 16,000 on newer hardware. DALE accepts static scene images up to **16,384 × 16,384 pixels** and warns above **8,192** on either side. Export applies the left Artwork offset, smooths alpha with minimal 2x/bicubic sampling and crops to every nonzero final alpha pixel, clipped to the source image. Source RGB remains at native resolution and `placement.json` records exact coordinates. This is a DALE coordinate manifest, not a Foundry scene import. Large individual objects remain subject to client limits. See [research and sources](docs/research.md).
+<details>
+<summary>Example: two regions become one</summary>
 
-## Repository navigation
+Removing a shared internal boundary turns adjacent cells into one region while retaining the outer outline and image.
 
-Start at [AGENTS.md](AGENTS.md), [project/index.json](project/index.json), and [project/state.json](project/state.json). Technical decisions live in [architecture](docs/architecture.md); canonical names and Russian aliases live in [the glossary](docs/glossary.md). Current archive/ancestry contracts live in [project format](docs/project-format.md). Put private example pairs in [examples/](examples/README.md); they are ignored by Git.
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/regions-merge-before.png" alt="Before: two selected adjacent regions share an internal boundary." width="330"><br><em>Before: two selected adjacent regions share an internal boundary.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/regions-merge-after.png" alt="After removing the internal contour: one closed region with the same outer outline." width="330"><br><em>After removing the internal contour: one closed region with the same outer outline.</em></td>
+</tr>
+</table>
 
-## Checks
+</details>
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
-.\.venv\Scripts\python.exe tools/check_repository.py
-```
+</details>
 
-Offscreen visual review and the optional maximum-size synthetic check:
+<details>
+<summary><strong>Raster - refine the image itself</strong></summary>
 
-```powershell
-.\.venv\Scripts\python.exe tools/preview_demo.py
-.\.venv\Scripts\python.exe tools/verify_large_map.py --size 16384
-```
+Clean up the pixels around an asset, or reposition selected imagery independently of the scene walls.
 
-The 16,384-square synthetic export passed locally (about 1.1 GiB peak process memory). This is an image-pipeline check, not a guarantee of Foundry-client compatibility.
+- Erase and restore with round or square brushes, an adjustable soft-edge band and overall strength.
+- Move, scale and rotate a raster selection with its own boundary. Preview the selected result and inspect visible tiles at native resolution.
 
-GitHub Actions runs the standard checks on Windows. The large-map check is opt-in and is not run on every push.
+<details>
+<summary>See the example</summary>
 
-## Git push policy
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-before.png" alt="Before: original imagery beside the contour." width="330"><br><em>Before: original imagery beside the contour.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-cleanup.png" alt="After a soft eraser stroke: the checkerboard shows the newly transparent area." width="330"><br><em>After a soft eraser stroke: the checkerboard shows the newly transparent area.</em></td>
+</tr>
+</table>
 
-Push only on a fresh explicit owner request, through the [dale-push skill](skills/dale-push/SKILL.md). The default destination is `origin/development`. Pushing `origin/release` requires an explicit release request and separate confirmation of the prepared commit. Builds, commits and CI fixes never trigger a push.
+</details>
 
-Configure the repository-local guard in each checkout with `.venv/Scripts/python.exe skills/dale-push/scripts/push.py configure`. The versioned pre-push hook blocks unplanned direct pushes; the skill helper prepares and executes a single authorized attempt. This setup does not push or create remote branches. Global Git settings are unchanged.
+<details>
+<summary>Example: rotate the image, not just its outline</summary>
 
-Dataset manager > Scene JSON > Add/Replace > select .dale recovers **Current contours (DALE)** from applied project history: Import or Save JSON separately. This snapshot is for DALE; the exact original Scene JSON stays separate. The left Vertices panel has two optional Alt-only numeric toggles with independent screen-pixel tolerances: adjacent right angles (highlighted legs and square joint marker) and contour X/Y alignment (thin dashed guides).
+The selected imagery rotates with its independent raster boundary. The scene wall contours retain their original positions.
 
-Regions supports **Delete region** through its left eraser button or **Del**. It deletes only selected outlines, retaining interior lines and image pixels, with normal undo/redo.
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-rotate-before.png" alt="Before rotation: the selected raster image." width="330"><br><em>Before rotation: the selected raster image.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-rotate-after.png" alt="After a 30-degree rotation: the image and its raster boundary turn together." width="330"><br><em>After a 30-degree rotation: the image and its raster boundary turn together.</em></td>
+</tr>
+</table>
 
-Selection groups save independently for each section of each dataset. Existing groups remain in Regions. Open Groups after Main for a compact movable manager; its blocks assign colors and add/exclude selected elements. Overlapping membership is supported. The manager stays fixed while panning/zooming; intentional side/corner docks follow editor-area size, and its corner grip resizes only the panel. Closing the manager restores ordinary colors without changing geometry or exported assets.
+</details>
 
-У каждого раздела каждого набора свой список групп и их состав. Существующие группы остаются в Областях. Панель Группы после Основного открывает компактный перемещаемый менеджер. В блоках групп можно менять цвет, добавлять и исключать выбранные элементы. Элемент может входить в несколько групп. При перемещении и масштабировании карты менеджер остаётся на месте. Привязки к сторонам и углам следуют размерам области редактирования, а уголок меняет размер самого менеджера. Закрытие менеджера возвращает обычную окраску, не меняя геометрию и экспорт.
+</details>
 
+<details>
+<summary><strong>Groups - return to the selections that matter</strong></summary>
 
-Scene JSON transfer also offers **Merge contours**, retaining both source and destination images and appending current edited contours without replacing the target. PNG export can use an exactly matching group name; its remembered choice is editable in export settings. Copied Contours/Regions keep their wall properties and ancestry but require explicit group assignment.
+Give a useful selection a name and colour instead of finding the same building again before every operation.
 
-При передаче JSON между наборами доступно **Объединить контуры**: текущие контуры добавляются к целевым, исходный набор и оба изображения сохраняются. При точном совпадении с группой экспорт PNG предлагает имя группы или набора; запомненный выбор меняется в настройках экспорта. Копии контуров и областей сохраняют свойства стен и происхождение, но в группы добавляются явно.
+- Each dataset and editing mode has its own groups. Add or remove selected elements explicitly; an element can belong to several groups.
+- Recall a group, reorder its place in the list and use a matching region group name when exporting. The compact manager stays over the workspace while the map moves beneath it.
+
+<details>
+<summary>See the example</summary>
+
+<img src="docs/images/readme/groups.png" alt="The group manager beside the selected building. Group colours make saved membership visible." width="720">
+
+*The group manager beside the selected building. Group colours make saved membership visible.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Datasets - keep one location together</strong></summary>
+
+Organise related map images and their contours inside one .dale project rather than treating every export as a separate job.
+
+- Switch between ground, upper floors, roofs and underground maps with a saved view for each dataset.
+- Use the dataset manager to create and rename sets, transfer images or JSON, and merge contour data when needed. Save source assets, editing history, groups and settings together.
+
+<details>
+<summary>See the example</summary>
+
+<img src="docs/images/readme/datasets.png" alt="The example project contains four datasets. The manager exposes their images and Scene JSON separately." width="720">
+
+*The example project contains four datasets. The manager exposes their images and Scene JSON separately.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>View - measure, align and inspect</strong></summary>
+
+Keep useful visual references on the map while changing editing modes.
+
+- Use rulers, persistent guides, a cursor crosshair and a configurable scene grid. Rulers support pixels and game-world feet, centimetres or millimetres when scene metadata permits.
+- Inspect native-resolution tiles, choose a workspace background and retain each dataset's zoom and camera position. Guides and grid overlays are not burned into PNGs.
+
+<details>
+<summary>See the example</summary>
+
+<img src="docs/images/readme/view.png" alt="Rulers, a scene grid and map-anchored guides around a working area." width="720">
+
+*Rulers, a scene grid and map-anchored guides around a working area.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Tool settings - options where you need them</strong></summary>
+
+A filled lower-right corner marks a tool with extra options. **Right-click the tool** to open its settings beside the map.
+
+- Set tolerances, rotation steps, brush behaviour or export options in a nonmodal panel. Apply commits the changes; Cancel discards them.
+- Remember a recurring answer, change it later or return to asking every time. Controls and contextual help are available in English and Russian.
+
+<details>
+<summary>See the example</summary>
+
+<table>
+<tr>
+<td width="18%"><img src="docs/images/readme/settings-trigger.png" alt="Right-click this marked tool." width="48"><br><em>Right-click this marked tool.</em></td>
+<td><img src="docs/images/readme/settings.png" alt="Right-clicking Right-angle alignment opens its tolerance and behaviour settings." width="416"><br><em>Right-clicking Right-angle alignment opens its tolerance and behaviour settings.</em></td>
+</tr>
+</table>
+
+</details>
+
+</details>
+
+<a id="russian"></a>
+
+## Русский
+
+**Из Dungeon Alchemist или любой обычной картинки - прямиком на сцену Foundry.**
+
+Крыша, которую можно разместить отдельно. Здание без окружающей земли. Комната, вырезанная точно по своему контуру. **DALE (Dungeon Alchemist Levels Export)** - настольный редактор для Windows, который помогает подготовить такие элементы из выгрузок Dungeon Alchemist или обычных изображений для Foundry VTT.
+
+<img src="docs/images/readme/hero.png" alt="Рабочая сцена из village-port.dale. Контуры очерчивают здания; выбранное здание выделено голубым." width="1000">
+
+*Рабочая сцена из village-port.dale. Контуры очерчивают здания; выбранное здание выделено голубым.*
+
+Работайте с изображением и контурами вместе: исправляйте границы, выбирайте нужные части карты, уточняйте прозрачность и выгружайте отдельные PNG в исходном разрешении. JSON сцены добавляет редактируемые стены, но начать можно и с одного изображения.
+
+**Откройте карту. Подготовьте границы. Выгрузите нужные части.** Храните поверхность, этажи, крыши и другие варианты в наборах одного проекта, а полученные изображения размещайте в Foundry согласно своему устройству сцены.
+
+**Запуск в Windows x64:** откройте [DALE/DALE.exe](DALE/DALE.exe). Переносите папку DALE целиком; устанавливать Python не требуется. Проекты и исходники остаются на вашем компьютере.
+
+**Для работы в Foundry:** разместите подготовленные изображения и настройте этажи и игровые свойства в самой Foundry. DALE редактирует переданную геометрию стен, сохраняя прочие данные исходного JSON сцены; свет, порталы и готовую сцену программа не генерирует. JSON размещения - справочник координат для ручной настройки.
+
+[Рабочий процесс](docs/workflow.md) | [Запуск portable-версии](docs/portable-start.txt) | [Формат проекта](docs/project-format.md) | [Архитектура и разработка](docs/architecture.md)
+
+Примеры ниже сняты с настоящего интерфейса на проекте village-port.dale.
+
+<details>
+<summary><strong>Вершины - подгоните границу под карту</strong></summary>
+
+Работайте с отдельными точками и отрезками, когда исходному контуру нужна более точная форма.
+
+- Перемещайте и добавляйте вершины, рисуйте линии, прямоугольники и многоугольные окружности, стирайте участки линий до пересечений.
+- Замыкайте разрывы и используйте привязки к точкам, линиям, направляющим и прямым углам. При выравнивании можно учитывать и соседние углы.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/vertices-before.png" alt="До правки: исходный угол." width="330"><br><em>До правки: исходный угол.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/vertices-align.png" alt="Во время правки: две опорные линии подсвечены при действующей привязке к прямому углу." width="330"><br><em>Во время правки: две опорные линии подсвечены при действующей привязке к прямому углу.</em></td>
+</tr>
+</table>
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Контуры - работайте с линиями как с целым</strong></summary>
+
+Обращайтесь с выбранными отрезками как с одной рабочей фигурой: замкнутой, открытой или состоящей из нескольких отдельных частей.
+
+- Перемещайте, масштабируйте, вращайте и отражайте общее выделение относительно его логического центра.
+- Копируйте контуры между наборами и открытыми проектами. Изображение остаётся на месте, пока вы меняете линии поверх него.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<img src="docs/images/readme/contours-rotate.png" alt="Небольшой контур повёрнут целиком. В центре видны опорная точка и суммарный угол вращения." width="660">
+
+*Небольшой контур повёрнут целиком. В центре видны опорная точка и суммарный угол вращения.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Области - превратите замкнутые участки в отдельные изображения</strong></summary>
+
+Выберите здание, крышу, комнату или несколько замкнутых ячеек, чтобы использовать их как самостоятельные элементы Foundry.
+
+- Выгружайте ячейки отдельно или объединяйте смежные. Невыбранные внутренние ячейки останутся отверстиями; состав с исключениями можно сохранить в группе.
+- Регулируйте отступ изображения. Размер под сетку добавит прозрачные поля, чтобы углы PNG совпали с границами клеток.
+- PNG получают стабильный номер выделения и фактические размеры в имени. Дополнительно выгружаются JSON с координатами размещения и изменённый исходный JSON сцены.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/regions.png" alt="Выбранные замкнутые ячейки составляют здание." width="330"><br><em>Выбранные замкнутые ячейки составляют здание.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/export-preview.png" alt="Изолированный предпросмотр показывает сохраняемую картинку и прозрачность до выгрузки." width="330"><br><em>Изолированный предпросмотр показывает сохраняемую картинку и прозрачность до выгрузки.</em></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary>Пример: две области становятся одной</summary>
+
+Удаление общей внутренней границы превращает соседние ячейки в одну область, сохраняя внешний контур и изображение.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/regions-merge-before.png" alt="До: две выбранные смежные области разделены внутренней границей." width="330"><br><em>До: две выбранные смежные области разделены внутренней границей.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/regions-merge-after.png" alt="После удаления внутреннего контура: одна замкнутая область с прежней внешней границей." width="330"><br><em>После удаления внутреннего контура: одна замкнутая область с прежней внешней границей.</em></td>
+</tr>
+</table>
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Растр - доработайте само изображение</strong></summary>
+
+Очищайте изображение и меняйте положение его частей независимо от стен сцены.
+
+- Стирайте и восстанавливайте изображение круглой или квадратной кистью с настраиваемой мягкой кромкой и общим нажимом.
+- Перемещайте, масштабируйте и вращайте растровую область с её изображением. Проверяйте предпросмотр и видимые фрагменты в исходном разрешении.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-before.png" alt="До обработки: исходное изображение рядом с контуром." width="330"><br><em>До обработки: исходное изображение рядом с контуром.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-cleanup.png" alt="После прохода мягким ластиком: шахматный фон показывает появившуюся прозрачность." width="330"><br><em>После прохода мягким ластиком: шахматный фон показывает появившуюся прозрачность.</em></td>
+</tr>
+</table>
+
+</details>
+
+<details>
+<summary>Пример: вращение самой картинки</summary>
+
+Выбранное изображение вращается вместе со своей независимой растровой границей. Контуры стен сцены сохраняют исходное положение.
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-rotate-before.png" alt="До вращения: выбранное растровое изображение." width="330"><br><em>До вращения: выбранное растровое изображение.</em></td>
+<td width="50%" valign="top"><img src="docs/images/readme/raster-rotate-after.png" alt="После поворота на 30 градусов: изображение и его растровая граница повёрнуты вместе." width="330"><br><em>После поворота на 30 градусов: изображение и его растровая граница повёрнуты вместе.</em></td>
+</tr>
+</table>
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Группы - возвращайтесь к важным выделениям</strong></summary>
+
+Дайте полезному выделению имя и цвет, чтобы не искать одно и то же здание перед каждой операцией.
+
+- У каждого набора и режима свой список групп. Добавляйте и исключайте выбранные элементы явно; один элемент может входить в несколько групп.
+- Выбирайте сохранённую группу, меняйте порядок списка и используйте имя совпадающей группы областей при выгрузке. Компактный менеджер остаётся над рабочей областью при перемещении карты.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<img src="docs/images/readme/groups.png" alt="Менеджер групп рядом с выбранным зданием. Цвета помогают видеть состав сохранённых групп." width="720">
+
+*Менеджер групп рядом с выбранным зданием. Цвета помогают видеть состав сохранённых групп.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Наборы - держите одну локацию вместе</strong></summary>
+
+Соберите связанные изображения карты и их контуры в одном проекте .dale вместо отдельных рабочих файлов на каждый вариант.
+
+- Переключайтесь между поверхностью, этажами, крышами и подземельем с сохранённым положением камеры для каждого набора.
+- В менеджере наборов создавайте и переименовывайте наборы, переносите изображения или JSON и при необходимости объединяйте контуры. Сохраняйте исходники, историю правок, группы и настройки вместе.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<img src="docs/images/readme/datasets.png" alt="В примере четыре набора. Менеджер показывает их изображения и JSON сцены отдельными компонентами." width="720">
+
+*В примере четыре набора. Менеджер показывает их изображения и JSON сцены отдельными компонентами.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Вид - измеряйте, выравнивайте и проверяйте</strong></summary>
+
+Держите полезные ориентиры на карте при переключении между режимами редактирования.
+
+- Используйте линейки, сохраняемые направляющие, перекрестие курсора и настраиваемую сетку сцены. Линейки показывают пиксели и, при наличии данных сцены, игровые футы, сантиметры или миллиметры.
+- Рассматривайте фрагменты в исходном разрешении, выбирайте фон рабочей области и возвращайтесь к сохранённому масштабу и положению камеры. Направляющие и экранная сетка не попадают в PNG.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<img src="docs/images/readme/view.png" alt="Линейки, сетка сцены и привязанные к карте направляющие вокруг рабочего участка." width="720">
+
+*Линейки, сетка сцены и привязанные к карте направляющие вокруг рабочего участка.*
+
+</details>
+
+</details>
+
+<details>
+<summary><strong>Настройки инструментов - нужные параметры рядом</strong></summary>
+
+Заполненный нижний правый угол отмечает инструмент с дополнительными возможностями. **Нажмите на него правой кнопкой мыши**, чтобы открыть настройки рядом с картой.
+
+- Меняйте допуски, шаг вращения, поведение кисти и параметры выгрузки в немодальной панели. Применение сохраняет изменения, отмена их отбрасывает.
+- Запоминайте ответ на повторяющийся вопрос, меняйте его позже или возвращайте вариант «Спрашивать каждый раз». Интерфейс и контекстные подсказки доступны на русском и английском.
+
+<details>
+<summary>Посмотреть пример</summary>
+
+<table>
+<tr>
+<td width="18%"><img src="docs/images/readme/settings-trigger.png" alt="Правый клик по этой кнопке с уголком." width="48"><br><em>Правый клик по этой кнопке с уголком.</em></td>
+<td><img src="docs/images/readme/settings.png" alt="Правый клик по инструменту «Прямые углы» открывает допуск и настройки поведения привязки." width="416"><br><em>Правый клик по инструменту «Прямые углы» открывает допуск и настройки поведения привязки.</em></td>
+</tr>
+</table>
+
+</details>
+
+</details>

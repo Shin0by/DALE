@@ -80,6 +80,7 @@ class NativeRasterPreview(QObject):
         self.cache = OrderedDict()
         self.pending = None
         self.wanted = ()
+        self.wanted_view = self.covered_view = None
         try:
             clean_stale_cache()
         except OSError:
@@ -114,6 +115,7 @@ class NativeRasterPreview(QObject):
         self.decoded = None
 
     def fallback(self):
+        self.covered_view = None
         for item in self.items.values():
             item.hide()
         if self.view.item is not None:
@@ -134,7 +136,7 @@ class NativeRasterPreview(QObject):
                 1,
                 2 ** max(0, math.floor(math.log2(1 / max(1e-9, abs(self.view.transform().m11()))))),
             ),
-            self.view.display_raster_operations(),
+            self.view.preview_raster_operations(),
         )
 
     def activate(self):
@@ -142,17 +144,23 @@ class NativeRasterPreview(QObject):
             self.enabled
             and self.wanted
             and self.base == self.current_base()
-            and not self.view.active_gesture
+            and self.wanted_view == self.viewport_state()
             and all(tile in self.items for tile in self.wanted)
         )
         for item in self.items.values():
             item.setVisible(bool(complete))
         if self.view.item is not None:
             self.view.item.setVisible(not complete)
+        self.covered_view = self.wanted_view if complete else None
+
+    def viewport_state(self):
+        return self.view.viewportTransform(), self.viewport.size()
 
     def schedule(self, *args):
         if self.enabled and not self.closed and not self.timer.isActive():
             self.timer.start()
+        if self.covered_view is not None and self.covered_view != self.viewport_state():
+            self.fallback()
 
     def eventFilter(self, watched, event):
         if (
@@ -172,10 +180,6 @@ class NativeRasterPreview(QObject):
         view = self.view
         if self.closed or not self.enabled or view.session is None or view.preview is None:
             return
-        if view.active_gesture:
-            if view.stroke or self.base != self.current_base():
-                self.fallback()
-            return
         source = view.session.source
         # Below the preview's sampling scale it already has at least one image
         # sample per screen pixel. Keep that lightweight overview for navigation.
@@ -188,8 +192,8 @@ class NativeRasterPreview(QObject):
             if self.worker:
                 self.worker.requestInterruption()
             return
-        operations = view.display_raster_operations()
         base = self.current_base()
+        operations = base[-1]
         if base != self.base:
             old_source = self.base[:2] if self.base else None
             self.fallback()
@@ -199,6 +203,7 @@ class NativeRasterPreview(QObject):
                 self.release_decoded()
             self.base = base
         rect = view.mapToScene(self.viewport.rect()).boundingRect().intersected(view.image_rect)
+        self.wanted_view = self.viewport_state()
         tiles = []
         span = TILE * base[2]
         if not rect.isEmpty():
@@ -281,7 +286,7 @@ class NativeRasterPreview(QObject):
             for tile, frame in worker.frames.items():
                 self.cache[tile] = frame
                 self.cache.move_to_end(tile)
-                if tile in self.wanted and tile not in self.items and not self.view.active_gesture:
+                if tile in self.wanted and tile not in self.items:
                     self.publish(tile, frame)
             while len(self.cache) > 64:
                 self.cache.popitem(last=False)
@@ -322,6 +327,7 @@ class NativeRasterPreview(QObject):
         self.release_decoded()
         self.base = None
         self.wanted = ()
+        self.wanted_view = self.covered_view = None
         try:
             clean_stale_cache()
         except OSError:

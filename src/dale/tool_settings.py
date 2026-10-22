@@ -61,6 +61,7 @@ class ToolSettingsDialog(QDialog):
         raster_aids=None,
         raster_brush=None,
         background=None,
+        figure_double_click=None,
     ):
         super().__init__(parent)
         self.setObjectName("toolSettingsDialog")
@@ -98,6 +99,7 @@ class ToolSettingsDialog(QDialog):
         self.naming_action = None
         self.rotation_values = []
         self.circle_detail = None
+        self.figure_double_click = None
 
         def section(title):
             group = QGroupBox(t(title), self)
@@ -385,6 +387,20 @@ class ToolSettingsDialog(QDialog):
                     )
                 )
                 block.addWidget(self.neighbours)
+        if figure_double_click is not None:
+            block = section("Contour selection")
+            self.figure_double_click = QCheckBox(t("Select contour by double-click"), self)
+            self.figure_double_click.setObjectName("figureMoveDoubleClick")
+            self.figure_double_click.setChecked(figure_double_click)
+            self.figure_double_click.setToolTip(
+                parent.control_help(
+                    "Double-click a line to select only its connected contour. "
+                    "Double-click empty space to clear selection. "
+                    "Single clicks keep the current selection for moving.",
+                    title="Select contour by double-click",
+                )
+            )
+            block.addWidget(self.figure_double_click)
         if connected_contours is not None:
             block = section("Guide targets")
             self.connected_contours = QCheckBox(t("Connected by contours"), self)

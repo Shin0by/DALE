@@ -536,7 +536,7 @@ class MainWindow(QMainWindow):
         self.edit_menu = self.menuBar().addMenu("Edit")
         self.about_menu = self.menuBar().addMenu("About")
         for menu, tip in (
-            (self.file_menu, "Open, save, export regions, close, and exit."),
+            (self.file_menu, "Create, open, save, export regions, close, and exit."),
             (self.edit_menu, "Undo, redo, and clear selection."),
             (self.about_menu, "Application name, version, and purpose."),
         ):
@@ -705,6 +705,7 @@ class MainWindow(QMainWindow):
                 "Select figures": "Select contours",
                 "Move figures": "Move contours",
                 "Rotate figures": "Rotate contours",
+                "Scale figures": "Scale contours",
                 "Figure point alignment": "Contour point alignment",
                 "Figure guide alignment": "Contour guide alignment",
                 "Figure extension alignment": "Angled contour guides",
@@ -749,6 +750,7 @@ class MainWindow(QMainWindow):
             if shortcut:
                 item.setShortcut(shortcut)
             sizes = {
+                "Scale figures": (1, 100, 5, "figure_scale_control", self.set_figure_scale_step),
                 "Erase lines": (
                     1,
                     512,
@@ -870,7 +872,7 @@ class MainWindow(QMainWindow):
                 tile = SizedToolButton(
                     editor,
                     item,
-                    inline=title in RASTER_BRUSHES,
+                    inline=title in (*RASTER_BRUSHES, "Scale figures"),
                     activation_hint=("" if title == "Snapping (px)" else "Alt")
                     if alignment
                     else None,
@@ -906,9 +908,10 @@ class MainWindow(QMainWindow):
             self.tool_set_actions[key] = item
         self.tool_set_actions["geometry"].setChecked(True)
 
-        self.manager_action = action(
-            self.file_menu, "Dataset manager…", self.manage_datasets, "Ctrl+I"
+        self.new_project_action = action(
+            self.file_menu, "New project", self.new_project, QKeySequence.StandardKey.New
         )
+        self.manager_action = action(self, "Dataset manager…", self.manage_datasets, "Ctrl+I")
         action(self.file_menu, "Open project", self.open_project, QKeySequence.StandardKey.Open)
         self.recent_menu = self.file_menu.addMenu("Recent projects")
         self.recent_menu.menuAction().setProperty("dale_tool_key", "Recent projects")
@@ -1170,6 +1173,7 @@ class MainWindow(QMainWindow):
         self.isolate_raster_action.setCheckable(True)
         self.raster_output_toolbar.insertAction(raster_offset_widget, self.isolate_raster_action)
         self.tool_settings_buttons = {
+            "Move figures": figures.widgetForAction(self.mode_actions["Move figures"]),
             **self.sized_tools,
             "Edit points": geometry.widgetForAction(self.mode_actions["Edit points"]),
             "New circle": geometry.widgetForAction(self.mode_actions["New circle"]),
@@ -1248,6 +1252,9 @@ class MainWindow(QMainWindow):
             "Region guide alignment": (
                 "Align the highlighted region vertex with horizontal/vertical vertex guides."
             ),
+            "New project": (
+                "Create an empty project with one dataset. Unsaved changes can be saved first."
+            ),
             "Dataset manager…": "Dataset manager: create, rename, combine or transfer datasets.",
             "Open project": "Open a .dale project with its files, edits and undo history.",
             "Save project": (
@@ -1302,6 +1309,7 @@ class MainWindow(QMainWindow):
             ),
             "Move figures": "Move selected contour lines together. Image pixels stay in place.",
             "Rotate figures": "Rotate selected contour lines around their common center.",
+            "Scale figures": "Resize selected contour lines around their common center.",
             "Mirror contours about vertical axis": (
                 "Swap left and right about the vertical axis through the common contour center. "
                 "Keep image pixels and unselected lines in place."
@@ -1368,6 +1376,7 @@ class MainWindow(QMainWindow):
             "Close all contours",
         }
         conditions = {
+            "New project": "No gesture or export is in progress.",
             "Erase square": "A scene image is open.",
             "Restore square": "A scene image is open.",
             "Raster crosshair": "A scene image is open.",
@@ -1400,8 +1409,9 @@ class MainWindow(QMainWindow):
                 "This button is enabled and contours are being moved or pasted."
             ),
             "Select figures": "Contours are available.",
-            "Move figures": "At least one contour line is selected.",
+            "Move figures": "Contours are available; select lines to move.",
             "Rotate figures": "At least one contour line is selected.",
+            "Scale figures": "At least one contour line is selected.",
             "Mirror contours about vertical axis": (
                 "Contours is active, a line is selected and no gesture or export is in progress."
             ),
@@ -1439,6 +1449,16 @@ class MainWindow(QMainWindow):
             key = item.property("dale_tool_key")
             if key in tips:
                 parts = [tips[key]]
+                if key == "Right-angle alignment":
+                    parts.append(
+                        "An independent dragged end can align perpendicular to a nearby "
+                        "stationary line without joining it."
+                    )
+                if key == "Contour alignment":
+                    parts.append(
+                        "A free end of an isolated line can follow its original vector "
+                        "within the guide tolerance."
+                    )
                 if key in ("Contour alignment", "Figure guide alignment", "Region guide alignment"):
                     parts.append(
                         "Hover a stationary vertex during placement to keep its X/Y guides "
@@ -1462,6 +1482,12 @@ class MainWindow(QMainWindow):
                     keys.append("Alt: use the enabled alignment buttons.")
                 if key == "New circle":
                     keys.append("Ctrl+wheel while drawing: adjust the radius.")
+                    keys.append("Right-click: open tool settings.")
+                if key == "Move figures":
+                    keys.append(
+                        "Double-click: select only this contour; empty space clears selection, "
+                        "when enabled."
+                    )
                     keys.append("Right-click: open tool settings.")
                 if key in ("Edit points", "Erase lines"):
                     keys.append("Right-click: open tool settings.")
@@ -1514,6 +1540,8 @@ class MainWindow(QMainWindow):
                     keys.append("Alt: apply this alignment while dragging.")
                 if key in MOVE_TOOLS:
                     keys.append("Ctrl+wheel: scale selected contours.")
+                if key == "Scale figures":
+                    keys.append("Wheel: scale selected contours by the configured step.")
                 if key in ROTATE_TOOLS:
                     keys.append("Wheel: rotate by the configured step.")
                     keys.append("Alt+wheel: rotate by the configured Alt step.")
@@ -1641,6 +1669,7 @@ class MainWindow(QMainWindow):
 
     def initialize_tool_preferences(self):
         self.tool_value_controls = {
+            "figure_scale_step_percent": self.figure_scale_control,
             "circle_detail_steps": self.circle_detail_control,
             "line_eraser_diameter": self.geometry_brush_control,
             "vertex_eraser_diameter": self.vertex_brush_control,
@@ -1948,7 +1977,9 @@ class MainWindow(QMainWindow):
         value = None
         if tile:
             label = (
-                "Artwork offset (source pixels)"
+                "Scaling step (%)"
+                if tool == "Scale figures"
+                else "Artwork offset (source pixels)"
                 if tool == "Artwork offset (px)"
                 else "Brush diameter (source pixels)"
                 if tool in RASTER_BRUSHES
@@ -2051,6 +2082,9 @@ class MainWindow(QMainWindow):
             own_angle_priority=(
                 self.view.right_angle_own_priority if tool == "Right-angle alignment" else None
             ),
+            figure_double_click=(
+                self.view.figure_move_double_click if tool == "Move figures" else None
+            ),
         )
         position = button.mapToGlobal(QPoint(button.width() + 8, 0))
         available = button.screen().availableGeometry()
@@ -2074,6 +2108,14 @@ class MainWindow(QMainWindow):
             self.tool_settings_popup = None
 
     def apply_tool_settings(self, tool, dialog, value):
+        if tool == "Move figures":
+            self.view.figure_move_double_click = dialog.figure_double_click.isChecked()
+            if self.catalog:
+                self.catalog.current.ui["figure_move_double_click"] = (
+                    self.view.figure_move_double_click
+                )
+            self.view.figure_click = None
+            self.update_mode_help()
         if tool == "Scene grid":
             try:
                 export_grid(self.view.session, dialog.grid_size.value())
@@ -2979,7 +3021,16 @@ class MainWindow(QMainWindow):
             ],
             "Move figures": [
                 "Drag selected contour lines: move. Ctrl+wheel: scale.",
+                "Double-click: select only this contour; empty space clears selection, "
+                "when enabled.",
+                "Right-click: open tool settings.",
                 "Escape: cancel the current gesture.",
+            ],
+            "Scale figures": [
+                "Wheel: scale selected contours by the configured step.",
+                "Ctrl+wheel: change this value.",
+                "Number: contour scaling step, in percent. Shared with Move contours.",
+                "Right-click: open tool settings.",
             ],
             "Rotate figures": [
                 "Wheel: rotate selected contour lines by the configured step "
@@ -3061,7 +3112,7 @@ class MainWindow(QMainWindow):
                     "click to place. Escape: cancel. Raster stays in place."
                 ),
             ]
-        if mode in FIGURE_TOOLS:
+        if mode in FIGURE_TOOLS and mode != "Scale figures":
             instructions = [
                 *instructions,
                 (
@@ -3079,7 +3130,10 @@ class MainWindow(QMainWindow):
                 *instructions,
                 "Right-click: open tool settings.",
             ]
-        if mode in ("Edit points", "New line", "New rectangle", *REGION_TOOLS, *FIGURE_TOOLS):
+        if (
+            mode in ("Edit points", "New line", "New rectangle", *REGION_TOOLS, *FIGURE_TOOLS)
+            and mode != "Scale figures"
+        ):
             instructions = [
                 *instructions,
                 (
@@ -3090,7 +3144,7 @@ class MainWindow(QMainWindow):
             ]
         lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
         lines.append(self.t("Right-drag: pan the scene image."))
-        if mode not in ROTATE_TOOLS:
+        if mode not in (*ROTATE_TOOLS, "Scale figures", "Scale raster regions"):
             lines.append(self.t("Wheel: zoom at cursor."))
         lines.append("")
         lines.append(self.t("Window shortcuts"))
@@ -3117,8 +3171,10 @@ class MainWindow(QMainWindow):
             and self.view.raster_aids.settings["rulers"]
         ):
             mode = self.last_tool_modes[self.current_tool_set]
-        if mode in (*MOVE_TOOLS, *ROTATE_TOOLS, "Scale raster regions") and prompt:
-            if not (self.view.figure_line_ids if mode in FIGURE_TOOLS else self.selected_regions):
+        if mode in (*MOVE_TOOLS, *ROTATE_TOOLS, "Scale raster regions", "Scale figures") and prompt:
+            if not (
+                self.view.figure_line_ids if mode in FIGURE_TOOLS else self.selected_regions
+            ) and not (mode == "Move figures" and self.view.figure_move_double_click):
                 mode = (
                     "Select figures"
                     if mode in FIGURE_TOOLS
@@ -3155,6 +3211,7 @@ class MainWindow(QMainWindow):
 
     def sync_tool_sizes(self):
         for control, value in (
+            (self.figure_scale_control, self.view.figure_scale_step_percent),
             (self.brush_control, self.view.raster_diameters["Erase"]),
             (self.restore_brush_control, self.view.raster_diameters["Restore"]),
             (self.square_brush_control, self.view.raster_diameters["Erase square"]),
@@ -3167,6 +3224,9 @@ class MainWindow(QMainWindow):
             control.setValue(value)
             control.blockSignals(False)
         self.remember_tool_values()
+
+    def set_figure_scale_step(self, value):
+        self.view.figure_scale_step_percent = value
 
     def set_auto_close_distance(self, value):
         self.view.auto_close_distance = value
@@ -3224,10 +3284,13 @@ class MainWindow(QMainWindow):
             event.type() == QEvent.Type.Wheel
             and isinstance(watched, QWidget)
             and watched.window() == self
-            and self.view.mode in ROTATE_TOOLS
+            and self.view.mode in (*ROTATE_TOOLS, "Scale figures")
             and not event.modifiers() & Qt.KeyboardModifier.ControlModifier
         ):
-            self.view.rotate_wheel_event(event)
+            if self.view.mode == "Scale figures":
+                self.view.scale_figures(event.angleDelta().y() / 120)
+            else:
+                self.view.rotate_wheel_event(event)
             event.accept()
             return True
         if (
@@ -3240,6 +3303,7 @@ class MainWindow(QMainWindow):
             if steps:
                 control = watched
                 sizeable = (
+                    self.figure_scale_control,
                     self.brush_control,
                     self.restore_brush_control,
                     self.square_brush_control,
@@ -3321,6 +3385,7 @@ class MainWindow(QMainWindow):
     def alignment_ui_state(self):
         return {
             "snap_enabled": self.snap_action.isChecked(),
+            "figure_move_double_click": self.view.figure_move_double_click,
             "right_angle_neighbours": self.view.right_angle_neighbours,
             "right_angle_own_priority": self.view.right_angle_own_priority,
             "figure_extension_alignment": self.figure_alignment_actions[
@@ -3341,6 +3406,7 @@ class MainWindow(QMainWindow):
         }
 
     def restore_alignment_state(self, settings):
+        self.view.figure_move_double_click = settings.get("figure_move_double_click", True)
         self.view.extension_connected = settings.get("extension_connected", False)
         self.figure_alignment_actions["Figure extension alignment"].setChecked(
             settings.get("figure_extension_alignment", False)
@@ -3360,9 +3426,13 @@ class MainWindow(QMainWindow):
                 )
         self.apply_section_alignment()
 
+    def new_project(self):
+        if self.close_document():
+            self.apply_dataset_manager(DatasetCatalog())
+
     def close_document(self):
         if self.worker or not self.can_discard():
-            return
+            return False
         self.view.clear_map()
         self.custom_colors = DEFAULT_CUSTOM_COLORS
         self.reset_region_selections()
@@ -3381,6 +3451,7 @@ class MainWindow(QMainWindow):
         self.info.setText(self.t("Open a scene image to begin; scene JSON is optional."))
         self.diagnostics.clear()
         self.update_map_info()
+        return True
 
     def toggle_walls(self, value):
         self.view.show_walls = value
@@ -3510,6 +3581,7 @@ class MainWindow(QMainWindow):
             **self.alignment_ui_state(),
             "snap_distance_px": self.view.snap_distance,
             "circle_detail_steps": self.view.circle_detail_steps,
+            "figure_scale_step_percent": self.view.figure_scale_step_percent,
             "right_angle_tolerance_deg": self.view.right_angle_tolerance_deg,
             "contour_alignment_distance_px": self.view.contour_alignment_distance_px,
             "extension_distance_px": self.view.extension_distance_px,
@@ -4796,6 +4868,10 @@ class MainWindow(QMainWindow):
         )
         before = self.view.figure_line_ids
         tolerance = 6 / max(self.view.transform().m11(), 1e-9)
+        if event.get("remember_only"):
+            target = hit[1] if hit and hit[0] <= tolerance else None
+            self.view.remember_figure_click(event["point"], target, before)
+            return
         if not hit or hit[0] > tolerance:
             self.clear_selection()
             if event.get("mouse"):
@@ -4804,7 +4880,9 @@ class MainWindow(QMainWindow):
         selected = set(first["before"] if first is not None else before)
         if event.get("double"):
             component = set(hit[2].line_ids)
-            if component.issubset(selected):
+            if self.view.mode == "Move figures":
+                selected = component
+            elif component.issubset(selected):
                 selected.difference_update(component)
             else:
                 selected.update(component)
@@ -4970,6 +5048,7 @@ class MainWindow(QMainWindow):
         components = self.view.contour_figures()
         live = {i for component in components for i in component.line_ids}
         self.view.figure_line_ids = tuple(i for i in self.view.figure_line_ids if i in live)
+        self.view.update_move_cursor()
         self.view.selected_path = self.view.figure_path()
         self.regions_group.setTitle(self.t("Contours"))
         self.region_control.setToolTip(

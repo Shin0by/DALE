@@ -1247,3 +1247,49 @@ The owner explicitly requests the complete ready DALE folder in the repository, 
 Mark DALE/** binary after ordinary source attributes so Git never rewrites native libraries, bundled vendor Python, startup notes or provenance. No LFS pointers are needed: the current333-file payload is approximately179MiB and its largest member is below20MiB. GitHub's100MiB per-file limit is documented in [About large files on GitHub](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github). Keep Ruff focused on authored source by explicitly excluding DALE; third-party licenses and exact bytes remain intact.
 
 The existing complete onedir build continues to preserve local UserData and live processes. No application code or project format changes are needed for tracking the already validated1.03.085 runtime. Release-only documentation/policy/provenance updates do not invoke the revision-incrementing build again. The build provenance runtime_sha256 manifest covers every runtime file except build-info.json itself. Validate the staged file set against this manifest, each physical checksum and its exact Git blob bytes, plus private-data exclusions and the real executable extracted from a clean ZIP. Explicitly include bundled .pyd libraries despite the source Python bytecode ignore rule. Use separately authorized development/release push plans; never bypass the existing guard.
+
+## ADR-103 - New project first in File, dataset manager on its toolbar
+
+FR-165 places New project first in File with the standard Ctrl+N shortcut. Reuse the ordinary close-document path and its Save/Discard/Cancel question, gesture/export guards and extracted-resource cleanup. Only a successful close creates a fresh DatasetCatalog with one empty dataset, no previous project filename and no source assets. An empty new project can be saved directly as a current schema7 .dale archive. Keep the application contour clipboard and portable preferences.
+
+Register Dataset manager as a window action instead of a File action, preserving Ctrl+I, localized help and the existing36px dataset-toolbar button. Language changes retain stable action sources and shortcuts. The application update uses the normal revision-incrementing portable build; no Git push is authorized.
+
+## ADR-104 - Optional paired double-click selection inside Move contours
+
+FR-166 adds a standard staged checkbox, enabled by default. Register the Move contours button with the existing popup/corner mechanism. Store optional figure_move_double_click as a strict dataset UI bool in schema7. Capture and restore it with existing dataset settings; no new numeric or global preference is introduced.
+
+Apply updates the current dataset metadata and dirty-state comparison, so the ordinary save/discard question protects an unsaved option change. Cancel leaves both live behavior and metadata untouched.
+
+On an ordinary Move press, remember the first exact line and selection without changing either. Reuse the selection tool's bounded double-click record, including session/geometry/mode/transform/selection validation and jitter protection. Owner follow-up: Move contours replaces the entire selection with the first-hit component, or clears all selection on an empty first hit. Repeating on the same component keeps it selected. Select contours retains its additive component toggle. Cancel any pending move before applying that selection action. Enabled Move accepts an empty selection so the first contour can be selected there. Disabling restores the old selection prerequisite. Never convert a single click or drag into a selection toggle or history edit.
+
+While this option is enabled, displacement within Qt's double-click distance remains a click, so first-release jitter cannot commit a tiny move before the double-click. Crossing that distance starts the ordinary exact drag; camera panning consumes the click record.
+
+## ADR-105 - Native tiles remain available during active gestures
+
+FR-167 supersedes the native viewer's blanket active-gesture deferral. The exact sidebar-bounds worker retains its separate gesture repaint policy. Camera scroll signals and viewport paint/resize requests continue using one cancellable latest-only native worker,32-tile batches and64 cached tiles.
+
+Use one preview_raster_operations snapshot for overview and native rendering, including the current immutable brush stroke and Raster transform preview. Source, size, LoD and exact operations form the publication key. A changed key hides old tiles and rejects stale results; a complete matching visible set may replace the overview during any active gesture. Geometry-only gestures reuse their decoded source and matching tile cache. This changes display readiness only, not source data, raster operations, geometry or history.
+
+Match the requested viewport transform and size before activating its tiles as well. A camera change immediately restores the overview while the new visible set loads, so uncovered old tiles cannot expose checkerboard gaps. Cached tiles still become active as soon as the current viewport is complete.
+
+## ADR-106 - Virtual stationary angle legs and a free line's original vector
+
+The owner reproduces the independent endpoint case on the second floor of a private project, with Alt held and both alignment switches enabled. Its isolated line has one own leg, so the former connected-only angle snapshot cannot supply a corner. FR-168 extends ADR-046 specifically with a nearby stationary virtual contact leg; it does not create an editing connection or broaden contour membership.
+
+Freeze visible stationary edges at point press, excluding only incident edges belonging to the moving component. Reuse that snapshot for ordinary point snapping and index it with STRtree for bounded contact queries. After existing connected angles and accepted X/Y guides, a nearby stationary segment may supply the perpendicular foot from an incident fixed anchor if its projected approach satisfies the angular tolerance. Preserve the stationary line and group, and show the real perpendicular reference legs. Existing connection questions still control any explicit connection on commit.
+
+For one independent edge with no nearby stationary interaction or accepted constraint, Alt plus contour guides projects the free endpoint onto its original forward ray within the existing screen-pixel tolerance. The opposite endpoint stays fixed; a dashed guide shows the frozen vector. Outside tolerance, without Alt or with guides disabled, retain free movement. Clear all transient targets/markers on cancel, release and scope changes; never serialize them.
+
+## ADR-107 - Eraser partitions use the existing contact roundoff tolerance
+
+The private second-floor regression has two endpoints on an angled wall at approximately1e-13 source-pixel distance. Exact GEOS intersection misses one even though closed-cell analysis recognizes it. FR-169 adds locally queried endpoint projections within the existing1e-7 tolerance to the shared lazy eraser partitions. Keep original endpoints and exact crossings/overlap boundaries, reject separate parallel near misses, and never introduce a global noding pass.
+
+The same frozen pieces drive hover, drag and deletion. Only selected source owners gain child survivors, retaining their own settings and explicit parent. All stationary records, image bytes and source JSON stay exact. Regression evidence includes the owner-designated dataset, a separate working archive with undo/redo/reopen checks, synthetic fractional-contact sweeps and real-gap/parallel rejection. The original private archive is never rewritten or published.
+
+## ADR-108 - Dedicated contour scaling with one shared percent step
+
+FR-170 adds internal Scale figures, displayed as Scale contours, to the existing Contours tool group. Reuse the Raster inline numeric tile dimensions48x60 and30x16 and the standard staged right-click numeric settings. Store optional strict integer figure_scale_step_percent1..100 default5 through the existing project/dataset/global numeric scope. No schema version change or migration.
+
+Plain wheel in this mode scales the exact selected IDs using factor(1+step/100)^wheel_steps around their logical common center. Ctrl+wheel edits the step, including on the canvas and its inline field. Move contours retains Ctrl+wheel scaling and uses the same configured factor. Window and direct canvas routes agree; pointer zoom, unselected geometry, raster and ownership remain unchanged. Existing transform guards and one-undo-per-scale behavior apply. Region and Raster scale settings are outside this request.
+
+Centralize the resting canvas cursor and refresh Move contours after selection filtering, clear/double-click, dataset changes, cancellation and pan release. No selection means a pointing finger, selection means an open hand, and an active drag/pan retains its closed hand. This does not change click selection or geometry.

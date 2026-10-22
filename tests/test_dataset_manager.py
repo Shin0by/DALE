@@ -10,6 +10,7 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import QCoreApplication, QEvent, QMimeData, QPointF, Qt, QTimer
 from PySide6.QtGui import QDropEvent, QTransform
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QPushButton
 
 from dale.dataset_manager import MIME, DatasetManager
@@ -34,13 +35,15 @@ def window(tmp_path, monkeypatch):
     monkeypatch.setattr(w, "can_discard", lambda: True)
     app.processEvents()
     yield w
+    monkeypatch.setattr(w, "can_discard", lambda: True)
     w.close()
     w.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
 
 
-def test_manager_opens_from_left_square_button_and_cancel_keeps_editor(window):
+@pytest.mark.parametrize("route", ["button", "shortcut"])
+def test_manager_opens_from_left_square_button_and_cancel_keeps_editor(window, route):
     assert window.manager_button.x() < window.dataset_control.x()
     assert window.manager_button.size().width() == window.manager_button.size().height() == 36
     assert window.manager_button.isEnabled()
@@ -53,8 +56,89 @@ def test_manager_opens_from_left_square_button_and_cancel_keeps_editor(window):
         dialog.reject()
 
     QTimer.singleShot(0, inspect)
-    window.manager_button.click()
+    if route == "shortcut":
+        QTest.keyClick(window, Qt.Key.Key_I, Qt.KeyboardModifier.ControlModifier)
+    else:
+        window.manager_button.click()
     assert window.catalog is None and window.view.session is None
+
+
+def test_new_project_creates_one_empty_dataset_and_saves_it(window, tmp_path):
+    window.new_project_action.trigger()
+    assert window.catalog and len(window.catalog.views) == 1
+    assert window.dataset_control.count() == 1 and window.dataset_control.isEnabled()
+    assert window.view.session is window.catalog.current.session
+    assert window.view.session.source.image_path is None
+    assert window.view.session.source.json_path is None
+    assert not window.view.session.geometry().walls and not window.view.session.operations
+    assert window.project_path is None and window.saved_state is None
+    window.project_path = tmp_path / "empty.dale"
+    assert window.save_project_file()
+    with load_project(window.project_path) as loaded:
+        assert len(loaded.catalog.views) == 1 and not loaded.session.geometry().walls
+        assert loaded.session.source.image_path is None
+        assert loaded.session.source.json_path is None
+
+
+@pytest.mark.parametrize("choice", ["cancel", "discard", "save", "cancel_save"])
+def test_new_project_respects_save_discard_cancel(
+    window, pair_factory, tmp_path, monkeypatch, choice
+):
+    source = pair_factory()
+    original_bytes = source.image_path.read_bytes(), source.json_path.read_bytes()
+    assert window.load_sources(source.image_path, source.json_path)
+    path = tmp_path / "previous.dale"
+    window.project_path = path
+    assert window.save_project_file()
+    assert window.load_project_file(path)
+    session, catalog, loaded_project = window.view.session, window.catalog, window.loaded_project
+    original = session.geometry()
+    session.add(add_line(original, (5, 5), (15, 5)))
+    edited = session.geometry()
+    asked = []
+    answer = {
+        "cancel": QMessageBox.StandardButton.Cancel,
+        "discard": QMessageBox.StandardButton.Discard,
+        "save": QMessageBox.StandardButton.Save,
+        "cancel_save": QMessageBox.StandardButton.Save,
+    }[choice]
+    monkeypatch.setattr(window, "can_discard", lambda: MainWindow.can_discard(window))
+    monkeypatch.setattr(window, "question", lambda *args: asked.append(args) or answer)
+    if choice == "cancel_save":
+        monkeypatch.setattr(window, "save_project_file", lambda: False)
+    window.new_project_action.trigger()
+    assert len(asked) == 1
+    if choice in ("cancel", "cancel_save"):
+        assert window.catalog is catalog and window.view.session is session
+        assert window.view.session.geometry() == edited and window.project_path == path
+        assert window.loaded_project is loaded_project
+    else:
+        assert window.catalog is not catalog and len(window.catalog.views) == 1
+        assert not window.view.session.geometry().walls
+        assert window.project_path is None and window.loaded_project is None
+    with load_project(path) as stored:
+        assert stored.session.geometry() == (edited if choice == "save" else original)
+    assert (source.image_path.read_bytes(), source.json_path.read_bytes()) == original_bytes
+
+
+@pytest.mark.parametrize("busy", ["gesture", "export"])
+def test_new_project_keeps_active_gesture_or_export(window, pair_factory, monkeypatch, busy):
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    session, catalog = window.view.session, window.catalog
+    monkeypatch.setattr(window, "can_discard", lambda: MainWindow.can_discard(window))
+    if busy == "gesture":
+        window.view.line_start = (5, 5)
+    else:
+        window.worker = object()
+    try:
+        window.new_project_action.trigger()
+        assert window.view.session is session and window.catalog is catalog
+        if busy == "gesture":
+            assert window.view.line_start == (5, 5)
+    finally:
+        window.view.line_start = None
+        window.worker = None
 
 
 def test_apply_empty_datasets_rename_and_open_without_changing_original_sources(

@@ -443,6 +443,7 @@ class DatasetCatalog:
                 else v.ui.get("artwork_offset_px", v.session.contour_offset),
                 json.dumps(v.ui.get("groups", []), sort_keys=True),
                 json.dumps(v.ui.get("group_sections", {}), sort_keys=True),
+                v.ui.get("figure_move_double_click", True),
             )
             for key, v in self.views.items()
         )

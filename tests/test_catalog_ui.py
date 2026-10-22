@@ -657,6 +657,151 @@ def test_vertex_alt_combines_axis_and_right_angles_with_line_snapping(
     assert source.json_path.read_bytes() == source.json_bytes
 
 
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize("snapping", [False, True])
+def test_independent_vertex_alt_uses_stationary_contact_for_right_angle(
+    window, pair_factory, zoom, snapping
+):
+    from dale.connections import isolate
+
+    source = pair_factory(
+        size=(640, 480),
+        walls=[
+            {"c": [50, 50, 250, 200]},
+            {"c": [350, 100, 150, 300]},
+        ],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    original = view.session.geometry()
+    view.session.add(isolate(original, (original.lineage[0].id,)))
+    window.refresh()
+    window.activate_mode("Edit points")
+    window.snap_action.setChecked(snapping)
+    for action in window.alignment_actions.values():
+        action.setChecked(True)
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(250, 200)
+    QApplication.processEvents()
+    before = view.session.geometry()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(250, 200))
+    position = view.mapFromScene(228, 223)
+    for modifiers in (
+        Qt.KeyboardModifier.AltModifier,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.KeyboardModifier.AltModifier,
+    ):
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(position),
+                QPointF(view.viewport().mapToGlobal(position)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                modifiers,
+            ),
+        )
+        if modifiers:
+            assert view.snap == pytest.approx((225, 225))
+            assert view.angle_joint is not None
+        else:
+            assert view.angle_joint is None
+        assert view.edit_preview.walls[1] == before.walls[1]
+        assert view.session.geometry() == before
+    QTest.mouseRelease(
+        view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.AltModifier, position
+    )
+    changed = view.session.geometry()
+    assert changed.walls[1] == before.walls[1] and changed.lineage[1] == before.lineage[1]
+    assert (225, 225) in changed.walls[0] and len(view.session.operations) == 2
+    view.session.undo()
+    assert view.session.geometry() == before
+    view.session.redo()
+    assert view.session.geometry() == changed
+    assert source.json_path.read_bytes() == source.json_bytes
+
+
+@pytest.mark.parametrize("zoom", [1, 2])
+def test_isolated_free_vertex_alt_follows_original_vector_only_within_tolerance(
+    window, pair_factory, zoom
+):
+    from dale.editing import align_along_vector
+
+    source = pair_factory(size=(640, 480), walls=[{"c": [100, 100, 200, 150]}])
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Edit points")
+    window.alignment_actions["contour_alignment"].setChecked(True)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(250, 200)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(200, 150))
+    for cursor, alt in (
+        ((300, 198), True),
+        ((300, 198), False),
+        ((300, 230), True),
+        ((300, 198), True),
+    ):
+        position = view.mapFromScene(*cursor)
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(position),
+                QPointF(view.viewport().mapToGlobal(position)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.AltModifier if alt else Qt.KeyboardModifier.NoModifier,
+            ),
+        )
+        expected = align_along_vector(cursor, ((100, 100), (200, 150)), 14 / zoom) if alt else None
+        assert bool(view.vector_guide) == (expected is not None)
+        assert view.edit_preview.walls[0][0] == original.walls[0][0]
+        assert view.edit_preview.walls[0][1] == pytest.approx(expected or cursor)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert not view.session.operations and view.session.geometry() == original
+    assert view.vector_guide is None and view.point_snap_targets is None
+
+
+@pytest.mark.parametrize("zoom", [1, 2])
+def test_independent_vertex_acquires_external_xy_guide_with_alt(window, pair_factory, zoom):
+    source = pair_factory(
+        size=(640, 480),
+        walls=[
+            {"c": [100, 100, 200, 150]},
+            {"c": [300, 200, 400, 250]},
+        ],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    window.activate_mode("Edit points")
+    window.alignment_actions["contour_alignment"].setChecked(True)
+    view = window.view
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(250, 200)
+    QApplication.processEvents()
+    original = view.session.geometry()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(200, 150))
+    for cursor in ((300, 200), (350, 203)):
+        position = view.mapFromScene(*cursor)
+        QApplication.sendEvent(
+            view.viewport(),
+            QMouseEvent(
+                QEvent.Type.MouseMove,
+                QPointF(position),
+                QPointF(view.viewport().mapToGlobal(position)),
+                Qt.MouseButton.NoButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.AltModifier,
+            ),
+        )
+    assert view.snap == pytest.approx((350, 200))
+    assert view.alignment_guides and view.edit_preview.walls[1] == original.walls[1]
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert view.session.geometry() == original and not view.session.operations
+
+
 @pytest.mark.parametrize("language", ["ru", "en"])
 @pytest.mark.parametrize("answer", ["dataset", "group", None])
 @pytest.mark.parametrize("remember", [False, True])
@@ -1968,13 +2113,17 @@ def test_figures_click_double_click_marquee_ctrl_a_and_clear(window, pair_factor
     assert window.contour_alignment_distance.value() == window.region_guide_distance.value() == 9999
     assert not window.figure_guide_distance.isVisible()
     window.activate_mode("Move figures")
+    assert view.mode == "Move figures"  # Double-click can select the first contour.
+    view.figure_move_double_click = False
+    window.activate_mode("Move figures")
     assert view.mode == "Select figures"  # No modal when the selection is empty.
 
 
 @pytest.mark.parametrize("zoom", [1, 2])
 @pytest.mark.parametrize("prior", ["none", "other", "first"])
+@pytest.mark.parametrize("mode", ["Select figures", "Move figures"])
 def test_contour_double_click_locks_first_hit_and_does_not_accumulate_jittered_second_hit(
-    window, pair_factory, zoom, prior
+    window, pair_factory, zoom, prior, mode
 ):
     from itertools import pairwise
 
@@ -2004,26 +2153,129 @@ def test_contour_double_click_locks_first_hit_and_does_not_accumulate_jittered_s
     prior_ids = () if prior == "none" else ids[8:] if prior == "other" else ids[:4]
     view.figure_line_ids = prior_ids
     window.update_map_info()
+    window.activate_mode(mode)
+    assert view.mode == mode
     pixels = view.item.pixmap().toImage()
     # Native Qt double-click sequence: first press/release, double press, release.
     # Both contours cross here, but have no shared stored vertex.
     crossing = view.mapFromScene(80, 80)
     first, second = crossing + QPoint(-1, 0), crossing + QPoint(0, -1)
-    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    if mode == "Move figures":
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+        QTest.mouseMove(view.viewport(), first + QPoint(1, 0))
+        QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=first + QPoint(1, 0))
+        assert view.figure_line_ids == prior_ids
+        assert view.session.geometry() == original and not view.session.operations
+    else:
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
     QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
     assert view.session.geometry() == original
     assert tuple(r.id for r in view.session.geometry().lineage) == ids
     assert not view.session.operations and not view.session.future
     assert view.item.pixmap().toImage() == pixels
-    expected = set(prior_ids) ^ set(ids[:4])
+    expected = set(ids[:4]) if mode == "Move figures" else set(prior_ids) ^ set(ids[:4])
     assert set(view.figure_line_ids) == expected
     assert view.region_clipboard is not None and view.paste_delta is None
     QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
     QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
-    assert set(view.figure_line_ids) == expected | set(ids[4:8])
+    expected = set(ids[4:8]) if mode == "Move figures" else expected | set(ids[4:8])
+    assert set(view.figure_line_ids) == expected
     assert view.session.geometry() == original and not view.session.operations
+
+
+@pytest.mark.parametrize("zoom", [1, 2])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("near_edge", [False, True])
+def test_move_contour_double_click_empty_clears_all_selection(
+    window, pair_factory, zoom, enabled, near_edge
+):
+    from PySide6.QtCore import QPoint
+
+    source = pair_factory(
+        size=(400, 300),
+        walls=[{"c": c} for c in ([40, 60, 100, 60], [100, 60, 100, 110], [200, 60, 260, 60])],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    window.activate_mode("Select figures")
+    original = view.session.geometry()
+    ids = tuple(r.id for r in original.lineage)
+    view.figure_line_ids = ids
+    view.figure_move_double_click = enabled
+    window.update_map_info()
+    window.activate_mode("Move figures")
+    view.setTransform(QTransform.fromScale(zoom, zoom))
+    view.centerOn(180, 140)
+    QApplication.processEvents()
+    # The first click misses by seven screen pixels. Jitter then reaches the line.
+    # A paired empty first hit must still clear rather than select the second hit.
+    first = view.mapFromScene(60, 60) + QPoint(0, 7) if near_edge else view.mapFromScene(300, 220)
+    second = first + QPoint(0, -2)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=first)
+    assert view.figure_line_ids == ids
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=second)
+    assert view.figure_line_ids == (() if enabled else ids)
+    assert view.mode == "Move figures"
+    assert view.session.geometry() == original and not view.session.operations
+    assert not view.session.future
+
+
+@pytest.mark.parametrize("language", ["en", "ru"])
+def test_move_contour_double_click_settings_stage_and_persist(
+    window, pair_factory, tmp_path, language
+):
+    from dale.project_io import _load_ui
+
+    source = pair_factory()
+    assert window.load_sources(source.image_path, source.json_path)
+    window.set_language(language, persist=False)
+    window.activate_mode("Move figures")
+    view = window.view
+    before_settings = window.document_state()
+    popup = window.show_tool_settings("Move figures")
+    checkbox = popup.figure_double_click
+    assert checkbox.isChecked() and view.figure_move_double_click
+    assert checkbox.text() == (
+        "Выделять контур двойным кликом" if language == "ru" else "Select contour by double-click"
+    )
+    assert checkbox.toolTip().splitlines()[0] == checkbox.text()
+    checkbox.setChecked(False)
+    popup.reject()
+    assert view.figure_move_double_click
+    assert window.document_state() == before_settings
+    popup = window.show_tool_settings("Move figures")
+    popup.figure_double_click.setChecked(False)
+    popup.accept()
+    assert not view.figure_move_double_click
+    assert window.document_state() != before_settings
+    view.figure_line_ids = (view.session.geometry().lineage[0].id,)
+    window.update_map_info()
+    selected = view.figure_line_ids
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(40, 150)
+    QApplication.processEvents()
+    point = view.mapFromScene(30, 20)
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert view.figure_line_ids == selected and not view.session.operations
+    window.project_path = tmp_path / "move-double-click.dale"
+    assert window.save_project_file()
+    assert window.load_project_file(window.project_path)
+    assert not view.figure_move_double_click
+    assert _load_ui({})["figure_move_double_click"] is True
+    assert _load_ui({"figure_move_double_click": False})["figure_move_double_click"] is False
+
+
+@pytest.mark.parametrize("value", [1, 0, "yes", None, []])
+def test_move_contour_double_click_project_flag_is_strict(value):
+    from dale.project_io import _load_ui
+
+    with pytest.raises(ValueError, match="double-click preference"):
+        _load_ui({"figure_move_double_click": value})
 
 
 @pytest.mark.parametrize("interrupt", ["timeout", "clear", "mode"])

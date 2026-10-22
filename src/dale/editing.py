@@ -20,6 +20,63 @@ from dale.session import GeometryEdit
 EPSILON = 1e-7
 
 
+class StationaryTargets:
+    """Frozen stationary edges with spatially bounded contact queries during a drag."""
+
+    def __init__(self, geometry):
+        self.edges = geometry_edges(geometry.walls, geometry.closures)
+        self.shapes = tuple(LineString(edge) for edge in self.edges)
+        self.tree = STRtree(self.shapes)
+
+    def nearby(self, point, tolerance):
+        x, y = point
+        area = box(x - tolerance, y - tolerance, x + tolerance, y + tolerance)
+        cursor = ShapePoint(point)
+        return tuple(
+            self.edges[int(i)]
+            for i in sorted(self.tree.query(area))
+            if self.shapes[int(i)].distance(cursor) <= tolerance
+        )
+
+
+def align_along_vector(point, edge, tolerance):
+    """Extend or shorten a free end along its original noncollapsed forward ray."""
+    start, end = edge
+    delta = tuple(end[i] - start[i] for i in (0, 1))
+    length_squared = sum(value * value for value in delta)
+    if length_squared <= EPSILON * EPSILON:
+        return None
+    fraction = sum((point[i] - start[i]) * delta[i] for i in (0, 1)) / length_squared
+    target = tuple(start[i] + fraction * delta[i] for i in (0, 1))
+    if (
+        fraction > 0
+        and math.dist(start, target) > EPSILON
+        and math.dist(point, target) <= tolerance
+    ):
+        return target
+    return None
+
+
+def right_angle_contact(point, anchors, edges, tolerance_deg, guides=()):
+    """Use a nearby stationary edge as a virtual perpendicular leg without joining it."""
+    candidates = []
+    for edge in edges:
+        nearest, _ = project(point, edge)
+        for anchor in anchors:
+            target, _ = project(anchor, edge)
+            if math.dist(anchor, target) <= EPSILON:
+                continue
+            other = max(edge, key=lambda end: math.dist(end, target))
+            if not _satisfies_right_angle((anchor, target, other), target, target):
+                continue
+            if _right_angle_deviation((anchor, nearest, other), nearest, nearest) > tolerance_deg:
+                continue
+            if any(abs(target[axis] - guide[axis]) > EPSILON for axis, guide in guides):
+                continue
+            candidates.append((math.dist(point, target), target, (anchor, target, other)))
+    return (min(candidates)[1:]) if candidates else None
+
+
 class GuideTargets:
     """Frozen stationary vertices and cursor-acquired axis references for one gesture."""
 
@@ -135,14 +192,14 @@ def hit_edge(geometry: GeometryEdit, point: Point, tolerance: float) -> EdgeHit 
 
 
 def snap_point(
-    geometry: GeometryEdit, point: Point, tolerance: float, exclude=None
+    geometry: GeometryEdit, point: Point, tolerance: float, exclude=None, *, anchors=()
 ) -> Point | None:
     """Prefer vertices over projections; a dragged node cannot snap to its own edges."""
     if tolerance <= 0:
         return None
     candidates = [
         (math.dist(point, vertex), vertex)
-        for vertex in vertices(geometry)
+        for vertex in (*vertices(geometry), *anchors)
         if (exclude is None or not _same(vertex, exclude)) and math.dist(point, vertex) <= tolerance
     ]
     if candidates:
@@ -173,7 +230,7 @@ def _right_angle_deviation(guide, moving, candidate):
 
 
 def snap_constrained_point(
-    geometry, point, tolerance, *, exclude=None, guides=(), angle=None, angles=()
+    geometry, point, tolerance, *, exclude=None, guides=(), angle=None, angles=(), anchors=()
 ):
     """Snap to stationary geometry without leaving accepted axes or a right-angle locus."""
     if tolerance <= 0:
@@ -182,7 +239,7 @@ def snap_constrained_point(
     if angle is None and angles:
         angle, angles = angles[0], angles[1:]
     if not guides and angle is None:
-        return snap_point(geometry, point, tolerance, exclude=exclude)
+        return snap_point(geometry, point, tolerance, exclude=exclude, anchors=anchors)
 
     def cross(a, b):
         return a[0] * b[1] - a[1] * b[0]
@@ -197,7 +254,7 @@ def snap_constrained_point(
 
     candidates = [
         (math.dist(point, vertex), vertex)
-        for vertex in vertices(geometry)
+        for vertex in (*vertices(geometry), *anchors)
         if (exclude is None or not _same(vertex, exclude))
         and math.dist(point, vertex) <= tolerance
         and compatible(vertex)
@@ -732,10 +789,23 @@ class LineEraser:
                 for part in intersection.geoms:
                     add_intersection(part)
 
-        for hit in self.tree.query(shape):
+        for hit in self.tree.query(shape.buffer(EPSILON)):
             other = int(hit)
             if other != index:
-                add_intersection(shape.intersection(self.shapes[other]))
+                other_shape = self.shapes[other]
+                add_intersection(shape.intersection(other_shape))
+                delta = tuple(edge[1][i] - edge[0][i] for i in (0, 1))
+                other_edge = self.edges[other]
+                direction = tuple(other_edge[1][i] - other_edge[0][i] for i in (0, 1))
+                # A separate parallel edge is not a T contact.
+                if abs(delta[0] * direction[1] - delta[1] * direction[0]) <= (
+                    1e-12 * math.hypot(*delta) * math.hypot(*direction)
+                ):
+                    continue
+                for endpoint in other_edge:
+                    if shape.distance(ShapePoint(endpoint)) <= EPSILON:
+                        target, _ = project(endpoint, edge)
+                        add_point(target)
         points = []
         for _, point in sorted(cuts):
             if not points or not _same(points[-1], point):

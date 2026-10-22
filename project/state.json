@@ -1,11 +1,15 @@
 {
   "schema_version": 1,
   "updated": "2026-10-21",
-  "phase": "readme_owner_approved_for_development",
+  "phase": "contour_scale_portable_verified",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
+    "ADR-108 / FR-170: owner requests a dedicated Contours scaling button with a Raster-style inline step field. Plain wheel scales selected contours, Ctrl+wheel edits integer percent step1..100 default5, and Move contours uses the same step. Reuse dataset/project/global numeric precedence and schema7 validation. Move contours has a pointing-finger cursor without selection, open hand with selection, closed hand during drag/pan. Preserve exact membership, stationary geometry, raster, undo and user processes; rebuild complete portable runtime normally once. No push requested.",
+    "ADR-104 / FR-166 owner follow-up: Move contours double-click replaces the entire selection with the first-hit component; empty double-click clears all selection. Repeat hits keep the component selected. Retain Select contours additive toggles, paired first-hit/jitter protection, checkbox scope, ordinary movement and immutable geometry/history. Rebuild the complete portable runtime once; no push requested.",
+    "ADR-104..107 / FR-166..169: owner adds default-enabled per-dataset Move contours double-click selection, requests native image loading during every active gesture/navigation route, and reproduces independent Alt vertex angle/guide and eraser contact failures on the second floor of a private archive. Reuse protected paired selection; publish only matching live raster and viewport snapshots; freeze/index truly stationary references for virtual contact perpendiculars and ordinary snaps; support a lone free edge original-vector Alt guide. Reconcile eraser T contacts at existing1e-7 roundoff tolerance without rewriting stationary geometry, source/native bytes or the original private archive. Preserve schema7, one undo, UserData and running editors; rebuild normally once. No push requested.",
+    "ADR-103 / FR-165: owner requests New project first in File and removal of Dataset manager from that menu. Ctrl+N creates one empty dataset through the ordinary close/save/discard/cancel lifecycle, preserving cancellation and gesture/export guards. Keep the manager toolbar button and Ctrl+I as a window action, bilingual stable help, current schema7, sources, application clipboard, UserData and running editors. Rebuild the complete portable runtime normally once; no push requested.",
     "ADR-102 / FR-164: owner explicitly adds the complete ready DALE folder to the repository, including development. Track the333-file Windows x64 runtime byte for byte with binary Git attributes; exclude UserData, cache, projects, private assets and release ZIPs. Exclude bundled third-party Python from Ruff and retain source/build provenance. Preserve validated1.03.085 runtime and revision; release-only policy/docs/provenance changes do not rebuild application code. Prepare exact development/release plans and ask the separately required pinned release confirmation; remove only old GitHub release v1.03.084 after the new release passes publication validation, keeping tags/history.",
     "ADR-101 / FR-163: owner approves registry implementation and application. Normal packaged Windows startup registers last-copy product metadata and App Paths in HKCU with independent best-effort HKLM mirrors, existing token only and64-bit view. Stable ProductId, padded version, actual executable path and UTC time; no elevation/ACL/PATH/association/Uninstall changes. Python/tests/smoke runs skip writes. Preserve portable UserData, schema7, source assets and running editors; rebuild normally. No push requested.",
     "ADR-100 / FR-162: owner adds a square Sorting toggle left of the group manager create + footer button. Replace swatches with drag grips, disable row actions, show a light insertion line and auto-scroll list edges. Commit only valid drops; preserve immutable group values, active choice, scene selection and metadata ordering per dataset/section in schema7. Escape/outside/close/scope changes cancel. Rebuild portable runtime normally once; no push requested.",
@@ -979,7 +983,7 @@
     "decision": "ADR-020",
     "resumption_authorized": false
   },
-  "current_version": "1.3.85",
+  "current_version": "1.3.88",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -3351,6 +3355,147 @@
       "artifacts/readme-redesign/export-evidence.json",
       "output/pdf/DALE-README-preview.html",
       "output/pdf/DALE-README-preview.pdf"
+    ]
+  },
+  "new_project_menu": {
+    "requirement": "FR-165",
+    "decision": "ADR-103",
+    "status": "implemented_portable_verified",
+    "file_first_command": "New project",
+    "new_project_shortcut": "Ctrl+N",
+    "dataset_manager_in_file_menu": false,
+    "dataset_manager_toolbar_and_ctrl_i_preserved": true,
+    "new_regression_cases": 8,
+    "focused_tests": 10,
+    "source_bilingual_menu_cases": 2,
+    "evidence": [
+      "artifacts/new-project/full-tests.log",
+      "artifacts/new-project/source-validation.json",
+      "artifacts/new-project/compiled-validation.json",
+      "artifacts/new-project/build.log"
+    ],
+    "remaining": [],
+    "push": false,
+    "source_full_tests_before_followup": 1690,
+    "version": "1.3.86",
+    "source_full_tests": 1741
+  },
+  "editor_followup": {
+    "requirements": [
+      "FR-165",
+      "FR-166",
+      "FR-167",
+      "FR-168",
+      "FR-169"
+    ],
+    "decisions": [
+      "ADR-103",
+      "ADR-104",
+      "ADR-105",
+      "ADR-106",
+      "ADR-107"
+    ],
+    "status": "implemented_portable_verified",
+    "focused_regressions": 141,
+    "native_tests_after_viewport_guard": 173,
+    "double_click_default": true,
+    "project_schema_version": 7,
+    "private_regression_dataset": "second floor of the owner-designated local archive",
+    "private_eraser_before_lines": 107,
+    "private_eraser_after_lines": 108,
+    "private_eraser_partition_pieces": 3,
+    "stationary_records_preserved": true,
+    "private_undo_redo_archive_reopen": true,
+    "private_native_tiles_while_vertex_held": 9,
+    "original_private_archive_modified": false,
+    "private_assets_published": false,
+    "source_or_runtime_revision_bumped_manually": false,
+    "evidence": [
+      "artifacts/new-project/extended-baseline.log",
+      "artifacts/new-project/final-focused.log",
+      "artifacts/new-project/native-final.log",
+      "artifacts/new-project/contact-boundaries-final.log",
+      "artifacts/new-project/village-inspection.json",
+      "artifacts/new-project/full-tests-final.log",
+      "artifacts/new-project/source-validation.json",
+      "artifacts/new-project/compiled-validation.json",
+      "artifacts/new-project/build.log",
+      "artifacts/new-project/point-snap-final.log",
+      "artifacts/new-project/datasets-and-ui-final.log",
+      "artifacts/new-project/contour-move-final.log",
+      "artifacts/new-project/compiled-tests.log",
+      "artifacts/new-project/final-validation.json"
+    ],
+    "remaining": [],
+    "push": false,
+    "source_full_tests": 1741,
+    "point_snap_tests": 194,
+    "dataset_and_ui_tests": 541,
+    "contour_move_tests": 62,
+    "version": "1.3.86",
+    "compiled_tests": 159,
+    "fresh_exe_cases": 2,
+    "bilingual_menu_and_settings_cases": 4,
+    "source_hashes_verified": true,
+    "userdata_preserved": true,
+    "original_assets_preserved": true,
+    "runtime_files": 333
+  },
+  "move_contour_exclusive_selection": {
+    "requirement": "FR-166",
+    "decision": "ADR-104",
+    "status": "implemented_portable_verified",
+    "selection_tests": 32,
+    "new_cases": 8,
+    "remaining": [],
+    "evidence": [
+      "artifacts/move-selection/selection-tests.log",
+      "artifacts/move-selection/catalog-tests.log",
+      "artifacts/move-selection/help-tests.log",
+      "artifacts/move-selection/build.log",
+      "artifacts/move-selection/compiled-tests.log",
+      "artifacts/move-selection/compiled-validation.json"
+    ],
+    "push": false,
+    "version": "1.3.87",
+    "catalog_tests": 490,
+    "compiled_tests": 34,
+    "help_tests": 2,
+    "fresh_exe_cases": 2,
+    "userdata_preserved": true,
+    "source_and_runtime_hashes_verified": true
+  },
+  "contour_scale": {
+    "requirement": "FR-170",
+    "decision": "ADR-108",
+    "status": "implemented_portable_verified",
+    "new_regression_cases": 19,
+    "default_step_percent": 5,
+    "step_percent_range": [
+      1,
+      100
+    ],
+    "remaining": [],
+    "push": false,
+    "version": "1.3.88",
+    "source_tests": 762,
+    "compiled_tests": 53,
+    "scale_tests": 19,
+    "fresh_exe_cases": 2,
+    "userdata_paths_preserved": true,
+    "original_assets_preserved": true,
+    "userdata_changed_during_validation": [
+      "DALE/UserData/settings.json"
+    ],
+    "source_and_runtime_hashes_verified": true,
+    "bilingual_visual_cases": 2,
+    "evidence": [
+      "artifacts/contour-scale/scale-tests.log",
+      "artifacts/contour-scale/source-tests.log",
+      "artifacts/contour-scale/source-validation.json",
+      "artifacts/contour-scale/build.log",
+      "artifacts/contour-scale/compiled-tests.log",
+      "artifacts/contour-scale/compiled-validation.json"
     ]
   }
 }

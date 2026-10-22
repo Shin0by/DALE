@@ -1059,6 +1059,9 @@ def _load_ui(value):
         raise ValueError("Invalid project extension guide distance.")
     angle_tolerance = number(value.get("right_angle_tolerance_deg", 5), "Angular tolerance")
     circle_detail = value.get("circle_detail_steps", 0)
+    figure_scale_step = value.get("figure_scale_step_percent", 5)
+    if type(figure_scale_step) is not int or not 1 <= figure_scale_step <= 100:
+        raise ValueError("Invalid project contour scaling step.")
     if type(circle_detail) is not int or not 0 <= circle_detail <= 95:
         raise ValueError("Invalid project circle detail.")
     if contour_distance != int(contour_distance) or not 1 <= contour_distance <= 9999:
@@ -1103,6 +1106,7 @@ def _load_ui(value):
         "Select figures",
         "Move figures",
         "Rotate figures",
+        "Scale figures",
     ):
         raise ValueError("Invalid project editing mode.")
     if (
@@ -1148,6 +1152,9 @@ def _load_ui(value):
         }
     snap_enabled = value.get("snap_enabled", True)
     move_related = value.get("move_related_lines", False)
+    figure_move_double_click = value.get("figure_move_double_click", True)
+    if type(figure_move_double_click) is not bool:
+        raise ValueError("Invalid contour move double-click preference.")
     if type(move_related) is not bool:
         raise ValueError("Invalid project related-line preference.")
     if type(snap_enabled) is not bool:
@@ -1216,6 +1223,7 @@ def _load_ui(value):
         **square_sizes,
         "mode": mode,
         "figure_lines": figure_lines,
+        "figure_move_double_click": figure_move_double_click,
         "figure_pivot": figure_pivot,
         "safe_json_repair": safe_repair,
         "source_layer": source_layer,
@@ -1232,6 +1240,7 @@ def _load_ui(value):
         "extension_distance_px": extension_distance,
         "right_angle_tolerance_deg": int(angle_tolerance),
         "circle_detail_steps": circle_detail,
+        "figure_scale_step_percent": figure_scale_step,
         "artwork_offset_px": int(artwork_offset),
         "auto_close_distance_px": int(auto_distance),
         "global_close_distance_px": int(global_distance),

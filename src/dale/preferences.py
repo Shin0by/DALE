@@ -14,6 +14,7 @@ ROTATION_VALUE_RANGES = {
 }
 
 TOOL_VALUE_RANGES = {
+    "figure_scale_step_percent": (1, 100, 5),
     "circle_detail_steps": (0, 95, 0),
     "line_eraser_diameter": (1, 512, 24),
     "vertex_eraser_diameter": (1, 512, 24),

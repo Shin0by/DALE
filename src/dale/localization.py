@@ -115,6 +115,18 @@ RUSSIAN = {
     "Move raster regions": "Перемещение областей с растром",
     "Rotate raster regions": "Вращение областей с растром",
     "Scale raster regions": "Масштабирование областей с растром",
+    "Scale contours": "Масштабирование контуров",
+    "Scaling step (%)": "Шаг масштабирования (%)",
+    "Resize selected contour lines around their common center.": (
+        "Изменить размер выбранных линий контуров относительно их общего центра."
+    ),
+    "Wheel: scale selected contours by the configured step.": (
+        "Колесо: масштабировать выбранные контуры с заданным шагом."
+    ),
+    "Number: contour scaling step, in percent. Shared with Move contours.": (
+        "Число: шаг масштабирования контуров в процентах. "
+        "Также применяется в «Перемещении контуров»."
+    ),
     "Raster artwork offset": "Отступ изображения областей",
     "Show selected raster regions": "Показать растр выбранных областей",
     "Preview selected regions": "Предпросмотр выбранных областей",
@@ -861,8 +873,8 @@ RUSSIAN = {
     ),
     "File information": "Данные файла",
     "Export regions as PNGs": "Экспорт областей в PNG",
-    "Open, save, export regions, close, and exit.": (
-        "Открытие, сохранение, экспорт областей, закрытие и выход."
+    "Create, open, save, export regions, close, and exit.": (
+        "Создание, открытие, сохранение, экспорт областей, закрытие и выход."
     ),
     "Undo, redo, and clear selection.": "Отмена, повтор и снятие выделения.",
     "Application name, version, and purpose.": "Название, версия и назначение программы.",
@@ -1649,6 +1661,37 @@ RUSSIAN.update(
         ),
         "Dataset manager": "Менеджер наборов",
         "Dataset manager…": "Менеджер наборов…",
+        "New project": "Новый проект",
+        "Select contour by double-click": "Выделять контур двойным кликом",
+        "An independent dragged end can align perpendicular to a nearby "
+        "stationary line without joining it.": (
+            "Независимый перемещаемый конец можно выровнять перпендикулярно "
+            "ближайшей неподвижной линии без соединения с ней."
+        ),
+        "A free end of an isolated line can follow its original vector "
+        "within the guide tolerance.": (
+            "Свободный конец отдельной линии можно перемещать вдоль её исходного "
+            "вектора в пределах допуска направляющих."
+        ),
+        "Contour selection": "Выделение контуров",
+        "Double-click a line to select only its connected contour. "
+        "Double-click empty space to clear selection. "
+        "Single clicks keep the current selection for moving.": (
+            "Двойной клик по линии выделяет только её связанный контур. "
+            "Двойной клик по пустому месту снимает выделение. "
+            "Одиночные клики сохраняют текущий выбор для перемещения."
+        ),
+        "Double-click: select only this contour; empty space clears selection, when enabled.": (
+            "Двойной клик: выделить только этот контур; по пустому месту - снять выделение, "
+            "если это включено в настройках."
+        ),
+        "Contours are available; select lines to move.": (
+            "В наборе есть контуры; выберите линии для перемещения."
+        ),
+        "Create an empty project with one dataset. Unsaved changes can be saved first.": (
+            "Создать пустой проект с одним набором. Несохранённые изменения можно сохранить."
+        ),
+        "No gesture or export is in progress.": "Нет активного жеста или экспорта.",
         "Discard": "Не сохранять",
         "Dismiss": "Закрыть",
         "&Dismiss": "&Закрыть",

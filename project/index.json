@@ -100,6 +100,7 @@
     "raster_cut_transforms": "src/dale/raster_transform.py",
     "raster_transform_tests": "tests/test_raster_transform.py",
     "alignment_panel_tests": "tests/test_alignment_panels.py",
+    "contour_scale_tests": "tests/test_contour_scale.py",
     "arbitrary_angle_guides": "src/dale/extension_guides.py",
     "guide_center_exclusivity_tests": "tests/test_extension_guides.py",
     "main_view_scroll_and_copy_tests": "tests/test_main_view_panels.py",

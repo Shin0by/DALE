@@ -146,7 +146,7 @@ def tool_icon(name):
         line((3, 8), (6, 11))
         line((20, 8), (17, 5))
         line((20, 8), (17, 11))
-    elif name == "Scale raster regions":
+    elif name in ("Scale raster regions", "Scale figures"):
         painter.drawRect(QRectF(3, 10, 11, 11))
         line((9, 15), (21, 3))
         line((15, 3), (21, 3))
@@ -525,6 +525,7 @@ class SizedToolButton(QToolButton):
             "Raster artwork offset": "Artwork offset (px)",
         }.get(tool_name, tool_name)
         value_help = {
+            "Scale figures": "Number: contour scaling step, in percent. Shared with Move contours.",
             "Figure extension alignment": (
                 "Number: perpendicular distance to a virtual line, in screen pixels."
             ),

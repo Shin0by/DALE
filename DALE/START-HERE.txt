@@ -1,5 +1,14 @@
 Dungeon Alchemist Levels Export
 
+Contours has a Scale contours button with a percent step field below its icon (1..100, default5). Wheel scales the selected contours; Ctrl+wheel changes the step. Move contours uses the same step for Ctrl+wheel scaling. Without selection, its cursor is a pointing finger; with selection, an open hand.
+В «Контурах» появилась кнопка «Масштабирование контуров» с полем шага в процентах под иконкой (1..100, по умолчанию5). Колесо масштабирует выбранные контуры; Ctrl+колесо меняет шаг. «Перемещение контуров» использует этот же шаг для Ctrl+колеса. Без выделения его курсор - указательный палец, с выделением - открытая ладонь.
+
+Move contours has a right-click Select contour by double-click option, enabled by default and saved per dataset. Double-click selects only the hit contour; double-click empty space clears all selection. Single clicks retain selection. Native image tiles keep loading during drawing, dragging and painting. Alt angles can use a nearby stationary line without joining it; Alt contour guides can extend/shorten a lone free edge along its original vector. The line eraser recognizes projected T contacts at the same roundoff tolerance as closed regions.
+У «Перемещения контуров» добавлена настройка «Выделять контур двойным кликом», изначально включённая и сохраняемая для набора. Двойной клик выделяет только указанный контур; двойной клик по пустому месту снимает всё выделение. Одиночный клик сохраняет выбор. Изображение в исходном разрешении подгружается во время рисования, перетаскивания и работы кистью. Углы с Alt используют соседнюю неподвижную линию без соединения с ней; направляющие с Alt позволяют удлинять или укорачивать отдельную линию вдоль её исходного вектора. Ластик распознаёт спроецированные T-касания с тем же допуском погрешности, что и замкнутые области.
+
+File starts with New project (Ctrl+N): create an empty project with one dataset after saving or discarding current changes. Cancel keeps the current project. Dataset manager remains on its toolbar button and Ctrl+I; it is no longer in File.
+Первый пункт меню «Файл» - «Новый проект» (Ctrl+N): создать пустой проект с одним набором после сохранения текущих изменений или отказа от сохранения. Отмена сохраняет текущий проект. Менеджер наборов доступен по кнопке на панели и Ctrl+I; из меню «Файл» он убран.
+
 Scene grid has a white toolbar icon. Right-click settings provide transparency0..100% and line thickness1..16 screen pixels, saved per dataset for all modes. These options affect only the overlay.
 Иконка «Сетки» белая. В настройках по правому клику доступны прозрачность0..100% и толщина линий1..16 экранных пикселей. Значения сохраняются для набора во всех режимах и влияют только на отображение сетки.
 
@@ -67,8 +76,8 @@ Regions: select a figure and press Del or click Delete region (eraser icon). Onl
 Contours: Del or Edit > Delete contours removes exactly the selected line IDs, including open/disconnected selections. Unselected crossing/coincident lines and raster stay in place. Ctrl+Z undoes; Ctrl+Y redoes. Delete in text/numeric fields edits their text. Finish/cancel gestures first.
 «Контуры»: Del или «Правка > Удалить контуры» удаляет только выбранные отрезки, включая незамкнутые и несвязанные. Невыбранные пересекающие или совпадающие линии и растр сохраняются. Ctrl+Z - отмена, Ctrl+Y - повтор. Del в поле ввода редактирует текст. Сначала завершите или отмените текущее действие.
 
-Double-click selects the contour hit by the first click, even with slight pointer movement at crossings. Earlier intentional selections remain; selection creates no geometry or copies.
-Двойной клик выбирает контур по первому щелчку, даже при небольшом сдвиге курсора у пересечения. Прежнее выделение сохраняется; выбор не создаёт линии или копии.
+Double-click selects the contour hit by the first click, even with slight pointer movement at crossings. Select contours retains earlier intentional selections; Move contours replaces them with the hit contour or clears them on empty space. Selection creates no geometry or copies.
+Двойной клик выбирает контур по первому щелчку, даже при небольшом сдвиге курсора у пересечения. «Выбор контуров» сохраняет прежнее выделение; «Перемещение контуров» заменяет его указанным контуром или снимает по пустому месту. Выбор не создаёт линии или копии.
 
 Alignment switches in Vertices, Contours and Regions are independent and saved in the project. Each section applies its own point/guide flags. Numeric tolerances remain shared; hold Alt to use enabled alignment rules.
 Переключатели привязки в «Вершинах», «Контурах» и «Областях» независимы и сохраняются в проекте. Каждый раздел применяет свои состояния кнопок. Числовые допуски общие; привязка действует с Alt.

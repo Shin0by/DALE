@@ -313,7 +313,7 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         ]
 
     assert keys(window.file_menu) == [
-        "Dataset manager…",
+        "New project",
         "Open project",
         "Recent projects",
         "Save project",
@@ -339,6 +339,18 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
         window.set_language(language, persist=False)
+        assert window.file_menu.actions()[0] == window.new_project_action
+        assert window.new_project_action.text() == (
+            "Новый проект" if language == "ru" else "New project"
+        )
+        assert window.new_project_action.shortcut() == QKeySequence(QKeySequence.StandardKey.New)
+        assert window.new_project_action.toolTip().splitlines()[0] == (
+            window.new_project_action.text()
+        )
+        assert "Ctrl+N:" in window.new_project_action.toolTip()
+        assert window.manager_action not in window.file_menu.actions()
+        assert window.manager_action in window.actions()
+        assert window.manager_action.shortcut() == QKeySequence("Ctrl+I")
         save_as = next(
             a
             for a in window.file_menu.actions()
@@ -1788,6 +1800,8 @@ def test_new_line_press_release_and_later_vertex_drag_snap_to_existing_geometry(
     assert ((50, 50), (150, 120)) in view.session.walls
     view.set_mode("Edit points")
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(150, 120))
+    QTest.mouseMove(view.viewport(), view.mapFromScene(149, 135))
+    assert view.snap is None  # A moving T leg cannot snap to its own old supporting line.
     QTest.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(149, 149))
     assert ((50, 50), (150, 150)) in view.session.walls
     view.session.undo()
@@ -1993,6 +2007,7 @@ def test_global_tool_values_copy_and_restore_every_numeric_button_after_restart(
     window = MainWindow(preferences_path=path)
     expected = {
         "circle_detail_steps": 7,
+        "figure_scale_step_percent": 12,
         "line_eraser_diameter": 31,
         "vertex_eraser_diameter": 47,
         "raster_erase_diameter": 59,

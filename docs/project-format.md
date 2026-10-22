@@ -1,5 +1,7 @@
 # DALE project schema7
 
+Optional UI figure_scale_step_percent is a strict integer1..100, default5, shared by Scale contours and Move contours scaling. It follows the existing per-dataset/project numeric values and global override rules. Internal Scale figures is a valid editing mode. No new archive member or schema version is required.
+
 ADR-028 extends native wall editing beyond ADR-021 coordinate repair. Original JSON remains an exact immutable member; export writes a separate copy with every byte outside the root walls array preserved.
 
 Current scope: single-scene contour/PNG editing with full source-wall edits and native-preserving export (ADR-028). Only schema7 is supported; reject older/unknown schemas without migrations. No authored levels/presets/portals.

@@ -31,9 +31,11 @@ from dale.connections import components, cut_contacts, groups, isolate, join, po
 from dale.editing import (
     GuideTargets,
     LineEraser,
+    StationaryTargets,
     add_circle,
     add_line,
     add_rectangle,
+    align_along_vector,
     align_orthogonal_point,
     alignment_points,
     circle_points,
@@ -47,6 +49,7 @@ from dale.editing import (
     project,
     rectangle_points,
     right_angle_constraints,
+    right_angle_contact,
     right_angle_line,
     snap_constrained_point,
     snap_point,
@@ -89,7 +92,7 @@ GEOMETRY_TOOLS = (
 )
 GEOMETRY_ERASERS = ("Erase lines", "Erase vertices")
 REGION_TOOLS = ("Select regions", "Move regions", "Rotate regions")
-FIGURE_TOOLS = ("Select figures", "Move figures", "Rotate figures")
+FIGURE_TOOLS = ("Select figures", "Move figures", "Rotate figures", "Scale figures")
 RASTER_TRANSFORM_TOOLS = ("Move raster regions", "Rotate raster regions", "Scale raster regions")
 TRANSFORM_TOOLS = (*REGION_TOOLS, *FIGURE_TOOLS, *RASTER_TRANSFORM_TOOLS)
 MOVE_TOOLS = ("Move regions", "Move figures", "Move raster regions")
@@ -241,6 +244,11 @@ class MapView(QGraphicsView):
         self.figure_pivot = None
         self.figure_pivot_edges = ()
         self.figure_click = None
+        self.figure_move_origin = None
+        self.figure_move_double_click = True
+        self.figure_scale_step_percent = 5
+        self.point_snap_geometry = self.point_snap_targets = None
+        self.drag_vector = self.vector_guide = None
         self.contour_line_ids = ()
         self.contour_selection_context = True
         self.selection_start = self.selection_screen = self.selection_rect = None
@@ -579,9 +587,7 @@ class MapView(QGraphicsView):
     def update_image(self):
         if not self.session:
             return
-        operations = list(self.display_raster_operations())
-        if self.stroke:
-            operations = operations + [self.brush_stroke()]
+        operations = self.preview_raster_operations()
         key = self.session.source.size, tuple(operations)
         if key == self.raster_key:
             self.viewport().update()
@@ -627,6 +633,10 @@ class MapView(QGraphicsView):
             operations = list(overlay_operations(tuple(operations), area))
         return tuple(operations)
 
+    def preview_raster_operations(self):
+        operations = self.display_raster_operations()
+        return (*operations, self.brush_stroke()) if self.stroke else operations
+
     def raster_geometry(self, geometry, plan, **values):
         if self.mode not in RASTER_TRANSFORM_TOOLS:
             return geometry
@@ -660,20 +670,32 @@ class MapView(QGraphicsView):
     def set_mode(self, mode):
         self.cancel_pending()
         self.mode = mode
-        self.setCursor(
-            Qt.CursorShape.OpenHandCursor
-            if mode in ("Pan", *MOVE_TOOLS)
-            else Qt.CursorShape.PointingHandCursor
-            if mode in SELECTION_TOOLS
-            else Qt.CursorShape.CrossCursor
-        )
+        self.setCursor(self.idle_cursor())
         self.update_hover()
         self.viewport().update()
+
+    def idle_cursor(self):
+        if self.mode == "Move figures" and not self.figure_line_ids:
+            return Qt.CursorShape.PointingHandCursor
+        return (
+            Qt.CursorShape.OpenHandCursor
+            if self.mode in ("Pan", *MOVE_TOOLS)
+            else Qt.CursorShape.PointingHandCursor
+            if self.mode in SELECTION_TOOLS
+            else Qt.CursorShape.CrossCursor
+        )
+
+    def update_move_cursor(self):
+        if self.mode == "Move figures" and not self.panning and self.region_drag_start is None:
+            self.setCursor(self.idle_cursor())
 
     def cancel_pending(self):
         self.finish_rotation()
         self.raster_aids.cancel()
         self.figure_click = None
+        self.figure_move_origin = None
+        self.point_snap_geometry = self.point_snap_targets = None
+        self.drag_vector = self.vector_guide = None
         self.guide_targets = None
         self.extension_targets = self.extension_guide = self.object_center = None
         selecting = self.selection_start is not None
@@ -710,6 +732,7 @@ class MapView(QGraphicsView):
         self.circle_radius = self.circle_adjustment = 0.0
         if was_editing:
             self.refresh(render_image=was_raster_edit)
+        self.update_move_cursor()
         self.viewport().update()
 
     def _point(self, event):
@@ -720,6 +743,7 @@ class MapView(QGraphicsView):
         return self.image_rect.contains(QPointF(*point))
 
     def update_hover(self):
+        self.update_move_cursor()
         self.auto_close_plan = AutoClosePlan()
         self.eraser_vertices = ()
         edges = ()
@@ -902,6 +926,14 @@ class MapView(QGraphicsView):
         self.geometry_diameters[mode] = value
 
     def resize_tool(self, steps):
+        if self.mode == "Scale figures":
+            if steps:
+                increment = round(steps) or (1 if steps > 0 else -1)
+                self.figure_scale_step_percent = max(
+                    1, min(100, self.figure_scale_step_percent + increment)
+                )
+                self.size_changed.emit()
+            return
         if self.mode == "New circle":
             if self.circle_center is not None:
                 self.circle_adjustment += steps / max(self.transform().m11(), 1e-9)
@@ -911,7 +943,10 @@ class MapView(QGraphicsView):
                 self.viewport().update()
             return
         if self.mode in (*MOVE_TOOLS, "Scale raster regions"):
-            self.transform_regions(scale=1.05**steps)
+            factor = (
+                1 + self.figure_scale_step_percent / 100 if self.mode == "Move figures" else 1.05
+            )
+            self.transform_regions(scale=factor**steps)
             return
         if self.mode == "Auto-close":
             self.auto_close_distance = max(1, min(256, self.auto_close_distance + round(steps)))
@@ -1335,8 +1370,19 @@ class MapView(QGraphicsView):
         self.alignment_guides = ()
         self.angle_joint = None
         self.angle_joints = ()
+        self.vector_guide = None
+        stationary = self.point_snap_geometry
+        if stationary is None:
+            stationary = self.editing_geometry(self.drag_base)
         if self.axis_constrained:
             raw = destination
+            nearby = (
+                self.point_snap_targets.nearby(
+                    raw, max(self._snap_tolerance(), self._handle_tolerance())
+                )
+                if self.point_snap_targets is not None
+                else ()
+            )
             if self.contour_alignment:
                 destination, self.alignment_guides = self._axis_guides(
                     destination, self.alignment_anchors
@@ -1372,16 +1418,45 @@ class MapView(QGraphicsView):
                         }.items()
                     )
                 )
+                if not self.angle_joint and not self.alignment_guides:
+                    contact = right_angle_contact(
+                        raw,
+                        self.alignment_neighbours,
+                        nearby,
+                        self.right_angle_tolerance_deg,
+                        self.alignment_guides,
+                    )
+                    if contact is not None:
+                        destination, self.angle_joint = contact
+                        self.angle_joints = (self.angle_joint,)
+                        self.snap = destination
+                        return destination
+            if (
+                self.contour_alignment
+                and self.drag_vector is not None
+                and not nearby
+                and not self.alignment_guides
+                and not self.angle_joint
+            ):
+                target = align_along_vector(
+                    raw,
+                    self.drag_vector,
+                    self.contour_alignment_distance_px / max(self.transform().m11(), 1e-9),
+                )
+                if target is not None:
+                    self.vector_guide = self.drag_vector
+                    self.snap = target
+                    return target
             self.snap = destination if self.alignment_guides or self.angle_joint else None
             if self.snap is not None:
                 snapped = snap_constrained_point(
-                    self.editing_geometry(self.drag_base),
+                    stationary,
                     destination,
                     self._snap_tolerance(),
-                    exclude=self.drag_vertex,
                     guides=self.alignment_guides,
                     angle=self.angle_joint,
                     angles=self.angle_joints,
+                    anchors=self.alignment_neighbours,
                 )
                 if snapped is not None:
                     if self.angle_joint is not None:
@@ -1397,10 +1472,10 @@ class MapView(QGraphicsView):
             # Alt enables extra rules; an unmatched rule must not disable ordinary snapping.
         if math.dist(destination, self.drag_vertex) > 0.5 / self.transform().m11():
             self.snap = snap_point(
-                self.editing_geometry(self.drag_base),
+                stationary,
                 destination,
                 self._snap_tolerance(),
-                exclude=self.drag_vertex,
+                anchors=self.alignment_neighbours,
             )
             return self.snap or destination
         self.snap = None
@@ -1570,6 +1645,29 @@ class MapView(QGraphicsView):
                 intervals = tuple(intervals[i] for i in indices)
         self.alignment_geometry = geometry
         visible = self.editing_geometry(self.drag_base)
+        implicit_connections = self.connection_prompt is None and not any(groups(visible))
+        stationary = tuple(
+            i
+            for i, (edge, record) in enumerate(
+                zip(geometry_edges(visible.walls, visible.closures), visible.lineage, strict=True)
+            )
+            if not (
+                (implicit_connections or record.id in self.drag_component_ids)
+                and (
+                    math.dist(project(vertex, edge)[0], vertex) <= 1e-7
+                    if implicit_connections
+                    else any(math.dist(p, vertex) <= 1e-7 for p in edge)
+                )
+            )
+        )
+        self.point_snap_geometry = layer_geometry(visible, stationary)
+        self.point_snap_targets = StationaryTargets(self.point_snap_geometry)
+        own_edges = geometry_edges(geometry.walls, geometry.closures)
+        self.drag_vector = (
+            (max(own_edges[0], key=lambda p: math.dist(p, vertex)), vertex)
+            if len(own_edges) == 1
+            else None
+        )
         self.guide_targets = GuideTargets(p for p in vertices(visible) if p != vertex)
         self.alignment_anchors = alignment_points(geometry, vertex, intervals)
         self.alignment_neighbours = alignment_points(
@@ -1588,6 +1686,7 @@ class MapView(QGraphicsView):
             "after": self.figure_line_ids,
             "pivot": self.figure_pivot,
             "session": self.session,
+            "mode": self.mode,
             "geometry": self.geometry_key,
             "transform": self.transform(),
             "point": self.mapFromScene(*point),
@@ -1602,6 +1701,7 @@ class MapView(QGraphicsView):
         delta = screen.toPoint() - first["point"]
         if (
             self.session is first["session"]
+            and self.mode == first["mode"]
             and self.geometry_key == first["geometry"]
             and self.transform() == first["transform"]
             and self.figure_line_ids == first["after"]
@@ -1615,6 +1715,7 @@ class MapView(QGraphicsView):
     def mousePressEvent(self, event):
         self.finish_rotation()
         self.figure_click = None
+        self.figure_move_origin = None
         if event.button() == Qt.MouseButton.RightButton or (
             event.button() == Qt.MouseButton.LeftButton and self.mode == "Pan"
         ):
@@ -1712,7 +1813,11 @@ class MapView(QGraphicsView):
                 )
                 self.region_original_path = QPainterPath(self.selected_path)
                 self.region_translation = (0, 0)
+                if self.mode == "Move figures" and self.figure_move_double_click:
+                    self.figure_move_origin = event.position()
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            if self.mode == "Move figures" and self.figure_move_double_click:
+                self.figure_clicked.emit({"point": point, "remember_only": True})
             event.accept()
             return
         if self.mode in SELECTION_TOOLS:
@@ -1835,6 +1940,16 @@ class MapView(QGraphicsView):
             event.accept()
             return
         if self.mode in MOVE_TOOLS and self.region_drag_start is not None:
+            if self.figure_move_origin is not None:
+                delta = event.position() - self.figure_move_origin
+                if (
+                    math.hypot(delta.x(), delta.y())
+                    <= QApplication.styleHints().mouseDoubleClickDistance()
+                ):
+                    event.accept()
+                    return
+                self.figure_move_origin = None
+                self.figure_click = None
             self._preview_region_move(point, event.modifiers())
             event.accept()
             return
@@ -1908,11 +2023,7 @@ class MapView(QGraphicsView):
         if self.panning and event.button() == self.pan_button:
             self.panning = False
             self.pan_button = None
-            self.setCursor(
-                Qt.CursorShape.OpenHandCursor
-                if self.mode in ("Pan", *MOVE_TOOLS)
-                else Qt.CursorShape.CrossCursor
-            )
+            self.setCursor(self.idle_cursor())
             self.cursor_point = self._point(event)
             self.update_hover()
             event.accept()
@@ -1996,6 +2107,22 @@ class MapView(QGraphicsView):
             return
         if self.region_drag_start is not None and event.button() == Qt.MouseButton.LeftButton:
             point = self._point(event)
+            if self.figure_move_origin is not None:
+                delta = event.position() - self.figure_move_origin
+                if (
+                    math.hypot(delta.x(), delta.y())
+                    <= QApplication.styleHints().mouseDoubleClickDistance()
+                ):
+                    first = self.figure_click
+                    self.cancel_pending()
+                    self.figure_click = first
+                    self.hover_object_center(point)
+                    self._hover_region_anchor(point)
+                    self.setCursor(self.idle_cursor())
+                    event.accept()
+                    return
+                self.figure_move_origin = None
+                self.figure_click = None
             self._preview_region_move(point, event.modifiers())
             dx, dy = self.region_translation
             plan = self.region_plan
@@ -2026,7 +2153,7 @@ class MapView(QGraphicsView):
             self.refresh(render_image=self.mode in RASTER_TRANSFORM_TOOLS)
             self.hover_object_center(point)
             self._hover_region_anchor(point)
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            self.setCursor(self.idle_cursor())
             event.accept()
             return
         if self.drag_base is not None and event.button() == Qt.MouseButton.LeftButton:
@@ -2043,6 +2170,8 @@ class MapView(QGraphicsView):
             original = self.drag_original
             self.edit_preview = self.drag_base = self.drag_original = self.drag_vertex = None
             self.drag_offset = None
+            self.point_snap_geometry = self.point_snap_targets = None
+            self.drag_vector = self.vector_guide = None
             self.alignment_neighbours = self.alignment_anchors = self.alignment_guides = ()
             self.alignment_geometry = None
             self.guide_targets = None
@@ -2129,7 +2258,10 @@ class MapView(QGraphicsView):
         self.viewport().update()
 
     def mouseDoubleClickEvent(self, event):
-        if self.mode == "Select figures" and event.button() == Qt.MouseButton.LeftButton:
+        if (
+            self.mode == "Select figures"
+            or (self.mode == "Move figures" and self.figure_move_double_click)
+        ) and event.button() == Qt.MouseButton.LeftButton:
             first = self._figure_double_click(event.position())
             self.cancel_pending()
             self.figure_clicked.emit(
@@ -2173,6 +2305,14 @@ class MapView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def wheelEvent(self, event):
+        if self.mode == "Scale figures":
+            steps = event.angleDelta().y() / 120
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.resize_tool(steps)
+            else:
+                self.scale_figures(steps)
+            event.accept()
+            return
         if self.mode == "Scale raster regions":
             self.transform_regions(scale=1.05 ** (event.angleDelta().y() / 120))
             event.accept()
@@ -2211,6 +2351,10 @@ class MapView(QGraphicsView):
             self.cursor_point = self._point(event)
             self.update_hover()
         event.accept()
+
+    def scale_figures(self, steps):
+        if steps:
+            self.transform_regions(scale=(1 + self.figure_scale_step_percent / 100) ** steps)
 
     def leaveEvent(self, event):
         if not self.active_gesture and not self.panning and not self.auto_close_review:
@@ -2493,6 +2637,8 @@ class MapView(QGraphicsView):
                     a[other] = min(anchor[other], destination[other]) - margin
                     b[other] = max(anchor[other], destination[other]) + margin
                     painter.drawPath(line_path(((a, b),)))
+                if self.vector_guide is not None:
+                    painter.drawPath(line_path(((self.vector_guide[0], destination),)))
                 painter.restore()
             if self.angle_joint is not None:
                 joints = (

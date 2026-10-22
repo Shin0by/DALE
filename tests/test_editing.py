@@ -589,6 +589,46 @@ def test_line_eraser_removes_middle_between_multiple_intersections_and_coalesces
     assert middle.walls == (((0, 0), (30, 0)), ((70, 0), (100, 0)))
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_line_eraser_reconciles_projected_t_contacts_without_moving_other_owners(reverse):
+    from dale.editing import project
+
+    target = ((39.9832, 182.7731), (1101.3927, 519.2221))
+    corner = (334.2481, 702.3419)
+    for index in range(20, 181):
+        cursor = tuple(target[0][i] + (target[1][i] - target[0][i]) * index / 200 for i in (0, 1))
+        endpoint, _ = project((cursor[0] - 2, cursor[1] + 3), target)
+        edge = target[::-1] if reverse else target
+        geometry = GeometryEdit((edge, (target[0], corner), (corner, endpoint)))
+        eraser = LineEraser(geometry)
+        assert len(eraser._parts(0)) == 2
+        point = tuple((target[1][i] + endpoint[i]) / 2 for i in (0, 1))
+        targets = eraser.targets(point, point, 0.001)
+        assert len(targets) == 1 and targets[0][0] == 0
+        changed = eraser.erase(targets)
+        assert len(changed.walls) == 3
+        assert changed.walls[1:] == geometry.walls[1:]
+        assert changed.lineage[1:] == geometry.lineage[1:]
+        assert changed.lineage[0].parents == (geometry.lineage[0].id,)
+
+
+def test_line_eraser_does_not_split_at_real_gaps_or_separate_parallel_edges():
+    for other in (((30, 1e-5), (50, 20)), ((30, 1e-8), (70, 1e-8))):
+        geometry = GeometryEdit((((0, 0), (100, 0)), other))
+        assert LineEraser(geometry)._parts(0) == (geometry.walls[0],)
+
+
+@pytest.mark.parametrize("end", [(10, 0), (10, 20)])
+def test_virtual_contact_angle_accepts_a_perpendicular_at_a_segment_endpoint(end):
+    from dale.editing import right_angle_contact
+
+    anchor = (0, end[1])
+    edge = ((10, 0), (10, 20))
+    result = right_angle_contact((10, end[1] + 0.1), (anchor,), (edge,), 2)
+    assert result is not None and result[0] == end
+    assert right_angle_contact((10, 5), ((0, -10),), (edge,), 90) is None
+
+
 def test_line_eraser_closure_uses_the_same_partition_and_explicit_source_parent():
     path = ((0, 0), (100, 0), (100, 80), (0, 80))
     crossing = ((30, -20), (30, 100))

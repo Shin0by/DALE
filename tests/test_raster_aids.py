@@ -9,6 +9,7 @@ from PySide6.QtGui import QMouseEvent, QTransform
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
+from dale.canvas import FIGURE_TOOLS, GEOMETRY_TOOLS, RASTER_TRANSFORM_TOOLS, REGION_TOOLS
 from dale.measurement import grid_positions, measurement_scale, measurement_settings
 from dale.ui import MainWindow, configure_application
 
@@ -477,6 +478,135 @@ def test_native_cache_survives_geometry_drag_and_cleans_on_source_switch(window,
     view.drag_base = None
     view.assign(view.session, view.preview)
     assert not directory.exists() and controller.worker is None and controller.decoded is None
+
+
+@pytest.mark.parametrize("route", ["center", "scrollbars", "zoom"])
+def test_native_tiles_follow_viewport_while_new_line_is_held(window, pair_factory, route):
+    source = pair_factory(size=(1800, 1200))
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    view.preview = view.preview.resize((180, 120))
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(250, 250)
+    window.native_resolution_action.trigger()
+    native = view.native_preview
+    wait_for(lambda: bool(native.items) and not view.item.isVisible())
+    original_tiles = native.wanted
+    original = view.session.geometry()
+    window.activate_mode("New line")
+    QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(200, 200))
+    assert view.line_start is not None and view.active_gesture
+    if route == "center":
+        view.centerOn(1400, 800)
+        assert view.item.isVisible()  # Never expose an uncovered native tile while loading.
+    elif route == "scrollbars":
+        horizontal, vertical = view.horizontalScrollBar(), view.verticalScrollBar()
+        horizontal.setValue(horizontal.value() + 1100)
+        vertical.setValue(vertical.value() + 650)
+    else:
+        view.setTransform(QTransform.fromScale(0.4, 0.4))
+    wait_for(
+        lambda: (
+            native.wanted != original_tiles
+            and bool(native.items)
+            and not view.item.isVisible()
+            and all(tile in native.items for tile in native.wanted)
+        )
+    )
+    assert view.line_start is not None and view.active_gesture
+    assert view.session.geometry() == original and not view.session.operations
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "Pan",
+        *GEOMETRY_TOOLS,
+        *FIGURE_TOOLS,
+        *REGION_TOOLS,
+        "Select raster regions",
+        *RASTER_TRANSFORM_TOOLS,
+        "Erase",
+        "Erase square",
+        "Restore",
+        "Restore square",
+    ],
+)
+def test_native_tiles_load_during_right_pan_in_every_tool(window, pair_factory, mode):
+    source = pair_factory(
+        size=(1800, 1200),
+        walls=[
+            {"c": c}
+            for c in (
+                [100, 100, 500, 100],
+                [500, 100, 500, 500],
+                [500, 500, 100, 500],
+                [100, 500, 100, 100],
+            )
+        ],
+    )
+    assert window.load_sources(source.image_path, source.json_path)
+    view = window.view
+    view.preview = view.preview.resize((180, 120))
+    if mode in FIGURE_TOOLS:
+        window.activate_mode("Select figures")
+        view.figure_line_ids = tuple(r.id for r in view.session.geometry().lineage)
+    elif mode in (*REGION_TOOLS, *RASTER_TRANSFORM_TOOLS):
+        window.activate_mode(
+            "Select raster regions" if mode in RASTER_TRANSFORM_TOOLS else "Select regions"
+        )
+        window.selected_regions = (0,)
+    window.update_map_info()
+    window.activate_mode(mode)
+    assert view.mode == mode
+    view.setTransform(QTransform.fromScale(1, 1))
+    view.centerOn(250, 250)
+    window.native_resolution_action.trigger()
+    native = view.native_preview
+    wait_for(lambda: bool(native.items) and not view.item.isVisible())
+    original_tiles = native.wanted
+    original = view.session.geometry()
+    if mode not in (
+        "Auto-close",
+        "Rotate figures",
+        "Rotate regions",
+        "Rotate raster regions",
+        "Scale raster regions",
+    ):
+        point = (
+            (100, 100) if mode in ("Edit points", "Erase lines", "Erase vertices") else (200, 200)
+        )
+        QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, pos=view.mapFromScene(*point))
+    gesture = view.active_gesture
+    start = view.viewport().rect().center()
+    QTest.mousePress(view.viewport(), Qt.MouseButton.RightButton, pos=start)
+    position = QPointF(-1500, -750)
+    QApplication.sendEvent(
+        view.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseMove,
+            position,
+            QPointF(view.viewport().mapToGlobal(position.toPoint())),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.RightButton | Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    wait_for(
+        lambda: (
+            native.wanted != original_tiles
+            and bool(native.items)
+            and not view.item.isVisible()
+            and all(tile in native.items for tile in native.wanted)
+        )
+    )
+    assert view.panning and view.active_gesture == gesture
+    assert native.base[-1] == view.preview_raster_operations()
+    assert view.session.geometry() == original and not view.session.operations
+    QTest.mouseRelease(view.viewport(), Qt.MouseButton.RightButton, pos=start)
+    QTest.keyClick(view, Qt.Key.Key_Escape)
+    assert view.session.geometry() == original and not view.session.operations
 
 
 def test_native_latest_request_restarts_after_zoom_changes(window, pair_factory, monkeypatch):

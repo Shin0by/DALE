@@ -1,4 +1,20 @@
+Cached object slices: Ctrl+wheel over Tree/Bush/Rock chooses0..10; -1 follows ground. A passive indicator appears while Ctrl is held. Import DAM with geometry to retain offline profiles. Entirely outside objects are omitted during import.
+Нарезка объектов: Ctrl+колесо над Деревом/Кустом/Камнем выбирает0..10; -1 соответствует земле. При Ctrl появляется пассивный индикатор. Импортируйте DAM с геометрией для сохранения проекций. При импорте исключаются объекты целиком за границами сцены.
+
 Dungeon Alchemist Levels Export
+
+Close or Escape cancels DA projection import safely before applying contours. Category settings grow downward to use available screen space; Apply/Cancel stay accessible.
+Крестик или Escape отменяет импорт проекций DA до применения контуров. Настройки категорий растягиваются вниз по доступному месту экрана; кнопки Применить/Отмена остаются доступны.
+
+Model projection now releases each decoded3D mesh promptly while reusing a stable reader for the batch. JSON-only DA projects reuse floor information without generating thousands of temporary height bands.
+Проекции освобождают данные каждой3D-модели после расчёта, сохраняя стабильный загрузчик на серию моделей. Проекты DA без картинки используют сведения об этажах без создания тысяч временных диапазонов высоты.
+
+DAM11 maps with surface and underground terrain now import using each object's foundation level. Large contour sets save without duplicate vertex diagnostics. The top toolbar aligns with the left edge.
+Карты DAM11 с наземным и подземным рельефом импортируются с учётом уровня основания объекта. Большие наборы контуров сохраняются без дублирования диагностических данных вершин. Верхняя панель выровнена по левому краю.
+
+When attaching DAM, choose whether to load local model geometry. DALE caches ten height bands and chooses each object's ground/floor band. The import preview shows a shaded model over the projection without loading textures. Right-click each DA category for separate JSON wall settings; these do not change display filters. Global height normalization overrides category heights at export.
+При добавлении DAM можно загрузить локальную геометрию моделей. DALE сохраняет десять слоёв высоты и выбирает слой земли/этажа для каждого объекта. Во время загрузки видна модель поверх проекции без загрузки текстур. Правый клик по категории DA открывает отдельные параметры стен JSON, не связанные с фильтрами отображения. Общая нормализация высоты имеет приоритет над высотами категорий при экспорте.
+
 
 Contours has a Scale contours button with a percent step field below its icon (1..100, default5). Wheel scales the selected contours; Ctrl+wheel changes the step. Move contours uses the same step for Ctrl+wheel scaling. Without selection, its cursor is a pointing finger; with selection, an open hand.
 В «Контурах» появилась кнопка «Масштабирование контуров» с полем шага в процентах под иконкой (1..100, по умолчанию5). Колесо масштабирует выбранные контуры; Ctrl+колесо меняет шаг. «Перемещение контуров» использует этот же шаг для Ctrl+колеса. Без выделения его курсор - указательный палец, с выделением - открытая ладонь.

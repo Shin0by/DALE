@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QToolButton,
@@ -55,6 +56,8 @@ class ToolSettingsDialog(QDialog):
         connected_contours=None,
         own_angle_priority=None,
         include_json=None,
+        include_png=None,
+        merge_contours=None,
         group_naming=None,
         rotation_steps=(),
         circle_detail=None,
@@ -62,6 +65,13 @@ class ToolSettingsDialog(QDialog):
         raster_brush=None,
         background=None,
         figure_double_click=None,
+        individual_centers=None,
+        alchemist_minimum=None,
+        alchemist_height=None,
+        alchemist_slice=None,
+        alchemist_export=None,
+        json_contours=None,
+        height_normalization=None,
     ):
         super().__init__(parent)
         self.setObjectName("toolSettingsDialog")
@@ -89,6 +99,18 @@ class ToolSettingsDialog(QDialog):
         header.addWidget(caption, 1)
         header.addWidget(self.close_button)
         layout.addLayout(header)
+        section_layout = layout
+        if alchemist_export is not None:
+            scroll = QScrollArea(self)
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setMinimumHeight(320)
+            content = QWidget(scroll)
+            section_layout = QVBoxLayout(content)
+            section_layout.setContentsMargins(0, 0, 0, 0)
+            scroll.setWidget(content)
+            layout.addWidget(scroll, 1)
+            self.alchemist_scroll = scroll
         self.value = None
         self.default_action = None
         self.grid = None
@@ -100,10 +122,11 @@ class ToolSettingsDialog(QDialog):
         self.rotation_values = []
         self.circle_detail = None
         self.figure_double_click = None
+        self.individual_centers = None
 
         def section(title):
             group = QGroupBox(t(title), self)
-            layout.addWidget(group)
+            section_layout.addWidget(group)
             return QVBoxLayout(group)
 
         def color_control(block, key, initial, title, purpose, enabled=None):
@@ -137,6 +160,171 @@ class ToolSettingsDialog(QDialog):
             refresh_color()
             block.addWidget(button)
             return refresh_color
+
+        if alchemist_minimum is not None:
+            block = section("Minimum original size")
+            self.alchemist_minimum = QDoubleSpinBox(self)
+            self.alchemist_minimum.setObjectName("alchemistMinimum")
+            self.alchemist_minimum.setRange(0, 10000)
+            self.alchemist_minimum.setFixedWidth(112)
+            self.alchemist_minimum.setKeyboardTracking(False)
+            self.alchemist_minimum.setDecimals(2)
+            self.alchemist_minimum.setSingleStep(0.05)
+            self.alchemist_minimum.setValue(alchemist_minimum)
+            self.alchemist_minimum.setToolTip(
+                parent.control_help(
+                    (
+                        "Minimum original obstacle diameter in map cells. Zero includes all. "
+                        "Later contour edits and scaling do not change this filter. Lowering it "
+                        "restores filtered contours with their edits."
+                    ),
+                    title="Minimum original size",
+                )
+            )
+            block.addWidget(QLabel(t("Map cells; 0 includes all objects."), self))
+            block.addWidget(self.alchemist_minimum)
+
+        if alchemist_slice is not None:
+            block = section("Height slice")
+            self.alchemist_slice = QSpinBox(self)
+            self.alchemist_slice.setObjectName("alchemistSlice")
+            self.alchemist_slice.setRange(-1, 10)
+            self.alchemist_slice.setSpecialValueText(t("-1 Ground (automatic)"))
+            self.alchemist_slice.setValue(alchemist_slice)
+            self.alchemist_slice.setToolTip(
+                parent.control_help(
+                    "Normalized object height: 0 is its lowest point, 10 its highest. "
+                    "-1 follows the local ground or floor. Changing the slice replaces "
+                    "edited shapes with a cached projection.",
+                    title="Height slice",
+                )
+            )
+            block.addWidget(self.alchemist_slice)
+
+        if alchemist_height is not None:
+            block = section("Minimum height above surface")
+            self.alchemist_height = QSlider(Qt.Orientation.Horizontal, self)
+            self.alchemist_height.setObjectName("alchemistHeight")
+            self.alchemist_height.setRange(0, 10)
+            self.alchemist_height.setSingleStep(1)
+            self.alchemist_height.setPageStep(1)
+            self.alchemist_height.setTracking(False)
+            self.alchemist_height.setValue(alchemist_height)
+            self.alchemist_height.setToolTip(
+                parent.control_help(
+                    "Minimum original height from the local ground or floor to the object's top, "
+                    "in feet. Zero disables this filter. Shape edits and export height "
+                    "normalization do not change the measurement. Objects without a known height "
+                    "are included only at zero.",
+                    title="Minimum height above surface",
+                )
+            )
+            value_label = QLabel(self)
+
+            def update_height_label(*_):
+                value_label.setText(str(self.alchemist_height.sliderPosition()) + t(" ft"))
+
+            self.alchemist_height.valueChanged.connect(update_height_label)
+            self.alchemist_height.sliderMoved.connect(update_height_label)
+            update_height_label()
+            block.addWidget(QLabel(t("Feet; 0 includes all heights."), self))
+            block.addWidget(self.alchemist_height)
+            block.addWidget(value_label)
+            note = QLabel(
+                t("These filters affect all objects of this category, regardless of selection."),
+                self,
+            )
+            note.setWordWrap(True)
+            block.addWidget(note)
+
+        if alchemist_export is not None:
+            from dale.alchemist_export_ui import WallExportSettings
+
+            block = section("JSON wall settings")
+            self.wall_export = WallExportSettings(parent, alchemist_export, self)
+            block.addWidget(self.wall_export)
+            self.wall_export_error = QLabel(self)
+            self.wall_export_error.setWordWrap(True)
+            block.addWidget(self.wall_export_error)
+
+        if json_contours is not None:
+            block = section("Scene JSON contours")
+            self.json_contours = QComboBox(self)
+            self.json_contours.setObjectName("jsonContours")
+            for key, caption in (
+                ("all", "Export all"),
+                ("regular", "Export contours"),
+                ("combined", "Export contours and DA contours"),
+                ("alchemist", "Only DA contours"),
+            ):
+                self.json_contours.addItem(t(caption), key)
+            self.json_contours.setCurrentIndex(max(0, self.json_contours.findData(json_contours)))
+            self.json_contours.setToolTip(
+                parent.control_help(
+                    (
+                        "Choose contour sources in Scene JSON. All includes ordinary and "
+                        "visible DA contours. Hidden and size-filtered DA objects are never "
+                        "exported. Only DA contours also limits PNG regions to DA contours."
+                    ),
+                    title="Scene JSON contours",
+                )
+            )
+            block.addWidget(self.json_contours)
+
+        if height_normalization is not None:
+            from dale.export_height import HEIGHT_LIMIT_FT
+
+            block = section("Scene JSON heights")
+            self.normalize_height = QCheckBox(t("Height normalization"), self)
+            self.normalize_height.setObjectName("normalizeHeight")
+            self.normalize_height.setChecked(height_normalization[0])
+            self.normalize_height.setToolTip(
+                parent.control_help(
+                    "Assign the chosen base and top heights to every exported contour. "
+                    "Hidden DA contours stay excluded. Project heights and PNGs are unchanged.",
+                    title="Height normalization",
+                )
+            )
+            block.addWidget(self.normalize_height)
+            self.height_sliders = []
+            for attribute, title, initial, purpose in (
+                (
+                    "base_height",
+                    "Base height",
+                    height_normalization[1],
+                    "Lower contour height in feet; step: 1 foot.",
+                ),
+                (
+                    "top_height",
+                    "Top height",
+                    height_normalization[2],
+                    "Upper contour height in feet; step: 1 foot.",
+                ),
+            ):
+                block.addWidget(QLabel(t(title), self))
+                row = QHBoxLayout()
+                slider = QSlider(Qt.Orientation.Horizontal, self)
+                slider.setObjectName(attribute + "Slider")
+                editor = QSpinBox(self)
+                editor.setObjectName(attribute)
+                editor.setSuffix(t(" ft"))
+                for control in (slider, editor):
+                    control.setRange(-HEIGHT_LIMIT_FT, HEIGHT_LIMIT_FT)
+                    control.setSingleStep(1)
+                    control.setValue(initial)
+                    control.setEnabled(height_normalization[0])
+                    control.setToolTip(parent.control_help(purpose, title=title))
+                    self.normalize_height.toggled.connect(control.setEnabled)
+                slider.valueChanged.connect(editor.setValue)
+                editor.valueChanged.connect(slider.setValue)
+                row.addWidget(slider, 1)
+                row.addWidget(editor)
+                block.addLayout(row)
+                setattr(self, attribute, editor)
+                self.height_sliders.append(slider)
+            self.height_error = QLabel(t("Top height must be greater than base height."), self)
+            self.height_error.setWordWrap(True)
+            block.addWidget(self.height_error)
 
         if scene_grid is not None:
             block = section("Scene grid")
@@ -387,6 +575,20 @@ class ToolSettingsDialog(QDialog):
                     )
                 )
                 block.addWidget(self.neighbours)
+        if individual_centers is not None:
+            block = section("Transform center")
+            self.individual_centers = QCheckBox(t("Individual object centers"), self)
+            self.individual_centers.setObjectName("individualObjectCenters")
+            self.individual_centers.setChecked(individual_centers)
+            self.individual_centers.setToolTip(
+                parent.control_help(
+                    "Transform each selected object around its own contour center. "
+                    "When off, use the shared selection center. This setting applies only "
+                    "to this operation in the current mode and dataset.",
+                    title="Individual object centers",
+                )
+            )
+            block.addWidget(self.individual_centers)
         if figure_double_click is not None:
             block = section("Contour selection")
             self.figure_double_click = QCheckBox(t("Select contour by double-click"), self)
@@ -490,6 +692,18 @@ class ToolSettingsDialog(QDialog):
             block.addWidget(info)
         if include_json is not None:
             block = section("Export files")
+            if include_png is not None:
+                self.png_export = QCheckBox(t("Export PNG files"), self)
+                self.png_export.setObjectName("includePng")
+                self.png_export.setChecked(include_png)
+                self.png_export.setToolTip(
+                    parent.control_help(
+                        "Create images for exported regions. When off, skip image rendering "
+                        "and export only the Scene JSON.",
+                        title="Export PNG files",
+                    )
+                )
+                block.addWidget(self.png_export)
             self.json_export = QCheckBox(t("Export JSON files"), self)
             self.json_export.setObjectName("includeJson")
             self.json_export.setChecked(include_json)
@@ -501,6 +715,28 @@ class ToolSettingsDialog(QDialog):
                 )
             )
             block.addWidget(self.json_export)
+            if include_png is not None:
+                self.files_error = QLabel(t("Enable PNG or JSON export."), self)
+                self.files_error.setWordWrap(True)
+                block.addWidget(self.files_error)
+            if merge_contours is not None:
+                self.merge_contours = QCheckBox(t("Merge adjacent contours"), self)
+                self.merge_contours.setObjectName("mergeExportContours")
+                self.merge_contours.setChecked(merge_contours)
+                self.merge_contours.setToolTip(
+                    parent.control_help(
+                        "Only during export, combine adjacent selected regions into one PNG per "
+                        "group and remove their internal JSON lines. Keep the group perimeters "
+                        "and leave project contours unchanged.",
+                        title="Merge adjacent contours",
+                    )
+                )
+                block.addWidget(self.merge_contours)
+                if hasattr(self, "default_action"):
+                    self.default_action.setEnabled(not merge_contours)
+                    self.merge_contours.toggled.connect(
+                        lambda enabled: self.default_action.setEnabled(not enabled)
+                    )
             block = section("PNG naming")
             question = QLabel(t("Which name should a region matching a group use?"), self)
             question.setWordWrap(True)
@@ -540,6 +776,56 @@ class ToolSettingsDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+        if alchemist_export is not None:
+
+            def validate_wall_export():
+                try:
+                    self.wall_export.values()
+                    error = ""
+                except ValueError as exc:
+                    error = t(str(exc))
+                self.wall_export_error.setText(error)
+                self.wall_export_error.setVisible(bool(error))
+                self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(not error)
+
+            self.wall_export.changed.connect(validate_wall_export)
+            validate_wall_export()
+        if height_normalization is not None:
+
+            def validate_heights():
+                valid = (
+                    not self.normalize_height.isChecked()
+                    or self.base_height.value() < self.top_height.value()
+                )
+                self.height_error.setVisible(not valid)
+                files_valid = (
+                    not hasattr(self, "png_export")
+                    or self.png_export.isChecked()
+                    or self.json_export.isChecked()
+                )
+                self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
+                    valid and files_valid
+                )
+
+            self.normalize_height.toggled.connect(validate_heights)
+            self.base_height.valueChanged.connect(validate_heights)
+            self.top_height.valueChanged.connect(validate_heights)
+            validate_heights()
+        if include_png is not None:
+
+            def validate_files():
+                valid = self.png_export.isChecked() or self.json_export.isChecked()
+                self.files_error.setVisible(not valid)
+                if hasattr(self, "grid"):
+                    self.grid.setEnabled(self.png_export.isChecked())
+                if height_normalization is not None:
+                    validate_heights()
+                else:
+                    self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(valid)
+
+            self.png_export.toggled.connect(validate_files)
+            self.json_export.toggled.connect(validate_files)
+            validate_files()
         self.setMinimumWidth(360)
         self.resize(416, max(self.sizeHint().height(), layout.totalHeightForWidth(416)))
 

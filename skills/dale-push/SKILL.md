@@ -33,6 +33,14 @@ treat updating this skill as confirmation; after a changed plan ask again.
 
 ## Workflow
 
+Before every release plan, update the bilingual README for the current functionality,
+review or replace its actual English UI screenshots, and rebuild `docs/DALE-guide.pdf`
+from the same article with `tools/build_article.py`. Follow `docs/article-maintenance.md`;
+inspect all rendered pages. Commit the article, images, PDF and fingerprint manifest
+with the release. The helper checks their version and hashes during release planning
+and again before pushing; missing/stale documentation blocks release. This does not
+authorize an additional push, a new build or any remote cleanup by itself.
+
 Canonical implementation: `skills/dale-push/scripts/push.py` in the checkout. Use the repository copy so versioned policy and hook agree. The installed copy is available for discovery; do not run a stale installed helper against newer repository rules.
 
 1. Inspect status, current branch, origin, ignored/private files, commits and relevant checks. Finish authorized work, validate it, rebuild the portable package if needed, and commit intended changes locally. Track the owner-approved complete DALE runtime; keep UserData, cache, private examples/projects, release ZIPs and other generated evidence ignored. A clean working tree is required. Never expose credentials.

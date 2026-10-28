@@ -459,6 +459,8 @@ class SceneCatalog:
         )
 
     def encode(self):
+        from dale.selection_storage import pack_selection
+
         return {
             "version": 1,
             "base_name": self.views[self.base_key].name,
@@ -481,7 +483,7 @@ class SceneCatalog:
                             if view.session.history_floor
                             else {}
                         ),
-                        "ui": view.ui,
+                        "ui": pack_selection(view.ui, view.session),
                     },
                 }
                 for key, view in self.views.items()

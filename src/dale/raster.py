@@ -24,7 +24,7 @@ STRIPE_ROWS = 128
 ALPHA_FILTER_HALO = 2
 
 
-class ExportCancelled(Exception):
+class ExportCancelled(InterruptedError):
     pass
 
 
@@ -153,13 +153,19 @@ def _alpha_tile(native_size, operations, top, left, scale):
     return alpha.crop((halo, halo, halo + width, halo + height))
 
 
-def render_export_alpha(size, native_size, operations, top=0, left=0, *, scale=(1, 1)):
+def render_export_alpha(
+    size, native_size, operations, top=0, left=0, *, scale=(1, 1), cancelled=None
+):
     """Shared globally anchored 2x/bicubic alpha for previews, crops and stripes."""
     result = Image.new("L", size)
     for y in range(math.floor(top / 256) * 256, math.ceil((top + size[1]) / 256) * 256, 256):
         for x in range(math.floor(left / 256) * 256, math.ceil((left + size[0]) / 256) * 256, 256):
+            if cancelled and cancelled():
+                raise ExportCancelled("PNG export cancelled.")
             tile = _alpha_tile(tuple(native_size), tuple(operations), y, x, tuple(scale))
             result.paste(tile, (round(x - left), round(y - top)))
+    if cancelled and cancelled():
+        raise ExportCancelled("PNG export cancelled.")
     return result
 
 
@@ -187,6 +193,7 @@ def _alpha_bounds_rows(native_size, operations, crop, cancelled, original):
                 operations,
                 (left, row, right, min(bottom, row + STRIPE_ROWS)),
                 (right - left, min(STRIPE_ROWS, bottom - row)),
+                cancelled=cancelled,
             ).getchannel("A")
         else:
             alpha = render_export_alpha(
@@ -195,6 +202,7 @@ def _alpha_bounds_rows(native_size, operations, crop, cancelled, original):
                 operations,
                 top=row,
                 left=left,
+                cancelled=cancelled,
             )
         if (
             not transformed
@@ -318,6 +326,7 @@ def export_png(
                             operations,
                             stripe_box,
                             stripe.size,
+                            cancelled=cancelled,
                         )
                         alpha = stripe.getchannel("A")
                     else:
@@ -327,6 +336,7 @@ def export_png(
                             operations,
                             top=origin_y + top,
                             left=left,
+                            cancelled=cancelled,
                         )
                         alpha = ImageChops.multiply(alpha, stripe.getchannel("A"))
                     visible = visible or alpha.getextrema()[1] > 0

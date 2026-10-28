@@ -38,8 +38,13 @@ def test_static_image_only_project_keeps_exact_source_bytes_and_manual_geometry(
         assert restored.source.image_path.read_bytes() == source_bytes
         assert restored.source.json_path is None
         assert restored.geometry() == session.geometry()
-        assert restored.operations == session.operations and restored.future == session.future
-        assert restored.operations[-1].boundary.equals(session.operations[-1].boundary)
+        assert len(restored.operations) == restored.history_floor and not restored.future
+        mask = next(op for op in restored.operations if isinstance(op, ContourMask))
+        assert mask.boundary.equals(session.operations[-1].boundary)
+        with Image.open(restored.source.image_path) as source_image:
+            restored_pixels = render_preview(source_image, source_image.size, restored.operations)
+            original_pixels = render_preview(source_image, source_image.size, session.operations)
+            assert restored_pixels.tobytes() == original_pixels.tobytes()
         folder = export_overlays(restored, tmp_path)
         item = json.loads(next(folder.glob("*-placement.json")).read_text())["items"][0]
         with Image.open(folder / item["file"]) as png:

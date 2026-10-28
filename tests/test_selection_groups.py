@@ -845,6 +845,7 @@ def test_existing_unscoped_groups_belong_only_to_regions():
         "figures": None,
         "regions": group.id,
         "pixels": None,
+        "alchemist": None,
     }
     assert group_ui_state(state) == state
 
@@ -1377,4 +1378,4 @@ def test_real_marquee_plus_colors_all_rotated_cells_including_largest(
     assert repaired_json_bytes(window.view.session) == native
     assert source.image_path.read_bytes() == pixels
     assert all(isinstance(op, RasterSelectionEdit) for op in window.view.session.operations)
-    assert len(window.view.session.operations) == (1 if mode == "Select raster regions" else 0)
+    assert not window.view.session.operations

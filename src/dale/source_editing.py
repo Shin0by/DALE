@@ -30,7 +30,11 @@ class SourceLayer:
         return f"{label(self.bottom, '-∞')} - {label(self.top, '+∞')}"
 
 
-def source_layers(source, geometry, documents=()):
+def source_layers(source, geometry, documents=(), *, alchemist=None):
+    if alchemist is not None:
+        from dale.alchemist import height_layers
+
+        return height_layers(source, flat_geometry(geometry), documents, alchemist)
     geometry = flat_geometry(geometry)
     intervals, ambiguous = wall_intervals(source, geometry, documents)
     bands, _ = infer_layers(source, geometry, documents)

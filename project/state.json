@@ -1,11 +1,59 @@
 {
   "schema_version": 1,
-  "updated": "2026-10-21",
-  "phase": "contour_scale_portable_verified",
+  "updated": "2026-10-28",
+  "phase": "release_article_ready_for_guarded_publication",
   "product": "DALE",
   "communication_language": "ru",
   "technical_language": "en",
   "decisions": [
+    "ADR-141 / FR-204: owner requests development and release pushes, followed by an updated illustrated article and matching repository PDF maintained at release. Prepare a combined validated publication; release still requires separate confirmation of its concrete commit. Keep private examples unchanged.",
+    "ADR-139 / FR-202: owner confirms DA-only scope for JSON and PNG and requests independent PNG output. Preserve immutable export and native data, no push.",
+    "ADR-140 / FR-203: reproduce and reset the empty-placeholder camera; release old document references and bound fit/wheel/restored zoom. Owner files remain unchanged, no push.",
+    "ADR-138 / FR-201: owner makes thinning independent of selection and requests preserving original selected members when hidden objects return. Apply UI thinning to all non-wall objects in the active dataset and retain transient selection independently of display pruning, honoring newer user choices and explicit clearing. No schema change or push.",
+    "ADR-137 / FR-200: owner explicitly permits contacting parts within one asset to become a common external contour and be refitted to the requested complexity. Supersede same-asset island-contact rejection; retain independent asset ownership and genuinely disconnected components, immutable raw regeneration, exact containment, latest-only cancellation and schema7. No push.",
+    "ADR-136 / FR-199: owner reports slow basic window events and late-stage complexity slowdown. Profile native and delayed Qt events; retain exact selection rendering and bound DA hover to nearby objects. Investigate per-object complexity throughput without changing the raw-source fitting objective. No push.",
+    "ADR-134/135 and FR-197/198: owner approves reversible thinning and reports orientation mismatch immediately after DAM import. Add cross-category whole-object overlap filtering, isolate batch complexity failures per object, and correct verified mesh/model/instance transform order. No saved-geometry migration, game-file writes or push.",
+    "ADR-125 / FR-188 save follow-up: remove obsolete32MiB per-JSON and128MiB combined JSON byte caps across project validation, append, managed catalog preparation and scene parsing. Generated current-contours snapshots must not prevent saving valid applied geometry. Preserve schema7, exact hashes, provenance, atomic publication and live history. No source mutation or push.",
+    "ADR-133 / FR-196 budget correction: reproduced18 ->19 as18 ->62 vertices via the seven-gap threshold. Remove gap-count triggers, use one continuous boundary-fidelity objective for every value, enforce the output budget and reject unsafe requests atomically with applied-control rollback. No source changes or push.",
+    "ADR-133 / FR-196 final owner correction: remove hierarchical vertex deletion and rounded-only exceptions. Every complexity budget constructs a complete polygon from immutable raw contours using a bounded global cyclic partition and fresh simultaneous candidates, for all shape classes. Preserve containment, valleys, independent islands, affine frames, cancellation and sharing. No schema change or push.",
+    "ADR-133 / FR-196 owner follow-up: coarse rounded masks retained old facets under the minimum-area-only fitter. Reconstruct balanced supporting directions for each budget in an area-moment frame; preserve external containment, deep notches, lobes, angular shapes and separate islands. No format change or push.",
+    "ADR-133 / FR-196: refit supporting sides independently for each complexity budget against raw model silhouettes; preserve outer containment, islands, per-object slice/range, affine placement and shared cache. Restore full detail range after reopening. No format change or push.",
+    "Historical owner follow-up: staged1.4.125 was not published; the installed1.4.124 runtime was left unchanged at that time. A later explicit contour-refit request authorizes the new1.4.126 build.",
+    "ADR-132 / FR-195: replace unsafe running-EXE rename with complete staging and exclusive publication. Old PYZ offsets against replaced EXE reproduce error-3 for project loading and manager imports. Keep running processes/files intact; retry publication after normal exit without bump. No push.",
+    "ADR-131 / FR-194: implement retained immutable DA ownership/visibility/bounds indexes and float64 transform buffers. Preserve exact applied geometry, per-object pivots, cancellation, history, ordinary tools and schema7. No push.",
+    "ADR-130 / FR-193: owner requests the open project filename in the fixed product/version window title. Publish on successful open/save, clear on close/new, preserve through language/dataset changes. No push.",
+    "ADR-128 / FR-191: owner restricts DA contours to whole-object selection, individual-center rotation/scale and all slicing controls. Remove movement and edge/vertex editing routes; ordinary tools remain. Cache ownership/intrinsic heights and spatial object bounds. No push.",
+    "ADR-129 / FR-192: background detached preparation and progress through dataset manager Apply publication; Close is last footer button. Preserve live state on failure. No push.",
+    "Owner format policy: current and previous .dale format, independent of application builds. Production stays schema7; a future8 retains7, future9 retains8. No schema1..6 readers. Shared-data/array research is a proposal, not a shipped format.",
+    "ADR-127 / FR-190: owner confirmed automatic per-field defaults by exact DA block ID, relative scale/rotation and a saved/original choice specifically during DAM import. Cache clear also deletes defaults; .dale reopening retains applied state. No push.",
+    "ADR-126 / FR-189: cooperative cancellation and latest-only publication for slicing, scale, complexity, PNG dimensions and native raster tiles. Exclusive file-writing transactions retain explicit atomic lifecycle. No push.",
+    "ADR-124 / FR-187: export-only selected perimeter merging also groups PNGs, default off, preserving native properties and project geometry. No push.",
+    "ADR-125 / FR-188: save applied state only; no undo/redo serialization or restoration. Preserve live history on save and use bounded mapped reading of existing schema7 state. No migration or push.",
+    "ADR-121 / FR-184 owner correction: category-wide minimum original size and minimum height filters stay in button settings beside JSON parameters, independent of selection. The slicing panel holds selected-object geometry controls only. Preserve staged Apply/Cancel, immutable source measurements, hidden-selection pruning and schema7 settings. Slice workers never restore captured filter values. No push.",
+    "ADR-121 / FR-184 final owner acceptance: outer simplification encloses original masks, fills fine bays and retains broad outer lobes where the vertex budget permits. No new island contacts. Bounded normalized-shape cache reuses reductions across equivalent instances; explicit per-object affine anchors preserve slice regeneration and schema7 history. No push.",
+    "ADR-123 / FR-186: global absolute slider track clicks and release-only value commits for handle/track gestures, with live slice labels. ADR-121 follow-up remembers panel position/size/docking and uses weighted effective-area complexity reduction to favor broad distant tips over clustered teeth. Preserve topology/ancestry and reapply targets after raw slicing. No push.",
+    "ADR-122 / FR-185: immediate DA entry progress, immutable background analysis and exact cached repeat navigation; topology-equivalent disjoint-mask fast path, per-call height-style reuse and bounded concurrent project image/contour preparation. Owner-designated Untitled Map.dale measured and compared against1.04.110. No push.",
+    "ADR-121 / FR-184: selection-scoped movable slicing window, transient category isolation, range union without artificial bridges, baseline-coalesced history, long-task progress and compact complete-contour selection references. Remove the64MiB state-member cap and byte-driven undo pruning. No push.",
+    "ADR-120 / FR-183: local material UV/alpha projection with opaque trunk caps, bounded channels/masks and direct resource-range reads. No network, AI or extracted texture cache. Owner follow-up requests external contours only, omitting internal holes. Shared per-object property ancestry limits archive size. Format5 invalidates pre-alpha profiles; optional strict alpha_projection retains the dataset outline policy for offline switching. Standard Tree/Bush/Rock inline fields and child-widget Ctrl routing; explicit import phases preserve the last preview. No push.",
+    "ADR-119 / FR-182: per-category Ctrl+wheel selects cached normalized-height slabs0..10 or automatic ground/floor at-1. Store shared2D profiles once per type in current schema7, use bounded latest-only background calculation, preserve affine placement and ownership, and keep one undo per applied change. Show a click-through, nonactivating top-right low-poly illustration only while Ctrl is held over Tree/Bush/Rock. Draw equal0..10 spacing from actual illustration endpoints, left labels and independent -1 Ground (automatic) midway between marks. Fix the DA scaling tile Ctrl wheel and numeric synchronization. No push.",
+    "ADR-109 / FR-171 follow-up: automatically omit whole DAM contours outside declared Scene JSON bounds, or image bounds without JSON, during import only. Preserve touching, crossing and enclosing contours; use native scene/image coordinate registration. No retroactive project filtering.",
+    "ADR-112/117/118 and FR-174/180/181 follow-up: projection-import close/Escape requests cooperative cancellation, keeps progress visible until cleanup, rejects late results before publication, and preserves the dataset. Check cancellation inside triangle batches and between model bands; never convert it to a missing-model fallback. Reader disposal and SQLite rollback remain intact. Noncancellable shared progress hides its close control and rejects Qt dialog reset while work continues. Category popups expand downward within the selected screen work area, showing all content when it fits, retaining fixed footer and staged Apply/Cancel. No push.",
+    "Owner request2026-10-26: increase minor from3 to4, preserving the current revision100 before the normal build. build_windows.ps1 advances the revision once to101, producing1.04.101. No push authorized.",
+    "ADR-112/114 and FR-174/176 owner memory follow-up: speed takes precedence. Release decoded model arrays and preview intermediates immediately after projection, break recursive closure retention, reuse one local native reader per batch, and restart it between models only after sustained retained growth or memory pressure. Close reader files at batch end, clear worker Python payloads before deferred Qt deletion, and discard derived caches when closing a map. JSON-only DA information uses cached floor choices instead of expanding every plant height into ordinary bands. Avoid parsing unneeded catalog JSON during project validation. No per-gesture cache flushing or OS working-set trimming.",
+    "ADR-109/111/117 and FR-171/173/180 follow-up: use verified DAM11 surface/underground terrain indices for foundation levels, validate both grids within one sample budget, and retain building-floor overrides. Import, JSON export and reopen of the owner-designated map are verified. Large schema7 snapshots omit redundant derived vertex diagnostics above10000 edges while preserving exact walls, IDs, ancestry, groups and properties. Remove native outer top-toolbar insets and retain the horizontal scrollbar height. No push.",
+    "ADR-118 / FR-181: per-category independent native JSON wall settings reuse the historical WallPresetDialog structure in current staged/scrolling tool popups. Default bushes use proximity5ft/no movement or sound; trees/rocks use normal movement, limited light/sight, no sound. Category heights are unbounded by default and global normalization wins. No geometry/filter changes or push.",
+    "ADR-117 / FR-180: cache ten local mesh bands of10% height and select each instance by actual ground/floor/elevation/signed scale. Include tree crowns when at surface level; no fixed half-tree cutoff. Show bounded translucent material-color/no-texture preview over a binary mask, keeping the previous image until ready. Simplify dense foliage to a concave envelope; no downloads.",
+    "ADR-116 / FR-179: owner cancels linked shape propagation because same-type profiles differ with burial. Draft linkage/frame fields were removed before delivery; exact-type selection and independent transforms remain.",
+    "ADR-115 / FR-177/178: owner replaces the DA toolbar center toggle with separate staged rotation/scale checkboxes across Contours, DA, Regions and Raster. DA paired double-click offers exact-type selection with a remembered Yes/No/Cancel question. Preserve first-hit baseline, dataset isolation, one undo and atomic raster capture from the same prior state. No push.",
+    "ADR-113 / FR-175: select visible instances by exact source blockId with a button after Select contours; preserve type on copied contours and schema7 reopen without external lookup.",
+    "ADR-114 / FR-176: owner rejects routine modal progress and export preparation during editing. Cache local DA drawing, ownership, height choices and unchanged region analyses; compute global cells when required by Regions/Raster and export output on demand. Add an explicit dataset-local individual-centers option for both rotation and scaling, with stable per-object rotation pivots. Preserve exact selection, stationary geometry/raster and undo. No push.",
+    "ADR-112 / FR-174 owner wording follow-up: audit all progress captions and replace restoration wording with Loading project history / Loading project datasets in English and Russian. Ordinary progress must not suggest project damage. No geometry, archive or processing changes; rebuild normally without push.",
+    "ADR-112 / FR-174 owner follow-up: show shared progress for every .dale opening route. Validate/extract/restore and prepare preview/initial analysis in a worker; publish Qt state while the same window remains visible. Reuse that window for nested DA work, preserve current project on preparation failure and clean temporary files. Rebuild normally; no push.",
+    "ADR-111 / FR-173: add original height above local relief/floor using bounded DAM6 BSON and DAM11 float32 grids; staged per-category0..10-foot thresholds, zero disables, source measurements independent of edits/export normalization. No external fetch or source changes.",
+    "ADR-112 / FR-174: background immutable DA import/scale/region preparation with modal progress and GUI-thread publication, bounded analysis reuse and no refresh reentry. Preserve running user editors; rebuild normally without a push.",
+    "ADR-109 / FR-171 owner follow-up: show the DAM in the dataset tree and give its file field the same naming/load-replace/delete presentation as JSON/image; remember the chosen input folder. Recompute Modes panel width immediately when the DA tab becomes visible or hidden. Preserve staged Apply/Cancel, exact source bytes, .dam name persistence, dataset isolation and user processes. Rebuild normally once; no push requested.",
+    "ADR-110 / FR-172: owner adds staged export height normalization, default off, integer-foot base/top sliders and fields. Normalize every included ordinary/visible DA contour only in final JSON, preserving PNG, source/project heights and native non-wall bytes. Explicitly confirm DA mode independent groups with saved membership/colors/order/active choice. The initial portable build completed before this addition; a second normal build includes the final scope and increments revision normally. No push requested.",
+    "ADR-109 / FR-171: implement dataset-attached DAM6/11 obstacles with local-only game/installed Workshop metadata, read-only Steam discovery, global EXE path and confirmed SQLite cache clearing. Never download missing Workshop assets; instruct opening the map in Alchemist. Separate DA editing and stationary ordinary references, category visibility/current-center scaling/original-size filtering, height properties and combined visible geometry. JSON adds visible obstacles while its source selector leaves PNG unchanged. Preserve exact source DAM, native non-walls, schema7/offline reopening and no push.",
     "ADR-108 / FR-170: owner requests a dedicated Contours scaling button with a Raster-style inline step field. Plain wheel scales selected contours, Ctrl+wheel edits integer percent step1..100 default5, and Move contours uses the same step. Reuse dataset/project/global numeric precedence and schema7 validation. Move contours has a pointing-finger cursor without selection, open hand with selection, closed hand during drag/pan. Preserve exact membership, stationary geometry, raster, undo and user processes; rebuild complete portable runtime normally once. No push requested.",
     "ADR-104 / FR-166 owner follow-up: Move contours double-click replaces the entire selection with the first-hit component; empty double-click clears all selection. Repeat hits keep the component selected. Retain Select contours additive toggles, paired first-hit/jitter protection, checkbox scope, ordinary movement and immutable geometry/history. Rebuild the complete portable runtime once; no push requested.",
     "ADR-104..107 / FR-166..169: owner adds default-enabled per-dataset Move contours double-click selection, requests native image loading during every active gesture/navigation route, and reproduces independent Alt vertex angle/guide and eraser contact failures on the second floor of a private archive. Reuse protected paired selection; publish only matching live raster and viewport snapshots; freeze/index truly stationary references for virtual contact perpendiculars and ordinary snaps; support a lone free edge original-vector Alt guide. Reconcile eraser T contacts at existing1e-7 roundoff tolerance without rewriting stationary geometry, source/native bytes or the original private archive. Preserve schema7, one undo, UserData and running editors; rebuild normally once. No push requested.",
@@ -69,7 +117,7 @@
     "ADR-032 / FR-097/098: separate Figures between Contours and Regions selects exact line IDs, including open/disconnected contours. Click toggles one segment, double-click adds its shared-stored-vertex component, >10px frozen marquee XOR and Escape restoration. Isolated move/scale/rotate/copy/Alt placement, two shared numeric toggles, schema7 selection/pivot persistence. Regions/Raster keep standard cells and global PNG/mask logic. Ctrl+A works in all sections within height scope; Ctrl+Shift+A clears, text editors retain text selection. No new numeric settings, migration, push or live Foundry claim.",
     "ADR-031 / FR-095/096: first Raster selection tool, click toggles and strictly over10-screen-pixel marquee inversion from a frozen baseline shared with Regions; Escape/tool switch restores detached/ordinary selection. Empty click clears all highlights. Inside/outside masks require explicit selected polygons, disabled/no-op otherwise. Freeze their union; shared live Artwork offset and2x/bicubic/halo/source-alpha renderer matches native PNG RGBA, bounded display projection for reduced previews. Preserve immutable source/mask/history, exact-bounds worker and contour-only cache. No schema/numeric setting or live Foundry claim.",
     "ADR-030 owner follow-up: Regions Move/Rotate activation without selection silently selects Select regions, no repeated modal. Native line/rectangle/circle now work in default All with ordinary unbounded walls; explicit chosen bounds honored, ambiguous scope blocked before preview. Tooltips restore localized actual names above Purpose/Condition/Keys, including numeric tools/stepping arrows/manager/dialog buttons and distinct panel-toggle purpose.",
-    "ADR-029 / FR-094: Regions Delete region (Удалить область) is a48x48 eraser-icon command plus Del/Edit. Delete only selected exterior/hole boundary lines, preserving interior lines/raster and other height scopes. Shared boundary pieces are removed; retain partial tails with explicit lineage/styles. Frozen moved/pasted membership protects coincident surroundings. One undo/redo, archive/native export, Qt text-input Delete and active-gesture guards. No new mode/numeric values/schema; owner corrected the button label only.",
+    "ADR-029 / FR-094: Regions Delete region (РЈРґР°Р»РёС‚СЊ РѕР±Р»Р°СЃС‚СЊ) is a48x48 eraser-icon command plus Del/Edit. Delete only selected exterior/hole boundary lines, preserving interior lines/raster and other height scopes. Shared boundary pieces are removed; retain partial tails with explicit lineage/styles. Frozen moved/pasted membership protects coincident surroundings. One undo/redo, archive/native export, Qt text-input Delete and active-gesture guards. No new mode/numeric values/schema; owner corrected the button label only.",
     "ADR-028 supersedes historical native-edit restrictions: full wall editing/export with exact non-wall bytes and explicit property ownership. Height scope never disables geometry tools. Independent whole region transforms/selection persist across overlap/reopen; old related-line expansion removed. Two standard numeric Region toggles share Contours state/tolerances; Alt applies point-first or X/Y guide snapping from the highlighted nearest cursor vertex, frozen per drag and copied as paste anchor. Source files/raster unchanged; no semantic features or live Foundry claim.",
     "Owner dataset camera: center on the scene frame on dropdown switching, explicit manager Open dataset and project reopening while retaining per-dataset zoom. Apply to the current dataset and rollback retain pan. Disabled erasers are expected in native JSON preservation mode; keep export safety and expose the actual reason/right-panel edge-arrow route in localized disabled-tool help. Existing checkbox restores ordinary editing and DALE contour-only JSON output. No native deletion authorization or NEXT-009 fix claim.",
     "Owner full button-help audit: Purpose / Condition / Keys sections with explained key lists. Shared formatter wraps68 columns, derives actual QAction shortcuts, keeps stable source parts and separates action/value help. Remove repeated labels, Alt, Ctrl+wheel and Escape from numeric composition. Conditions describe real data/selection/toggle requirements; manager and child buttons use the same format. No gesture/data/schema change; NEXT-009 pending.",
@@ -79,7 +127,7 @@
     "Owner top Dataset selector alignment: add7px visual gap after the manager button, matching the heading text inset from the panel edge; dropdown230x36 matches button height/top. Existing heading/button spacing, selector width, data and all dataset behavior retained.",
     "Owner screenshot follow-up confirms JSON-only set + Add image scenario; direct button regression passes with native repair preserved. Remove separate component extension labels; stretch both basename editors to full properties width. Stored format suffix and export naming remain automatic.",
     "Owner Add scene image error reproduced through real Qt button click: clicked(bool) replaced default-captured image/json key with false, causing load_pair(None,None). Manager button adapter now discards checked; eight actual Add/Replace/Transfer/Delete image/JSON click regressions pass. Preserve native-safe SourceRepairEdit when rebasing pixel coordinates for different image dimensions. Source bytes/properties/ancestry and schema7 remain unchanged.",
-    "Owner sidebar follow-up implemented: Information fills remaining vertical height and scrolls only on overflow. Narrow16x64 left-edge arrow hides/shows right panel, merging right_panel_visible into portable preferences across restarts; Settings reveals it. Discard/&Discard localized as Не сохранять. No geometry/global-project numeric changes.",
+    "Owner sidebar follow-up implemented: Information fills remaining vertical height and scrolls only on overflow. Narrow16x64 left-edge arrow hides/shows right panel, merging right_panel_visible into portable preferences across restarts; Settings reveals it. Discard/&Discard localized as РќРµ СЃРѕС…СЂР°РЅСЏС‚СЊ. No geometry/global-project numeric changes.",
     "ADR-027 owner implementation: one stable-ID named dataset owns optional current JSON/contours and scene image. Dedicated tree manager creates/renames/removes sets/files and atomically applies staged changes; explicit Move/Copy and occupied-target replacement, independent copies. Single top dataset selector with36px manager button on its left. JSON append adds contours, skips exact property/coordinate duplicates, preserves existing history/IDs/raster and foreign native wall properties. Export physical names use set name; every internal native Scene name/path remains unchanged. Move component import/export into manager; quick JSON/PNG and project commands remain. Schema7 optional hashed datasets.json and empty roots; earlier pair-picker UI superseded. No push or NEXT-009 claim.",
     "ADR-026 owner export clarification: rename File > Export repaired JSON to Export JSON (Ctrl+Shift+J). Always export the active pair including unsaved edits. Ordinary editing uses applied DALE contours (also image-only); Preserve JSON mode keeps strict native byte/property preservation. Alias/original JSON/image naming, no project/root fallback; originals/current project/hardlinks protected.",
     "Owner Dataset layout correction: remove the112px reserved inline name spacer; retain current names in selectors/heading tooltip. Rename is a36px square icon-only pencil, with localized tooltip/accessibility; dialog/catalog/data unchanged.",
@@ -101,6 +149,34 @@
     "Every packaging invocation advances revision once; complete portable folder refresh preserves user processes/preferences/projects and supplied ICO bytes. No push without a fresh explicit owner request."
   ],
   "validated": [
+    "ADR-121..123 / FR-184..186: portable1.04.114 validates the accepted enclosing outer simplifier, normalized shared cache, explicit affine anchor persistence, remembered panel placement and release-only absolute sliders.560 source and560 compiled tests; three final actual EXE cases including owner Untitled Map.dale and an outer-frame archive, bundled Shapely reduction and unchanged sources/UserData. The owner-map benchmark reduced2792 rings with36 distinct calculations and3.140s for the full simplification pass. No push.",
+    "ADR-112 / FR-174 neutral progress wording: audited24 English/Russian captions across project opening, DA operations and PNG export. Replaced two restoration labels with Loading history/datasets; compiled captions match the audited translations.7 source and7 compiled progress tests plus two portable launches pass in1.03.094. UserData/assets and source/runtime hashes verified; running editor preserved. No push.",
+    "ADR-112 / FR-174 project-opening follow-up: 577 source regressions,31 targeted project checks and88 compiled tests pass. Real15707-line saved DA project opens in3.984s with176 GUI heartbeats, one monotonic progress window and immutable archive bytes. Failure cleanup/current-project retention and immediate post-open Delete shortcut verified. Portable1.03.093 starts empty and with a saved DA project; no push.",
+    "ADR-111/112 / FR-173/174: original terrain/floor height filtering and responsive DA progress verified on both private DAM6/DAM11 inputs without changing their bytes.42 focused source and42 compiled tests pass; full run passes1810 functional cases, with two Git delivery snapshot failures subsequently resolved by staging the ready runtime and passing all12 delivery tests. Portable1.03.092 launches empty and with saved DA geometry; source/runtime hashes and UserData/assets preserved. No push.",
+    {
+      "check": "alchemist_manager_tree_and_modes_width",
+      "date": "2026-10-26",
+      "result": "98 focused source tests and32 tests against compiled dale modules pass. Staged DAM tree/name/removal and archive persistence verified; dataset switching resizes Modes405/320/405 pixels without window resizing. Source manager screenshot inspected. Packaged1.03.091 launches and opens a DA project successfully. Complete source/runtime hashes and icon/artwork/UserData preservation verified. Existing editor process was kept running; restart loads the new executable. No push.",
+      "evidence": "artifacts/alchemist-manager/tests.log",
+      "portable_evidence": "artifacts/alchemist-manager/packaged-smoke.json",
+      "compiled_evidence": "artifacts/alchemist-manager/compiled-tests.log"
+    },
+    {
+      "check": "alchemist_export_height_and_groups",
+      "date": "2026-10-26",
+      "result": "375 source tests passed after height normalization and independent DA group additions, including31 focused DA/normalization cases. The same31 cases passed using dale modules extracted from the final executable. Packaged1.03.090 launched successfully and opened the synthetic DA project in the alchemist section. Russian DA/category/export-height UI visually verified. Source inputs, icon/artwork and portable UserData preservation hashes checked; complete runtime/provenance verified. No push.",
+      "evidence": "artifacts/alchemist/final-height-groups-tests.log",
+      "portable_evidence": "artifacts/alchemist/packaged-smoke.json",
+      "compiled_evidence": "artifacts/alchemist/compiled-tests.log"
+    },
+    {
+      "check": "alchemist_local_import_focused",
+      "date": "2026-10-26",
+      "result": "1789 full source tests passed in508.39s;94 focused tests passed after final stationary-reference and dataset/height-control refinements, including19 DA cases. Both private DAM formats imported with unchanged SHA-256; source/archive reopening and non-wall JSON preservation verified. Russian/English UI and category popup visually inspected. Final portable evidence is recorded in alchemist_export_height_and_groups.",
+      "evidence": "artifacts/alchemist/full-tests-final.log",
+      "private_evidence": "artifacts/alchemist/final-private-probe.json",
+      "focused_evidence": "artifacts/alchemist/final-focused.log"
+    },
     {
       "check": "tracked_portable_release_1_03_085",
       "date": "2026-10-20",
@@ -907,7 +983,8 @@
       "source_evidence": "artifacts/section-groups/source-validation.json",
       "private_local_evidence": "artifacts/section-groups/private-gui-validation.json",
       "portable_evidence": "artifacts/section-groups/portable/validation.json"
-    }
+    },
+    "2026-10-28:325 source and325 packaged-code tests passed for export options, geometry scope, dataset cameras, native raster, preferences and DA controls. Installed1.4.136 smoke passed; owner village-port to new dataset route preserves file hashes."
   ],
   "completed": [
     {
@@ -949,7 +1026,9 @@
     {
       "id": "FR-145/146/147/148/149/150",
       "result": "1483 full-suite tests pass;371 later persistence/UI checks,105 source Raster/aid checks, 28 last control/help checks and24 final Raster/overlay tests pass.294 regressions run against actual0.3.76 executable bytecode; six fresh isolated RU/EN EXEs open ordinary/group and raster-transformed current-schema projects without Python/PATH dependency or archive writes. Native preview and PNG RGBA compare exactly for rotated crops, offsets -4/0/4 and grid padding. Global guide creation/movement/whole-value snapping/cancel/delete, mode-scoped S/M/R, staged independent Raster preview/offset, detached Raster selection save/reopen, Ctrl-wheel isolation, real project color picker, per-dataset background and600 retained cancellable raster transforms verified. Compiled GUI inspected: centered30x16 fields with11px text inside48x60 tools, separate lower containers, all minimum-width top controls, taller unframed active tab and a full2.5px-radius endpoint overlay centered on the horizontal baseline. Complete portable builds incremented once each to0.3.75 and final0.3.76; the second corrects tab-background occlusion of the endpoint marker. Original source assets/ICO/PNG/PE resources/UserData remain exact; all fresh-test image caches removed and the preexisting live editor cache retained. Owner editor process142484 remains running. Existing schema7 retained; no source/private-file repair or push."
-    }
+    },
+    "FR-202/203 delivered in1.4.136: independent PNG/JSON, DA-only export, empty-project camera reset and bounded zoom; source and compiled owner-file route verified without source mutation.",
+    "FR-204 prepared for guarded publication in1.4.137: updated bilingual README,22 refreshed actual screenshots,26-page matching tracked PDF, release/CI freshness guard and maintenance instructions. Complete2188-source and326-packaged suites pass; private projects unchanged."
   ],
   "pending": [
     {
@@ -983,7 +1062,7 @@
     "decision": "ADR-020",
     "resumption_authorized": false
   },
-  "current_version": "1.3.88",
+  "current_version": "1.4.137",
   "version_policy": {
     "scheme": "major.minor.revision",
     "display": "Dungeon Alchemist Levels Export (v.<major>.<minor:02d>.<revision:03d>)",
@@ -1020,8 +1099,8 @@
     "global_git_changes": false,
     "release_confirmation_interface": "submitted_choice_question",
     "release_confirmation_choices": [
-      "Подтверждаю пуш в release",
-      "Не подтверждаю"
+      "РџРѕРґС‚РІРµСЂР¶РґР°СЋ РїСѓС€ РІ release",
+      "РќРµ РїРѕРґС‚РІРµСЂР¶РґР°СЋ"
     ]
   },
   "validation_history_note": "Older records describe historical product scopes/versions; current active scope is ADR-020. Historical test counts do not validate the simplified editor; see latest validation/build records.",
@@ -1774,7 +1853,7 @@
     "source_evidence": "artifacts/delete-region/source-validation.json",
     "tests": 509,
     "focused_tests": 67,
-    "label_ru": "Удалить область",
+    "label_ru": "РЈРґР°Р»РёС‚СЊ РѕР±Р»Р°СЃС‚СЊ",
     "shortcut": "Del",
     "effect": "selected boundary pieces only; interior lines and raster retained",
     "schema": 7,
@@ -2174,7 +2253,7 @@
     "neighbour_field": "right_angle_neighbours",
     "neighbour_default": true,
     "neighbour_scope": "project and dataset; independent of numeric global overrides",
-    "neighbour_checkbox_ru": "По соседним вершинам",
+    "neighbour_checkbox_ru": "РџРѕ СЃРѕСЃРµРґРЅРёРј РІРµСЂС€РёРЅР°Рј",
     "highlight": "only chosen two reference legs; full carrying segment even with offscreen joint",
     "visible_connected_references_only": true,
     "zoom_and_length_independent": true,
@@ -3497,5 +3576,1723 @@
       "artifacts/contour-scale/compiled-tests.log",
       "artifacts/contour-scale/compiled-validation.json"
     ]
+  },
+  "alchemist_height_progress": {
+    "requirements": [
+      "FR-173",
+      "FR-174"
+    ],
+    "decisions": [
+      "ADR-111",
+      "ADR-112"
+    ],
+    "status": "implemented_portable_verified",
+    "focused_tests": 42,
+    "evidence": [
+      "artifacts/alchemist-progress/focused-tests.log",
+      "artifacts/alchemist-progress/full-tests.log",
+      "artifacts/alchemist-progress/final-private-probe.json",
+      "artifacts/alchemist-progress/build.log",
+      "artifacts/alchemist-progress/compiled-tests.log",
+      "artifacts/alchemist-progress/portable-validation.json",
+      "artifacts/alchemist-progress/portable-repository-tests.log"
+    ],
+    "remaining": [],
+    "push": false,
+    "version": "1.3.92",
+    "compiled_tests": 42,
+    "portable_smoke_cases": 2,
+    "private_inputs_unchanged": true,
+    "userdata_preserved": true,
+    "source_runtime_hashes_verified": true,
+    "source_full_tests_passed": 1810,
+    "source_full_delivery_failures": 2,
+    "delivery_recheck_passed": 12
+  },
+  "project_open_progress": {
+    "requirement": "FR-174",
+    "decision": "ADR-112",
+    "status": "implemented_portable_verified",
+    "remaining": [],
+    "push": false,
+    "version": "1.3.93",
+    "source_regressions": 577,
+    "additional_project_regressions": 31,
+    "compiled_regressions": 88,
+    "portable_smoke_cases": 2,
+    "real_project_lines": 15707,
+    "real_project_seconds": 3.984,
+    "real_project_ui_heartbeats": 176,
+    "monotonic_single_dialog": true,
+    "immediate_keyboard_focus_restored": true,
+    "userdata_and_assets_preserved": true,
+    "evidence": [
+      "artifacts/project-progress/source-tests.log",
+      "artifacts/project-progress/project-regressions.log",
+      "artifacts/project-progress/compiled-tests.log",
+      "artifacts/project-progress/probe.json",
+      "artifacts/project-progress/build.log",
+      "artifacts/project-progress/portable-validation.json"
+    ]
+  },
+  "progress_wording": {
+    "requirement": "FR-174",
+    "decision": "ADR-112",
+    "status": "implemented_portable_verified",
+    "remaining": [],
+    "push": false,
+    "version": "1.3.94",
+    "captions_audited": 24,
+    "source_tests": 7,
+    "compiled_tests": 7,
+    "portable_smoke_cases": 2,
+    "evidence": [
+      "artifacts/progress-wording/caption-audit.json",
+      "artifacts/progress-wording/source-tests.log",
+      "artifacts/progress-wording/compiled-tests.log",
+      "artifacts/progress-wording/portable-validation.json"
+    ]
+  },
+  "alchemist_interaction": {
+    "requirements": [
+      "FR-175",
+      "FR-176"
+    ],
+    "decisions": [
+      "ADR-113",
+      "ADR-114"
+    ],
+    "status": "implemented_portable_verified",
+    "remaining": [],
+    "push": false,
+    "source_full_passed": 1823,
+    "source_full_memory_guard_failures": 3,
+    "final_focused_passed": 76,
+    "private_map_lines": 15707,
+    "selection_type_instances": 11,
+    "individual_transform_seconds": [
+      0.078,
+      0.094
+    ],
+    "unchanged_mode_roundtrip_seconds": 0.047,
+    "source_unchanged": true,
+    "version": "1.3.96",
+    "compiled_regressions": 73,
+    "portable_smoke_cases": 2,
+    "memory_guard_failures_retested_passed": true,
+    "userdata_and_assets_preserved": true,
+    "evidence": [
+      "artifacts/da-interaction/full-tests.log",
+      "artifacts/da-interaction/final-focused-tests.log",
+      "artifacts/da-interaction/compiled-tests.log",
+      "artifacts/da-interaction/probe.json",
+      "artifacts/da-interaction/build-final.log",
+      "artifacts/da-interaction/portable-validation.json"
+    ]
+  },
+  "independent_transform_options": {
+    "requirements": [
+      "FR-177",
+      "FR-178"
+    ],
+    "decision": "ADR-115",
+    "status": "implemented_portable_verified",
+    "remaining": [],
+    "push": false,
+    "source_regressions": 844,
+    "version": "1.3.97",
+    "final_focused_passed": 60,
+    "compiled_regressions": 150,
+    "portable_smoke_cases": 2,
+    "userdata_and_assets_preserved": true,
+    "private_map_lines": 15707,
+    "selected_type_objects": 11,
+    "maximum_center_drift": 9.1e-13,
+    "scale_wheel_seconds": 0.107,
+    "source_unchanged": true,
+    "evidence": [
+      "artifacts/da-interaction/options-regressions.log",
+      "artifacts/da-interaction/options-final-focused.log",
+      "artifacts/da-interaction/options-probe.json",
+      "artifacts/da-interaction/options-scale-ru.png",
+      "artifacts/da-interaction/options-double-click-ru.png",
+      "artifacts/da-interaction/options-rotate-en.png",
+      "artifacts/transform-options/build.log",
+      "artifacts/transform-options/compiled-tests.log",
+      "artifacts/transform-options/portable-validation.json"
+    ]
+  },
+  "alchemist_mesh_projection": {
+    "requirements": [
+      "FR-180",
+      "FR-181"
+    ],
+    "decisions": [
+      "ADR-117",
+      "ADR-118"
+    ],
+    "status": "implemented_portable_verified",
+    "remaining": [],
+    "cancelled": [
+      "FR-179 linked shape propagation"
+    ],
+    "source_focused_passed": 89,
+    "export_settings_tests": 19,
+    "local_profiles_resolved": 88,
+    "local_profiles_unsupported": 1,
+    "private_map_objects": 814,
+    "private_map_lines": 15494,
+    "cached_import_seconds": 1.484,
+    "source_unchanged": true,
+    "push": false,
+    "evidence": [
+      "artifacts/alchemist-mesh/full-map.json",
+      "artifacts/alchemist-mesh/profile-final-tests.log",
+      "artifacts/alchemist-mesh/export-settings-tests.log",
+      "artifacts/alchemist-mesh/wall-settings-ru.png",
+      "artifacts/alchemist-mesh/final-regressions.log",
+      "artifacts/alchemist-mesh/compiled-tests.log",
+      "artifacts/alchemist-mesh/portable-validation.json",
+      "artifacts/alchemist-mesh/bundled-model.json"
+    ],
+    "version": "1.3.98",
+    "source_regressions": 254,
+    "compiled_regressions": 177,
+    "portable_smoke_cases": 3,
+    "bundled_model_reader_verified": true,
+    "userdata_and_assets_preserved": true
+  },
+  "alchemist_terrain_surfaces": {
+    "status": "implemented_portable_verified",
+    "requirements": [
+      "FR-171",
+      "FR-173",
+      "FR-180",
+      "FR-174",
+      "FR-176"
+    ],
+    "decisions": [
+      "ADR-109",
+      "ADR-111",
+      "ADR-117",
+      "ADR-112",
+      "ADR-114"
+    ],
+    "source_regressions": 189,
+    "additional_focused_regressions": 124,
+    "private_import": {
+      "circles": {
+        "seconds": 4.672,
+        "objects": 2851,
+        "categories": {
+          "bush": 2609,
+          "rock": 104,
+          "tree": 138
+        },
+        "lines": 68424,
+        "exported_walls": 68424
+      },
+      "mesh": {
+        "seconds": 10.297,
+        "objects": 2834,
+        "categories": {
+          "bush": 2592,
+          "rock": 104,
+          "tree": 138
+        },
+        "lines": 76734,
+        "exported_walls": 76734,
+        "geometry_unavailable": [],
+        "pretty_bytes": 46234869,
+        "compact_bytes": 46234869,
+        "archive_reopen": true
+      },
+      "source_unchanged": true,
+      "terrain_samples": [
+        187489,
+        187489
+      ]
+    },
+    "remaining": [],
+    "push": false,
+    "evidence": [
+      "artifacts/terrain-surfaces/source-tests.log",
+      "artifacts/terrain-surfaces/final-focused.log",
+      "artifacts/terrain-surfaces/private-import.json",
+      "artifacts/terrain-surfaces/il-core.log",
+      "artifacts/top-panel-edge/after.png",
+      "artifacts/terrain-surfaces/ui-memory.json",
+      "artifacts/terrain-surfaces/native-memory.json",
+      "artifacts/terrain-surfaces/memory-tests.log",
+      "artifacts/terrain-surfaces/dataset-roundtrip.json",
+      "artifacts/terrain-surfaces/final-source-tests.log",
+      "artifacts/terrain-surfaces/compiled-tests-final.log",
+      "artifacts/terrain-surfaces/portable-validation-1.3.100.json",
+      "artifacts/terrain-surfaces/build-minor.log",
+      "artifacts/terrain-surfaces/portable-validation.json",
+      "artifacts/terrain-surfaces/portable-validation-minor.log"
+    ],
+    "memory": {
+      "open_seconds": 5.954,
+      "da_mode_seconds": 0.593,
+      "baseline_mib": 98.9,
+      "peak_mib": 657.0,
+      "loaded_mib": 441.8,
+      "da_mode_mib": 466.8,
+      "after_close_mib": 235.6
+    },
+    "native_batch_memory": {
+      "models": 12,
+      "seconds": 5.985,
+      "reader_restarts": 0,
+      "unavailable": [],
+      "baseline_mib": 38.5,
+      "peak_mib": 199.1,
+      "profiles_only_mib": 141.5,
+      "released_mib": 140.5
+    },
+    "named_dataset_roundtrip": {
+      "named_dataset_roundtrip": true,
+      "lines": 76734,
+      "seconds": 14.578
+    },
+    "intermediate_runtime": "1.3.99",
+    "intermediate_runtime_findings": "A no-image information panel still inferred ordinary bands for every DA tip, exceeding6GiB during the full-map UI probe. Replaced with cached DA floor choices; subsequent source UI opening passes in about6seconds. One concurrent PNG export regression hit its RAM guard during that probe; all189 compiled regressions and full-map EXE smoke passed after the fix.",
+    "compiled_regressions": 189,
+    "validated_feature_runtime": "1.3.100",
+    "feature_runtime_smoke_cases": 3,
+    "feature_runtime_preserved_files_unchanged": true,
+    "version": "1.4.101",
+    "portable_smoke_cases": 3,
+    "userdata_and_assets_preserved": true,
+    "source_runtime_hashes_verified": true,
+    "compiled_feature_tests_version": "1.3.100",
+    "final_version_only_smoke_verified": true,
+    "intermediate_memory_guard_recheck_passed": true
+  },
+  "projection_close_and_popup": {
+    "status": "implemented_portable_verified",
+    "requirements": [
+      "FR-174",
+      "FR-180",
+      "FR-181"
+    ],
+    "decisions": [
+      "ADR-112",
+      "ADR-117",
+      "ADR-118"
+    ],
+    "source_regressions": 215,
+    "native_cancel": {
+      "cancelled": true,
+      "published": 0,
+      "seconds": 3.219,
+      "cancel_seconds": 0.094,
+      "cached_profiles": 0,
+      "dialog_cleared": true
+    },
+    "popup_cases": 8,
+    "remaining": [],
+    "push": false,
+    "evidence": [
+      "artifacts/projection-close/regressions.log",
+      "artifacts/projection-close/native-cancel.json",
+      "artifacts/projection-close/popup-layout.json",
+      "artifacts/projection-close/settings-1400.png",
+      "artifacts/projection-close/compiled-tests.log",
+      "artifacts/projection-close/compiled-indicator-tests.log",
+      "artifacts/projection-close/build-indicator-final.log",
+      "artifacts/projection-close/portable-validation.json"
+    ],
+    "version": "1.4.104",
+    "compiled_regressions": 215,
+    "compiled_feature_version": "1.4.103",
+    "final_indicator_tests": 11,
+    "portable_smoke_cases": 4,
+    "source_runtime_hashes_verified": true,
+    "private_inputs_unchanged": true
+  },
+  "alchemist_slice_selection": {
+    "status": "implemented_portable_verified",
+    "requirements": [
+      "FR-182",
+      "FR-171"
+    ],
+    "decisions": [
+      "ADR-119",
+      "ADR-109"
+    ],
+    "remaining": [],
+    "push": false,
+    "source_tests": 11,
+    "private_map": {
+      "objects": 2762,
+      "profiles": 17,
+      "profile_bytes": 457279,
+      "import_seconds": 5.672,
+      "slice_seconds": 9.265,
+      "lines": 52907,
+      "save_seconds": 24.562,
+      "reopen_seconds": 3.0,
+      "reopened_profiles": 17,
+      "source_unchanged": true
+    },
+    "evidence": [
+      "artifacts/projection-close/slices-tests.log",
+      "artifacts/projection-close/slices-private.json",
+      "artifacts/projection-close/indicator-layout.json",
+      "artifacts/projection-close/final-source.log",
+      "artifacts/projection-close/compiled-tests.log",
+      "artifacts/projection-close/compiled-indicator-tests.log",
+      "artifacts/projection-close/build-indicator-final.log",
+      "artifacts/projection-close/portable-validation.json"
+    ],
+    "source_regressions": 215,
+    "final_profile_tests": 32,
+    "version": "1.4.104",
+    "compiled_regressions": 215,
+    "compiled_feature_version": "1.4.103",
+    "final_indicator_tests": 11,
+    "portable_smoke_cases": 4,
+    "source_runtime_hashes_verified": true,
+    "private_inputs_unchanged": true,
+    "bounds_import": {
+      "objects_before": 2834,
+      "objects_after": 2762,
+      "omitted_fully_outside": 72,
+      "lines": 75142,
+      "exported_walls": 75142,
+      "seconds_including_json_export": 10.187,
+      "source_unchanged": true
+    },
+    "live_settings_note": "The earlier preservation snapshot differs only in DALE/UserData/settings.json, last written21:17:49 before the final two builds. All validation programs used isolated settings paths. Leave the live settings file untouched; do not restore the old snapshot.",
+    "smoke": [
+      {
+        "case": "empty",
+        "exit": 0,
+        "peak_mib": 114.3,
+        "seconds": 1.593
+      },
+      {
+        "case": "saved-da",
+        "exit": 0,
+        "peak_mib": 288.2,
+        "seconds": 8.454
+      },
+      {
+        "case": "untitled",
+        "exit": 0,
+        "peak_mib": 777.2,
+        "seconds": 28.547
+      },
+      {
+        "case": "sliced",
+        "exit": 0,
+        "peak_mib": 629.4,
+        "seconds": 20.468
+      }
+    ]
+  },
+  "alchemist_alpha_controls": {
+    "requirements": [
+      "FR-182",
+      "FR-183",
+      "FR-174"
+    ],
+    "decisions": [
+      "ADR-119",
+      "ADR-120",
+      "ADR-112"
+    ],
+    "status": "implemented_portable_verified",
+    "push": false,
+    "remaining": [],
+    "evidence": [
+      "artifacts/projection-close/alpha-regressions.log",
+      "artifacts/projection-close/alpha/import.json",
+      "artifacts/projection-close/alpha/memory-offline.json",
+      "artifacts/projection-close/alpha-validation.log",
+      "artifacts/projection-close/alpha-inline-final.log",
+      "artifacts/projection-close/alpha/native-cancel.json",
+      "artifacts/projection-close/alpha/inline-ru.png",
+      "artifacts/projection-close/alpha/inline-en.png",
+      "artifacts/projection-close/alpha/alpha-comparison.png",
+      "artifacts/projection-close/alpha/build-complete.log",
+      "artifacts/projection-close/alpha/compiled-tests-final.log",
+      "artifacts/projection-close/alpha/portable-validation.json",
+      "artifacts/projection-close/alpha/bundled-model.json",
+      "artifacts/projection-close/alpha/portable-repository.log",
+      "artifacts/projection-close/alpha/ui-shards.log"
+    ],
+    "private_map": {
+      "seconds": 7.062,
+      "objects": 2759,
+      "lines": 129177,
+      "profiles": 17,
+      "profile_bytes": 4034797,
+      "unavailable": [],
+      "stages": [
+        [
+          5,
+          "Reading the Dungeon Alchemist map",
+          0.0
+        ],
+        [
+          15,
+          "Reading local object descriptions",
+          0.047
+        ],
+        [
+          16,
+          "Reading local object geometry",
+          0.062
+        ],
+        [
+          16,
+          "Reading cached model projections",
+          0.078
+        ],
+        [
+          18,
+          "Reading local object geometry",
+          0.078
+        ],
+        [
+          19,
+          "Reading cached model projections",
+          0.094
+        ],
+        [
+          21,
+          "Reading local object geometry",
+          0.094
+        ],
+        [
+          22,
+          "Reading cached model projections",
+          0.109
+        ],
+        [
+          24,
+          "Reading local object geometry",
+          0.109
+        ],
+        [
+          24,
+          "Reading cached model projections",
+          0.125
+        ],
+        [
+          27,
+          "Reading local object geometry",
+          0.125
+        ],
+        [
+          27,
+          "Reading cached model projections",
+          0.125
+        ],
+        [
+          30,
+          "Reading local object geometry",
+          0.125
+        ],
+        [
+          30,
+          "Reading cached model projections",
+          0.156
+        ],
+        [
+          33,
+          "Reading local object geometry",
+          0.156
+        ],
+        [
+          33,
+          "Reading cached model projections",
+          0.156
+        ],
+        [
+          36,
+          "Reading local object geometry",
+          0.156
+        ],
+        [
+          36,
+          "Reading cached model projections",
+          0.156
+        ],
+        [
+          39,
+          "Reading local object geometry",
+          0.172
+        ],
+        [
+          39,
+          "Reading cached model projections",
+          0.172
+        ],
+        [
+          41,
+          "Reading local object geometry",
+          0.172
+        ],
+        [
+          42,
+          "Reading cached model projections",
+          0.187
+        ],
+        [
+          44,
+          "Reading local object geometry",
+          0.203
+        ],
+        [
+          45,
+          "Reading cached model projections",
+          0.203
+        ],
+        [
+          47,
+          "Reading local object geometry",
+          0.203
+        ],
+        [
+          47,
+          "Reading cached model projections",
+          0.203
+        ],
+        [
+          50,
+          "Reading local object geometry",
+          0.203
+        ],
+        [
+          50,
+          "Reading cached model projections",
+          0.219
+        ],
+        [
+          53,
+          "Reading local object geometry",
+          0.219
+        ],
+        [
+          53,
+          "Reading cached model projections",
+          0.219
+        ],
+        [
+          56,
+          "Reading local object geometry",
+          0.234
+        ],
+        [
+          56,
+          "Reading cached model projections",
+          0.234
+        ],
+        [
+          59,
+          "Reading local object geometry",
+          0.234
+        ],
+        [
+          59,
+          "Reading cached model projections",
+          0.234
+        ],
+        [
+          62,
+          "Reading local object geometry",
+          0.234
+        ],
+        [
+          62,
+          "Reading cached model projections",
+          0.265
+        ],
+        [
+          65,
+          "Models ready. Building placed object contours",
+          0.265
+        ]
+      ],
+      "preview_count": 170,
+      "last_preview": [
+        "Majesty Palm - 90-100%",
+        true,
+        0.265
+      ],
+      "archive_reopen": true,
+      "cached_seconds": 6.828,
+      "source_unchanged": true,
+      "peak_mib": 530.8,
+      "cache_bytes": 11186176
+    },
+    "source_regressions": 232,
+    "inline_regressions": 24,
+    "alpha_regressions": 6,
+    "native_memory_offline": {
+      "models": 17,
+      "seconds": 39.969,
+      "restarts": 0,
+      "unavailable": [],
+      "baseline_mib": 36.2,
+      "peak_mib": 229.8,
+      "profiles_mib": 183.9,
+      "released_mib": 174.5,
+      "network_calls": 0,
+      "workshop": [
+        {
+          "name": "Palm tree 1",
+          "parts": 5,
+          "alpha_parts": 1,
+          "bands": 10
+        },
+        {
+          "name": "Coal ore 1",
+          "parts": 1,
+          "alpha_parts": 1,
+          "bands": 10
+        },
+        {
+          "name": "Coal ore 2",
+          "parts": 1,
+          "alpha_parts": 1,
+          "bands": 10
+        },
+        {
+          "name": "Tree 1 - lying",
+          "unsupported": "Unsupported GLB extension."
+        },
+        {
+          "name": "Roots_bare",
+          "parts": 7,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Roots_leaves",
+          "parts": 63,
+          "alpha_parts": 55,
+          "bands": 10
+        },
+        {
+          "name": "Cliff face",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Terrain, Rock 7",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Friendly Fly Trap",
+          "parts": 4,
+          "alpha_parts": 1,
+          "bands": 10
+        },
+        {
+          "name": "Realistic rock #2 B",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Realistic rock #4 A",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Realistic rock #5 A",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Realistic rock #5 D",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "boulder rock #4 tilted",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Water Lily - Pink Flower",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        },
+        {
+          "name": "Water Lily - White Flower",
+          "parts": 1,
+          "alpha_parts": 0,
+          "bands": 10
+        }
+      ]
+    },
+    "cancellation": {
+      "cancelled": true,
+      "published": 0,
+      "seconds": 3.672,
+      "cancel_seconds": 0.11,
+      "cached_profiles": 0,
+      "dialog_cleared": true
+    },
+    "bilingual_visual_cases": 2,
+    "version": "1.4.107",
+    "compiled_regressions": 235,
+    "portable_smoke_cases": 5,
+    "portable_repository_checks": 12,
+    "broader_ui_regressions": 171,
+    "runtime_files": 530,
+    "source_runtime_hashes_verified": true,
+    "userdata_and_assets_preserved": true,
+    "network_calls": 0,
+    "bundled_alpha_decoder_verified": true,
+    "delivery_followup": "Bundled-only alpha decoding exposed missing fmod.dll and archspec CPU JSON assets. Both are now collected explicitly and verified without development site-packages or network access. Source UI checks pass in isolated batches; the combined long-lived Qt run was stopped after accumulating closed test windows."
+  },
+  "alchemist_slice_window": {
+    "status": "portable_verified",
+    "requirements": [
+      "FR-184",
+      "FR-183"
+    ],
+    "decisions": [
+      "ADR-121",
+      "ADR-120"
+    ],
+    "source_regressions": 230,
+    "remaining": [],
+    "push": false,
+    "private_map": {
+      "seconds": 1.938,
+      "objects": 2757,
+      "lines": 214334,
+      "profiles": 17,
+      "profile_bytes": 4034797,
+      "unavailable": [],
+      "stages": [
+        [
+          5,
+          "Reading the Dungeon Alchemist map",
+          0.0
+        ],
+        [
+          15,
+          "Reading local object descriptions",
+          0.032
+        ],
+        [
+          16,
+          "Reading local object geometry",
+          0.047
+        ],
+        [
+          16,
+          "Reading cached model projections",
+          0.063
+        ],
+        [
+          18,
+          "Reading local object geometry",
+          0.063
+        ],
+        [
+          19,
+          "Reading cached model projections",
+          0.063
+        ],
+        [
+          21,
+          "Reading local object geometry",
+          0.063
+        ],
+        [
+          22,
+          "Reading cached model projections",
+          0.094
+        ],
+        [
+          24,
+          "Reading local object geometry",
+          0.094
+        ],
+        [
+          24,
+          "Reading cached model projections",
+          0.125
+        ],
+        [
+          27,
+          "Reading local object geometry",
+          0.125
+        ],
+        [
+          27,
+          "Reading cached model projections",
+          0.125
+        ],
+        [
+          30,
+          "Reading local object geometry",
+          0.141
+        ],
+        [
+          30,
+          "Reading cached model projections",
+          0.172
+        ],
+        [
+          33,
+          "Reading local object geometry",
+          0.172
+        ],
+        [
+          33,
+          "Reading cached model projections",
+          0.188
+        ],
+        [
+          36,
+          "Reading local object geometry",
+          0.188
+        ],
+        [
+          36,
+          "Reading cached model projections",
+          0.188
+        ],
+        [
+          39,
+          "Reading local object geometry",
+          0.203
+        ],
+        [
+          39,
+          "Reading cached model projections",
+          0.203
+        ],
+        [
+          41,
+          "Reading local object geometry",
+          0.219
+        ],
+        [
+          42,
+          "Reading cached model projections",
+          0.25
+        ],
+        [
+          44,
+          "Reading local object geometry",
+          0.25
+        ],
+        [
+          45,
+          "Reading cached model projections",
+          0.266
+        ],
+        [
+          47,
+          "Reading local object geometry",
+          0.266
+        ],
+        [
+          47,
+          "Reading cached model projections",
+          0.266
+        ],
+        [
+          50,
+          "Reading local object geometry",
+          0.266
+        ],
+        [
+          50,
+          "Reading cached model projections",
+          0.282
+        ],
+        [
+          53,
+          "Reading local object geometry",
+          0.297
+        ],
+        [
+          53,
+          "Reading cached model projections",
+          0.313
+        ],
+        [
+          56,
+          "Reading local object geometry",
+          0.313
+        ],
+        [
+          56,
+          "Reading cached model projections",
+          0.313
+        ],
+        [
+          59,
+          "Reading local object geometry",
+          0.313
+        ],
+        [
+          59,
+          "Reading cached model projections",
+          0.328
+        ],
+        [
+          62,
+          "Reading local object geometry",
+          0.328
+        ],
+        [
+          62,
+          "Reading cached model projections",
+          0.36
+        ],
+        [
+          65,
+          "Models ready. Building placed object contours",
+          0.36
+        ]
+      ],
+      "preview_count": 170,
+      "last_preview": [
+        "Majesty Palm - 90-100%",
+        true,
+        0.36
+      ],
+      "selection_raw_bytes": 7271247,
+      "selection_compact_bytes": 3332464,
+      "selection_components": 11275,
+      "archive_reopen": true,
+      "cached_seconds": 1.687,
+      "source_unchanged": true,
+      "peak_mib": 798.9,
+      "cache_bytes": 11685888
+    },
+    "progress_regressions": 35,
+    "thread_benchmark": {
+      "1": [
+        1.172,
+        1.171
+      ],
+      "2": [
+        0.953,
+        1.25
+      ],
+      "4": [
+        1.094
+      ]
+    },
+    "heavy_operations": "Background project save and standalone JSON preparation with staged progress and detached snapshots. Existing import/open, PNG, exact bounds and native tile workers retained.",
+    "window_regressions": 14,
+    "broader_ui_regressions": 171,
+    "followup": "Persistent contour complexity after raw slab/range regeneration, explicit existing-project outside cleanup, and signed Windows Alt zoom are implemented and verified in the packaged runtime.",
+    "followup_source_regressions": 199,
+    "followup_window_detail_regressions": 23,
+    "alt_rotation_regressions": 12,
+    "outside_private": {
+      "original_app": "1.4.101",
+      "outside_objects": 39,
+      "before_edges": 71983,
+      "after_edges": 71023,
+      "seconds": 4.484,
+      "original_unchanged": true
+    },
+    "ui_visual": "Bilingual native panel captures include contour complexity, model-bound scale and four tabs.",
+    "version": "1.4.110",
+    "packaged_regressions": 471,
+    "portable_smoke_cases": 5,
+    "portable_repository_checks": 12,
+    "source_and_runtime_hashes_verified": true,
+    "source_assets_and_preferences_unchanged": true,
+    "complexity_private": {
+      "input_edges": 214334,
+      "output_edges": 110755,
+      "reduced_rings": 5838,
+      "seconds": 4.891,
+      "progress_updates": 323,
+      "selection_count": 110755
+    },
+    "portable_smoke": [
+      {
+        "case": "empty",
+        "exit": 0,
+        "peak_mib": 114.9,
+        "seconds": 1.391
+      },
+      {
+        "case": "saved-da",
+        "exit": 0,
+        "peak_mib": 289.4,
+        "seconds": 7.968
+      },
+      {
+        "case": "untitled",
+        "exit": 0,
+        "peak_mib": 784.3,
+        "seconds": 35.172
+      },
+      {
+        "case": "sliced",
+        "exit": 0,
+        "peak_mib": 638.7,
+        "seconds": 22.36
+      },
+      {
+        "case": "alpha",
+        "exit": 0,
+        "peak_mib": 1768.9,
+        "seconds": 91.609
+      }
+    ],
+    "bundled_model": {
+      "alpha_parts": 5,
+      "bands": 10,
+      "triangles": 3149,
+      "seconds": 4.125,
+      "preview_bytes": 728,
+      "modules": {
+        "UnityPy": "C:\\Programming\\GitHub\\DALE\\DALE\\_internal\\UnityPy\\__init__.py",
+        "numpy": "C:\\Programming\\GitHub\\DALE\\DALE\\_internal\\numpy\\__init__.py",
+        "shapely": "C:\\Programming\\GitHub\\DALE\\DALE\\_internal\\shapely\\__init__.py"
+      }
+    },
+    "evidence": "artifacts/projection-close/window: compiled-final.log, portable-validation.json, portable-repository-final.log, outside-private.json, complexity-private.json"
+  },
+  "da_navigation_optimization": {
+    "status": "source_verified_portable_pending",
+    "requirements": [
+      "FR-185",
+      "FR-186"
+    ],
+    "decisions": [
+      "ADR-122",
+      "ADR-123"
+    ],
+    "source_navigation": {
+      "project": "Untitled Map.dale",
+      "results": [
+        {
+          "run": "cold",
+          "seconds": 4.11,
+          "heartbeats": 93,
+          "stages": [
+            "Включение контуров ДА",
+            "Подготовка слоев высоты",
+            "Расчёт контуров ДА",
+            "Подготовка выделения контуров",
+            "Обновление отображения"
+          ],
+          "max_heartbeat_gap": 1.188
+        },
+        {
+          "run": "repeat",
+          "seconds": 1.313,
+          "heartbeats": 3,
+          "stages": [
+            "Включение контуров ДА",
+            "Подготовка категорий контуров",
+            "Обновление отображения"
+          ],
+          "max_heartbeat_gap": 0.843
+        }
+      ],
+      "analysis_calls": [
+        {
+          "thread_is_gui": false,
+          "seconds": 1.219
+        }
+      ],
+      "source_unchanged": true
+    },
+    "parallel_benchmark": {
+      "project": "Untitled Map.dale",
+      "section": "alchemist",
+      "load_seconds": 12.875,
+      "preparation": [
+        {
+          "parallel": false,
+          "seconds": 2.547
+        },
+        {
+          "parallel": true,
+          "seconds": 1.938
+        },
+        {
+          "parallel": true,
+          "seconds": 1.969
+        },
+        {
+          "parallel": false,
+          "seconds": 2.469
+        }
+      ],
+      "peak_mib": 1070.5,
+      "pixel_and_area_hashes_equal": true,
+      "object_analyses_equal": 2757,
+      "comparison_seconds": 10.078
+    },
+    "tests": {
+      "progress_interaction": 58,
+      "preparation_native_height": 67,
+      "expanded_source_before_ui_followup": 202,
+      "range_controls": 34,
+      "final_window_regressions": 26,
+      "absolute_slider_click": 8,
+      "latest_controls": 44,
+      "outer_focused_source": 111,
+      "source_before_outer": 552,
+      "compiled_before_outer": 552,
+      "final_source": 560,
+      "final_compiled": 560,
+      "bundled_simplification": true
+    },
+    "remaining": [],
+    "push": false,
+    "range_private": {
+      "seconds": 28.109,
+      "objects": 2515,
+      "edges": 355349,
+      "heartbeats": 309,
+      "longest_gap": 1.735,
+      "progress_visible": true,
+      "status": ""
+    },
+    "slice_ui_followup": "Owner clarified apparent range hang was an empty selection. Block opening without selected DA contours and auto-close on deselection. Upper boundary first/default10; compact sliders with value labels, cyan Slice range zone,1.5x preview height and12px vertical padding. Range display preparation runs off-thread through progress completion.",
+    "delivery_note": "Complete portable1.04.114 includes the owner-accepted outward outline and shared bounded shape cache, affine anchors, remembered slice-panel placement and release-only sliders.560 source and560 compiled regressions, three current EXE smoke cases (empty, frozen outer-frame archive, owner Untitled Map.dale) and bundled native simplification passed. Six earlier1.04.113 cases also passed; its comprehensive owner-map smoke needed a4GiB test budget after exceeding the initial2GiB cap. No application/project limit was added. UserData, private sources, icons and runtime/source hashes preserved. Runtime staged locally; no commit or push.",
+    "salience_private": {
+      "full_simplification_seconds": 2.172,
+      "changed_rings": 2792,
+      "project": "Untitled Map.dale",
+      "closed_rings": 32104,
+      "seconds": 0.828,
+      "palm_rings": 3256,
+      "original_vertices": 213754,
+      "simplified_vertices": 157228,
+      "source_unchanged": true
+    },
+    "outer_cache_private": {
+      "distinct_reductions": 36,
+      "cached_shapes": 36,
+      "cached_source_vertices": 16090,
+      "full_simplification_seconds": 3.14,
+      "changed_rings": 2792,
+      "project": "Untitled Map.dale",
+      "closed_rings": 32104,
+      "seconds": 1.109,
+      "palm_rings": 3256,
+      "original_vertices": 213754,
+      "simplified_vertices": 157228,
+      "source_unchanged": true
+    },
+    "portable_113_smoke": "Six actual EXE cases passed with exact source/runtime hashes and preserved UserData/private sources. Owner comprehensive smoke repeated alone with4GiB budget after exceeding the test-only2GiB budget.",
+    "portable_version": "1.4.114",
+    "portable_smoke": [
+      {
+        "case": "empty",
+        "exit": 0,
+        "peak_mib": 114.9,
+        "seconds": 1.5
+      },
+      {
+        "case": "outer-frame",
+        "exit": 0,
+        "peak_mib": 116.5,
+        "seconds": 1.593
+      },
+      {
+        "case": "owner-untitled",
+        "exit": 0,
+        "peak_mib": 2161.6,
+        "seconds": 110.453
+      }
+    ]
+  },
+  "category_filter_controls": {
+    "status": "delivered",
+    "scope": "Dataset-local per-category visibility filters, independent of selection.",
+    "remaining": [],
+    "push": false,
+    "version": "1.4.116"
+  },
+  "applied_state_export_manager": {
+    "status": "delivered",
+    "manager": "Owner Untitled Map.dale: manager opened after slice edits, selection add/remove/clear/reselect; five real button clicks, no errors. Reported failure not reproduced.",
+    "remaining": [],
+    "push": false,
+    "private_validation": {
+      "seconds": 140.78,
+      "peak_mib": 3028.8,
+      "source_unchanged": true,
+      "checkpoint_state_mib": 148.78,
+      "previous_state_mib": 1075.3
+    },
+    "evidence": "artifacts/projection-close/mode-progress: manager-work.json, manager-work-budget.json, resumed-core-tests.log, resumed-ui-tests.log, resumed-source-tests.log",
+    "version": "1.4.116",
+    "tests": {
+      "source_cases": 2037,
+      "obsolete_history_expectations_updated_and_rerun": 9,
+      "compiled_cases": 694,
+      "portable_delivery": 12,
+      "actual_exe_smoke": 3
+    },
+    "delivery": "Complete portable1.04.116. Applied state only, export perimeter/PNG merge, content-capped slicing panel and category-global filters. Source/compiled checks passed after updating old persisted-history test expectations. Manager failure not reproduced on five owner-map selection/slicing routes; exception reporting added. No commit or push.",
+    "portable_smoke": [
+      {
+        "case": "empty",
+        "exit": 0,
+        "peak_mib": 114.9,
+        "seconds": 1.468
+      },
+      {
+        "case": "filters",
+        "exit": 0,
+        "peak_mib": 120.2,
+        "seconds": 1.516
+      },
+      {
+        "case": "state-owner",
+        "exit": 0,
+        "peak_mib": 2172.1,
+        "seconds": 77.391
+      }
+    ]
+  },
+  "latest_recalculation": {
+    "status": "delivered",
+    "version": "1.4.119",
+    "remaining": [],
+    "push": false,
+    "delivery": "Cooperative cancellation with latest-only publication for slice/range/scale/complexity calculations, PNG bounds and native tiles. Exclusive file transactions retain their atomic lifecycle. Complete portable runtime verified; no commit or push.",
+    "private_validation": {
+      "seconds": 6.078,
+      "objects": 138,
+      "cancelled_obsolete": true,
+      "heartbeats": 63,
+      "max_heartbeat_gap": 0.562,
+      "errors": [],
+      "one_undo": true
+    }
+  },
+  "object_parameter_defaults": {
+    "status": "delivered",
+    "version": "1.4.120",
+    "remaining": [],
+    "push": false,
+    "cache_clear_followup": "After successful clearing with an attached DAM, offer cancellable local slice-cache rebuilding from embedded attachment bytes. Preserve project geometry, selection, history and cleared user defaults. Portable1.04.120 delivered:82 source cases,82 compiled cases,2 actual EXE smoke cases and12 delivery checks passed. UserData and private sources unchanged. No commit or push.",
+    "delivery": "Portable UserData/alchemist-cache.sqlite3 stores the last explicit per-field settings by exact block ID. Matching DAM imports ask saved/original/cancel; relative scale/rotation, slices and complexity apply on a detached snapshot. Missing local models retain their original contours while other parameters apply. Ordinary .dale reopening retains its applied settings. Cache clear deletes saved defaults too. UserData, private sources, icons and runtime/source hashes verified unchanged except intended delivery files.",
+    "evidence": "artifacts/projection-close/mode-progress: presets-compiled-final.log, presets-portable-validation.json, presets-delivery-tests.log, presets-repository-final.log, cancel-private.json, cancel-private-budget.json",
+    "tests": {
+      "combined_source": 628,
+      "defaults_final": 18,
+      "window_detail_final": 75,
+      "compiled_cases": 632,
+      "actual_exe_smoke": 3,
+      "portable_delivery": 12
+    },
+    "cache_clear_evidence": "artifacts/projection-close/mode-progress: cache-reload-source.log, cache-reload-compiled.log, cache-reload-portable-validation.json, cache-reload-delivery.log"
+  },
+  "project_open_diagnostic": {
+    "status": "verified",
+    "date": "2026-10-27",
+    "runtime_version": "1.4.120",
+    "source": "examples/Untitled Map.dale",
+    "source_app_version": "1.4.114",
+    "source_sha256": "e67e54d4b9ea17317b997d91d4d31f2330e8273b2dd21007591ae2022d01a60a",
+    "source_unchanged": true,
+    "old_geometry_records": 11,
+    "source_bytes": 220213753,
+    "opening_seconds": 83.469,
+    "state_read_seconds": [
+      28.531,
+      30.515
+    ],
+    "view_preparation_seconds": 1.953,
+    "copy": "examples/Untitled Map - optimized.dale",
+    "copy_bytes": 84634773,
+    "copy_open_with_equality_check_seconds": 30.594,
+    "geometry_metadata_selection_equal": true,
+    "source_assets_identical": true,
+    "evidence": "artifacts/projection-close/mode-progress: open-profile.json, compact-owner-result.json, compact-owner-before.json, compact-owner-budget.json",
+    "note": "Legacy schema7 archive saved before applied-state-only serialization duplicates large historical geometry payloads. Current saving reduces each state member from1075.29MiB to148.53MiB. Created a separate validated copy through normal save_project; no source code change or executable rebuild. Diagnostic-only Qt signal hook produced logging TypeErrors in the initial timing harness and was removed; no application error occurred. Do not use initial open-profile-budget memory figure because it omitted the Windows venv child process; corrected copy validation peak was2971.7MiB. Owner subsequently cleared DAM/cache and saved the optimized copy; its size and timing above are historical. The fresh verified copy and current native timings are recorded under whole_da_objects.",
+    "remaining": [],
+    "push": false
+  },
+  "whole_da_objects": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/projection-close/mode-progress: objects-compiled-final.log, part-cache-tests.log, objects-portable-validation.json, objects-delivery-tests.log, native-result.json, native-final-result.json, native-roundtrip.json, fresh-after-result.json",
+    "research": "docs/project-storage-research.md",
+    "push": false,
+    "version": "1.4.122",
+    "tests": {
+      "compiled_cases": 179,
+      "actual_exe_smoke": 3,
+      "delivery_checks": 12,
+      "source_cache_regressions": 61
+    },
+    "native_validation": {
+      "file": "examples/Untitled Map - verified.dale",
+      "objects": 2757,
+      "edges": 214334,
+      "save_seconds": 10.716,
+      "reopen_seconds": [
+        27.486,
+        30.775
+      ],
+      "manager_apply_seconds": 1.546,
+      "fresh_da_entry_seconds": 4.817,
+      "cached_da_entry_seconds": 1.7,
+      "category_seconds": [
+        0.846,
+        0.936,
+        0.178,
+        0.122,
+        0.059,
+        0.215,
+        0.942,
+        1.265
+      ],
+      "empty_reopen_history": true,
+      "geometry_and_metadata_preserved": true,
+      "engine": "Qt Raster on QWidget",
+      "errors": []
+    },
+    "cache": "Retain exact per-object topology by edge volume (1000000 edges, 16384 entries), avoiding the former 2048-entry cache cliff on this 2757-object map.",
+    "delivery": "Complete portable rebuilt. Native GUI workflow uses modules loaded from compiled EXE in Windows Qt; actual EXE additionally passed three smoke cases. Original owner archive, DAM, UserData and favicon unchanged. No commit or push."
+  },
+  "project_title": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/project-title: title-validation.json, portable-validation.json, project-progress.log, compiled-progress.log, delivery.log, array-benchmark.json",
+    "research": "docs/project-storage-research.md",
+    "push": false,
+    "version": "1.4.123",
+    "validation": {
+      "source_progress_cases": 7,
+      "compiled_progress_cases": 7,
+      "actual_exe_smoke_cases": 2,
+      "delivery_cases": 12
+    },
+    "optimization_scope": "Native-array benchmark and recommendations only in this update; earlier object/cache optimizations remain shipped. No additional geometry implementation or dependency change."
+  },
+  "native_object_index": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/object-index: summary.json, native-array-result.json, sequence-before-result.json, roundtrip.json, regressions.log, index-final.log, compiled.log, objects-portable-validation.json, delivery.log",
+    "push": false,
+    "version": "1.4.124",
+    "validation": {
+      "source_broad": 406,
+      "final_index_cases": 9,
+      "compiled_broad": 408,
+      "actual_exe_smoke": 3,
+      "delivery_checks": 12
+    },
+    "measurements": {
+      "visibility_before_seconds": 4.737280699999246,
+      "visibility_after_seconds": 1.7660617999936221,
+      "transform_before_median": 0.3351276000030339,
+      "transform_after_median": 0.2420711999948253,
+      "exact_transform_signature_equal": true,
+      "roundtrip": {
+        "geometry_equal": true,
+        "metadata_equal": true,
+        "empty_history": true,
+        "errors": []
+      }
+    },
+    "delivery": "Complete portable refreshed; original map/DAM, UserData and icons preserved. No commit or push. Runtime indexes/arrays only; schema7 remains unchanged."
+  },
+  "runtime_update_recovery": {
+    "status": "publication_declined_by_owner",
+    "remaining": [],
+    "evidence": "artifacts/runtime-update: reproduction.json, tests.log, compiled.log, candidate-validation.json, build.log",
+    "push": false,
+    "version": "1.4.125",
+    "validation": {
+      "source_cases": 10,
+      "compiled_cases": 62,
+      "candidate_exe_smoke": 2,
+      "old_runtime_unchanged": true
+    },
+    "candidate": null,
+    "resume_command": null,
+    "owner_instruction": "Owner requests leaving the installed runtime as-is and accepts restarting after the reproduced stale-module condition. Do not publish the staged1.4.125 bundle without a new owner instruction.",
+    "installed_version": "1.4.124",
+    "superseded_by": "1.4.126 under the new contour-refit request; staged1.4.125 was never published."
+  },
+  "contour_refit": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/outline-refit: tests.log, compiled.log, build.log, portable-validation.json, examples.png, measurements.json",
+    "push": false,
+    "version": "1.4.126",
+    "validation": {
+      "source_cases": 166,
+      "compiled_cases": 132,
+      "actual_exe_smoke": 2,
+      "protected_files_unchanged": true,
+      "runtime_hashes_valid": true
+    },
+    "delivery": "Complete DALE portable refreshed to1.4.126. Untitled Map.dale opens in the actual executable; private project/DAM, UserData and icon hashes unchanged. No commit or push."
+  },
+  "coarse_contour_refit": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/outline-refit-coarse: comparison.png, comparison.json, tests.log, compiled.log, build.log, portable-validation.json, delivery.log",
+    "push": false,
+    "version": "1.4.127",
+    "validation": {
+      "source_cases": 140,
+      "compiled_cases": 136,
+      "actual_exe_smoke": 1,
+      "userdata_unchanged": true,
+      "runtime_hashes_valid": true
+    },
+    "delivery": "Complete portable runtime refreshed to1.4.127. New round/coarse contour reconstruction applies on explicit complexity changes; saved project geometry is retained on opening. No commit or push."
+  },
+  "global_contour_reconstruction": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "artifacts/outline-global: final-tests.log, compiled.log, final-build.log, portable-validation.json, examples.png, delivery.log",
+    "push": false,
+    "version": "1.4.129",
+    "validation": {
+      "source_cases": 141,
+      "compiled_cases": 137,
+      "actual_exe_smoke": 1,
+      "userdata_unchanged": true,
+      "runtime_hashes_valid": true
+    },
+    "delivery": "Complete DALE portable refreshed to1.4.129. All shapes use immutable-source, budget-specific complete reconstruction. Hierarchical collapse and rounded-only refit branches removed. Saved geometry changes only on an explicit complexity/slice operation. No commit or push."
+  },
+  "contour_budget": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "tests/test_alchemist_budget.py; artifacts/outline-budget",
+    "push": false,
+    "version": "1.4.130",
+    "installed_version": "1.4.130",
+    "validation": {
+      "source_cases": 146,
+      "compiled_cases": 142,
+      "actual_candidate_exe_smoke": 1,
+      "installed_exe_unchanged": true,
+      "runtime_hashes_valid": true
+    },
+    "delivery": "Complete validated portable1.4.130 published after normal owner exit. Runtime checksums match the staged candidate. No commit or push."
+  },
+  "project_json_size": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "tests/test_project_json_size.py; artifacts/project-json-size",
+    "push": false,
+    "version": "1.4.131",
+    "installed_version": "1.4.131",
+    "validation": {
+      "source_cases": 126,
+      "compiled_cases": 126,
+      "actual_candidate_exe_smoke": true,
+      "owner_map_exact_roundtrip": true,
+      "owner_archive_unchanged": true
+    },
+    "delivery": "Complete validated portable1.4.131 published after normal owner exit and confirmation that no important unsaved work remains. Runtime checksums match the staged candidate. No commit or push."
+  },
+  "object_thinning": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "tests/test_alchemist_thinning.py; tests/test_alchemist_placement.py; tests/test_alchemist_budget.py; artifacts/thinning",
+    "push": false,
+    "validation": {
+      "source_feature_cases": 177,
+      "additional_thinning_cases": 13,
+      "extended_cases": 215,
+      "owner_map": {
+        "load_seconds": 33.939038499986054,
+        "edges": 303427,
+        "shape_seconds": 1.4230349999997998,
+        "objects": 2757,
+        "0": {
+          "seconds": 5.49999822396785e-06,
+          "hidden": 0
+        },
+        "5": {
+          "seconds": 13.288629099988611,
+          "hidden": 951
+        },
+        "10": {
+          "seconds": 17.880480100007844,
+          "hidden": 1968
+        },
+        "midlevel_coverage": 0.9674592073579115,
+        "source_unchanged": true
+      },
+      "source_cases": 392,
+      "compiled_cases": 392,
+      "actual_exe_smoke": true,
+      "runtime_hashes_valid": true,
+      "ui_render_verified": true
+    },
+    "version": "1.4.132",
+    "installed_version": "1.4.132",
+    "delivery": "Complete portable1.4.132 published. Reversible thinning, per-object batch failure isolation and corrected DAM Object placement. Existing saved geometry is unchanged until explicit reimport. No commit or push."
+  },
+  "idle_contour_performance": {
+    "status": "delivered",
+    "remaining": [],
+    "evidence": "tests/test_selection_display.py; artifacts/idle-performance",
+    "push": false,
+    "validation": {
+      "baseline": {
+        "empty_repaint": 0.022217499994440004,
+        "select_all_info": 5.519755000001169,
+        "selected_repaint": 0.24743279999529477,
+        "focus": 0.0018001999997068197,
+        "resize": 0.2484180000028573,
+        "sidebar_click": 0.001044700009515509,
+        "mouse_move": 1.6924347000021953,
+        "repeat_info": 0.6184912000026088
+      },
+      "optimized": {
+        "empty_repaint": 0.021691100002499297,
+        "select_all_info": 0.4040865999995731,
+        "selected_repaint": 0.04185210001014639,
+        "focus": 0.002261200002976693,
+        "resize": 0.05268670000077691,
+        "sidebar_click": 0.0007550000009359792,
+        "mouse_move": 0.5063157999975374,
+        "repeat_info": 0.102356499992311,
+        "delayed_move_0": 0.04336630000034347,
+        "delayed_move_1": 0.04203789999883156,
+        "delayed_move_2": 0.04039039999770466,
+        "delayed_sidebar": 0.0007772999961161986
+      },
+      "native_mouse_move_before_seconds": 21.515,
+      "bush_objects": 2515,
+      "bush_budget_18_seconds_profiled": 40.8325073,
+      "bush_budget_19_seconds_profiled": 40.1528993,
+      "full_fits_18": 27,
+      "additional_full_fits_19": 25,
+      "baseline_each_budget_cancelled_after_seconds": 90,
+      "owner_project_unchanged": true,
+      "source_regressions": 546,
+      "compiled_regressions": 546,
+      "portable_checks": 12,
+      "actual_exe_smoke": "1.4.133",
+      "ruff": "passed",
+      "repository_check": "passed"
+    },
+    "notes": [
+      "Normalized rounded-key boundaries caused repeated full fits for equivalent placed masks; bounded numeric matching retains exact per-instance containment checks.",
+      "A tight QTest.qWait loop starves Python workers and is not a throughput benchmark. Background benchmarks yield the GIL and process actual Qt events between pauses.",
+      "Computer Use native window capture timed out at app approval. Native event timing was recorded by the isolated diagnostic process; subsequent delayed input regressions use isolated Qt tests, not owner window automation.",
+      "The expanded UI suite exposed a stale17-toolbar assertion after the earlier toolbar removal; corrected to the actual16 and reran all139 UI cases for source and packaged code."
+    ],
+    "version": "1.4.133"
+  },
+  "merged_contour_complexity": {
+    "status": "delivered",
+    "remaining": [],
+    "push": false,
+    "validation": {
+      "source_tests": 162,
+      "owner_objects": 2515,
+      "complexity": 14,
+      "range": [
+        0,
+        10
+      ],
+      "rejected_objects": 0,
+      "profiled_seconds": 46.1362051,
+      "full_fits": 86,
+      "owner_project_unchanged": true,
+      "ruff": "passed",
+      "repository_check": "passed",
+      "compiled_tests": 162,
+      "exe_smoke": "1.4.134",
+      "compiled_owner_seconds": 46.3472515,
+      "compiled_owner_parts": 2545,
+      "compiled_owner_max_vertices": 14,
+      "installed_exe_smoke": "1.4.134"
+    },
+    "version": "1.4.134"
+  },
+  "thinning_selection": {
+    "status": "delivered",
+    "remaining": [],
+    "push": false,
+    "validation": {
+      "source_tests": 231,
+      "ruff": "passed",
+      "repository_check": "passed",
+      "compiled_tests": 231,
+      "exe_smoke": "1.4.135",
+      "installed_exe_smoke": "1.4.135"
+    },
+    "version": "1.4.135"
+  },
+  "export_options_camera": {
+    "status": "delivered",
+    "remaining": [],
+    "push": false,
+    "validation": {
+      "owner_route_reproduced": true,
+      "source_files_unchanged": true,
+      "placeholder_zoom": 1,
+      "imported_zoom": 0.05185185185185185,
+      "source_tests": 325,
+      "compiled_tests": 325,
+      "installed_exe_smoke": "1.4.136",
+      "compiled_owner_route": true,
+      "ruff": "passed",
+      "repository_check": "passed"
+    },
+    "version": "1.4.136"
+  },
+  "release_article": {
+    "status": "ready_for_guarded_publication",
+    "owner_request": "Push development and release; update article/screenshots and track matching PDF, maintained on release pushes.",
+    "article": "README.md",
+    "pdf": "docs/DALE-guide.pdf",
+    "screenshots": 22,
+    "languages": [
+      "en",
+      "ru"
+    ],
+    "remaining": [
+      "guarded development push",
+      "separate pinned release confirmation and push"
+    ],
+    "validation": {
+      "focused_tests": 98,
+      "private_projects_unchanged": true,
+      "pdf_pages": 26,
+      "full_source_tests": 2188,
+      "packaged_tests": 326,
+      "article_guard_tests": 23,
+      "installed_exe_smoke": "1.4.137",
+      "pdf_sha256": "92c7e2df5f724753b25a5f208bf1fa7654c40ffabb5efc317390f6367b161355",
+      "rendered_pages_reviewed": true,
+      "ruff": "passed",
+      "formatter": "passed",
+      "repository_check": "passed"
+    },
+    "policy": "Single-attempt guarded pushes. No tags, GitHub Release creation or remote cleanup requested.",
+    "version": "1.4.137"
   }
 }

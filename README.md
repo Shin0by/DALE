@@ -24,7 +24,72 @@ Work on the image and its contours together: repair boundaries, choose the parts
 
 [Editing workflow](docs/workflow.md) | [Portable startup notes](docs/portable-start.txt) | [Project format](docs/project-format.md) | [Architecture](docs/architecture.md)
 
-Examples below show actual editor states from village-port.dale.
+Examples show actual editor states from the village and jungle projects. Both languages reuse the same English-interface screenshots.
+
+[Download this article as PDF](docs/DALE-guide.pdf).
+
+<details>
+<summary><strong>DA contours - turn local 3D assets into map obstacles</strong></summary>
+
+Attach a Dungeon Alchemist DAM file to a dataset in the manager. DALE reads installed models and textures and projects their visible outer silhouettes onto the map. This works locally, without AI services or internet access. Workshop assets must already be downloaded; missing assets need to be opened in Dungeon Alchemist first.
+
+- The DA contours section has separate Wall, Tree, Bush and Rock controls and groups. Toggle a whole category or set its global minimum original size and height in the category's right-click settings.
+- Select complete placed objects, including their separate pieces. Rotate and scale around each object's own centre. Object movement and individual point/edge editing remain available in the ordinary sections only.
+- Portable SQLite caches model projections and the last explicitly chosen size, extra rotation, slices and complexity for each exact asset type. A new DAM import asks whether to use those settings or the original placement. Existing .dale projects retain their own geometry. Clearing the cache also clears these remembered defaults.
+
+<img src="docs/images/readme/da-overview.png" alt="The DA contours section overlays local object silhouettes on the jungle map." width="1000">
+
+*Trees, bushes and rocks remain independent placed objects, with category visibility and whole-object tools.*
+
+</details>
+
+<details>
+<summary><strong>Object slices - choose height and simplify the outer shape</strong></summary>
+
+Select DA objects and open Object slices below the contour display control. The movable panel remembers its position and has four category tabs. Its active category is isolated temporarily; closing the panel restores the other enabled categories. Clearing the last selection closes the panel.
+
+- Slice levels run from 0 to 10 over the actual model height. Ground mode follows the local surface. Enable Slice range to combine the slices between the lower and upper boundaries; the preview marks that range in cyan.
+- Size and Contour complexity affect the selected objects. Each complexity request rebuilds the polygon from the original detailed outline, preserving outer coverage and broad features. The minimum is four vertices per perimeter. Contacting parts of the same asset may form a common outer contour; independent objects stay independent.
+- Changing the slice reapplies the chosen complexity. A slider drag starts its calculation on release; a newer request supersedes stale work. Long calculations show progress. Changes share an undo segment until the selection changes or the panel closes.
+
+<img src="docs/images/readme/da-slices.png" alt="Object slices shows model height, selected objects and the complexity controls beside the map." width="1000">
+
+*The preview explains the height range; the map displays the applied contour.*
+
+</details>
+
+<details>
+<summary><strong>Thinning - reduce overlapping obstacles reversibly</strong></summary>
+
+Use Thin objects and Ctrl+wheel over its value to set strength from 0 to 10. It examines trees, bushes and rocks together across the active dataset, independently of selection.
+
+- It removes redundancy where objects actually overlap, favouring external coverage and a more even distribution. A dense group of small, separate objects is not removed just because they are nearby.
+- At 0 all objects return; at 10 the surviving objects are disjoint. Intermediate values retain more overlap. This is useful when preparing dense jungle obstacles without stacking several walls in the same place.
+- Hidden objects stay out of exports. Returning objects recover the user's retained selection; newer selection changes and explicit clearing are respected.
+
+<table><tr>
+<td width="50%"><img src="docs/images/readme/thinning-before.png" alt="Thinning 0: original overlapping obstacles." width="330"><br><em>0: original overlapping obstacles.</em></td>
+<td width="50%"><img src="docs/images/readme/thinning-after.png" alt="Thinning 5: fewer overlapping obstacles, with the image unchanged." width="330"><br><em>5: fewer overlaps; the image is unchanged.</em></td>
+</tr></table>
+
+</details>
+
+<details>
+<summary><strong>Export - choose the files and the contour source</strong></summary>
+
+Right-click Export selected regions to configure the output before exporting.
+
+- PNG and JSON have independent checkboxes. Disable PNG for a JSON-only export without image rendering; keep at least one format enabled.
+- Only DA contours excludes ordinary lines from JSON and restricts PNG cutting areas to visible DA contours inside the chosen regions. Disabled categories and thinned objects stay excluded.
+- Merge adjacent contours groups neighbouring selected regions into PNGs and removes interior JSON boundaries only during export. The editable project keeps its separate objects.
+- Optional height normalization sets exported base/top wall heights without changing the project. Category JSON settings remain on the category buttons.
+- Scene JSON preserves the supplied scene's other data. When both file formats are enabled, the placement JSON describes the exported images; it is not an automatic Foundry scene builder.
+
+<img src="docs/images/readme/export-settings.png" alt="Export settings with Only DA contours and independent PNG and JSON checkboxes." width="416">
+
+</details>
+
+
 
 <details>
 <summary><strong>Vertices - make the boundary fit the map</strong></summary>
@@ -165,7 +230,7 @@ Give a useful selection a name and colour instead of finding the same building a
 Organise related map images and their contours inside one .dale project rather than treating every export as a separate job.
 
 - Switch between ground, upper floors, roofs and underground maps with a saved view for each dataset.
-- Use the dataset manager to create and rename sets, transfer images or JSON, and merge contour data when needed. Save source assets, editing history, groups and settings together.
+- Use the dataset manager to create and rename sets, transfer images or JSON, and merge contour data when needed. Save source assets, applied contours, groups and settings together. Undo/redo stays in the running session and starts empty when a project opens. The title shows the current project filename; progress remains visible while manager Apply prepares and publishes the new dataset.
 
 <details>
 <summary>See the example</summary>
@@ -184,7 +249,7 @@ Organise related map images and their contours inside one .dale project rather t
 Keep useful visual references on the map while changing editing modes.
 
 - Use rulers, persistent guides, a cursor crosshair and a configurable scene grid. Rulers support pixels and game-world feet, centimetres or millimetres when scene metadata permits.
-- Inspect native-resolution tiles, choose a workspace background and retain each dataset's zoom and camera position. Guides and grid overlays are not burned into PNGs.
+- Inspect native-resolution tiles, choose a workspace background and retain each dataset's zoom and camera position. Guides and grid overlays are not burned into PNGs. Zoom is bounded during navigation and project reopening. New project restores the ordinary checkerboard, and the first imported map fits its real dimensions.
 
 <details>
 <summary>See the example</summary>
@@ -241,7 +306,70 @@ A filled lower-right corner marks a tool with extra options. **Right-click the t
 
 [Рабочий процесс](docs/workflow.md) | [Запуск portable-версии](docs/portable-start.txt) | [Формат проекта](docs/project-format.md) | [Архитектура и разработка](docs/architecture.md)
 
-Примеры ниже сняты с настоящего интерфейса на проекте village-port.dale.
+Примеры показывают настоящие состояния редактора на проектах деревни и джунглей. Обе языковые версии используют общие скриншоты английского интерфейса.
+
+[Скачать эту статью в PDF](docs/DALE-guide.pdf).
+
+<details>
+<summary><strong>Контуры DA - препятствия на карте из локальных 3D-ассетов</strong></summary>
+
+Подключите файл DAM из Dungeon Alchemist к набору через менеджер. DALE читает установленные модели и текстуры и проецирует их видимые внешние силуэты на карту. Всё работает локально, без нейросетевых сервисов и интернета. Ассеты Workshop должны быть уже загружены; если их не хватает, сначала откройте карту в Dungeon Alchemist.
+
+- В разделе Контуры DA есть отдельные кнопки стен, деревьев, кустов и камней, а также собственные группы. Кнопка скрывает всю категорию; минимальный исходный размер и высота задаются в её настройках по правому клику и действуют глобально.
+- Выделяйте объекты целиком, включая отдельные части одного ассета. Вращайте и масштабируйте каждый относительно собственного центра. Перемещение и правка отдельных точек и рёбер доступны только в обычных разделах.
+- Portable-база SQLite хранит проекции моделей и последние явно заданные размер, дополнительный поворот, нарезку и сложность каждого точного типа ассета. При новом импорте DAM программа предлагает применить их или оставить исходное размещение. Проект .dale открывается со своей геометрией. Очистка кэша удаляет и эти запомненные параметры.
+
+<img src="docs/images/readme/da-overview.png" alt="Раздел Контуры DA накладывает силуэты локальных объектов на карту джунглей." width="1000">
+
+*Деревья, кусты и камни остаются отдельными объектами с видимостью по категориям и инструментами для целого объекта.*
+
+</details>
+
+<details>
+<summary><strong>Нарезка объектов - высота и упрощение внешней формы</strong></summary>
+
+Выделите объекты DA и откройте Нарезку объектов кнопкой под отображением контуров. Перемещаемое окно запоминает положение и содержит четыре вкладки категорий. Активная категория временно показывается отдельно; после закрытия возвращаются остальные включённые категории. Снятие всего выделения закрывает окно.
+
+- Уровни от 0 до 10 привязаны к реальной высоте модели. Режим земли учитывает местную поверхность. Галочка Диапазон нарезки объединяет срезы между нижней и верхней границами; на превью диапазон отмечен голубым.
+- Размер и Сложность контура действуют на выделенные объекты. Каждое значение сложности строит фигуру заново из исходного подробного контура, сохраняя внешнее покрытие и крупные элементы. Минимум - четыре вершины на периметр. Соприкоснувшиеся части одного ассета могут образовать общий внешний контур; разные объекты остаются независимыми.
+- После изменения нарезки выбранное упрощение применяется повторно. Перетаскивание ползунка запускает расчёт после отпускания; новый запрос отменяет устаревший. Долгие операции показывают прогресс. Изменения объединяются в шаг отмены до смены выделения или закрытия окна.
+
+<img src="docs/images/readme/da-slices.png" alt="Нарезка объектов показывает высоту модели, выделение и настройки сложности рядом с картой." width="1000">
+
+*Превью поясняет диапазон высот, а карта показывает применённый контур.*
+
+</details>
+
+<details>
+<summary><strong>Прореживание - обратимое уменьшение наложений</strong></summary>
+
+Кнопка Прореживание и Ctrl+колесо над её значением задают силу от 0 до 10. Расчёт рассматривает деревья, кусты и камни вместе во всём текущем наборе, независимо от выделения.
+
+- Убирается избыточность там, где объекты действительно пересекаются, с приоритетом внешнего покрытия и более равномерного заполнения. Много мелких раздельных объектов не удаляются только из-за близости.
+- При 0 все объекты возвращаются; при 10 оставшиеся объекты не соприкасаются. Средние значения сохраняют больше перекрытий. Это помогает готовить густые джунгли без множества стен почти в одном месте.
+- Скрытые объекты не выгружаются. Вернувшиеся объекты восстанавливают запомненное выделение пользователя; последующие изменения выбора и его явная очистка учитываются.
+
+<table><tr>
+<td width="50%"><img src="docs/images/readme/thinning-before.png" alt="Прореживание 0: исходные перекрывающиеся препятствия." width="330"><br><em>0: исходные перекрытия.</em></td>
+<td width="50%"><img src="docs/images/readme/thinning-after.png" alt="Прореживание 5: меньше перекрытий, изображение не изменено." width="330"><br><em>5: меньше перекрытий; изображение не меняется.</em></td>
+</tr></table>
+
+</details>
+
+<details>
+<summary><strong>Экспорт - выбор файлов и источника контуров</strong></summary>
+
+Откройте настройки Экспорта выбранных областей правым кликом перед выгрузкой.
+
+- У PNG и JSON отдельные галочки. Отключите PNG для выгрузки одного JSON без обработки изображения; хотя бы один формат должен оставаться включённым.
+- Только Контуры DA исключает обычные линии из JSON и ограничивает области PNG видимыми контурами DA внутри выбранных областей. Отключённые категории и прореженные объекты не возвращаются в выгрузку.
+- Объединять смежные контуры группирует соседние выбранные области в PNG и убирает внутренние границы в JSON только при экспорте. В проекте объекты остаются отдельными.
+- Нормализация высоты при необходимости задаёт высоты основания и верха выгружаемых стен, не меняя проект. Параметры JSON категорий остаются в кнопках категорий.
+- JSON сцены сохраняет прочие данные исходной сцены. При включённых обоих форматах JSON размещения описывает экспортированные картинки; автоматическую сцену Foundry он не создаёт.
+
+<img src="docs/images/readme/export-settings.png" alt="Настройки экспорта: Только Контуры DA и независимые галочки PNG и JSON." width="416">
+
+</details>
 
 <details>
 <summary><strong>Вершины - подгоните границу под карту</strong></summary>
@@ -382,7 +510,7 @@ A filled lower-right corner marks a tool with extra options. **Right-click the t
 Соберите связанные изображения карты и их контуры в одном проекте .dale вместо отдельных рабочих файлов на каждый вариант.
 
 - Переключайтесь между поверхностью, этажами, крышами и подземельем с сохранённым положением камеры для каждого набора.
-- В менеджере наборов создавайте и переименовывайте наборы, переносите изображения или JSON и при необходимости объединяйте контуры. Сохраняйте исходники, историю правок, группы и настройки вместе.
+- В менеджере наборов создавайте и переименовывайте наборы, переносите изображения или JSON и при необходимости объединяйте контуры. Сохраняйте исходники, применённые контуры, группы и настройки вместе. История отмены остаётся в текущем сеансе и очищается при открытии проекта. Заголовок показывает имя проекта; «Применить» в менеджере показывает прогресс подготовки и отображения набора.
 
 <details>
 <summary>Посмотреть пример</summary>
@@ -401,7 +529,7 @@ A filled lower-right corner marks a tool with extra options. **Right-click the t
 Держите полезные ориентиры на карте при переключении между режимами редактирования.
 
 - Используйте линейки, сохраняемые направляющие, перекрестие курсора и настраиваемую сетку сцены. Линейки показывают пиксели и, при наличии данных сцены, игровые футы, сантиметры или миллиметры.
-- Рассматривайте фрагменты в исходном разрешении, выбирайте фон рабочей области и возвращайтесь к сохранённому масштабу и положению камеры. Направляющие и экранная сетка не попадают в PNG.
+- Рассматривайте фрагменты в исходном разрешении, выбирайте фон рабочей области и возвращайтесь к сохранённому масштабу и положению камеры. Направляющие и экранная сетка не попадают в PNG. Масштаб ограничен и при навигации, и при открытии проекта. Новый проект возвращает обычную шахматную подложку, а первая импортированная карта подстраивается под окно по своим реальным размерам.
 
 <details>
 <summary>Посмотреть пример</summary>

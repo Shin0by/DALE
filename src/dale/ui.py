@@ -56,6 +56,7 @@ from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
 
 from dale import __version__, application_title
+from dale.alchemist_ui import AlchemistUI
 from dale.bounds_preview import BoundsPreview
 from dale.canvas import (
     AREA_TOOLS,
@@ -97,12 +98,16 @@ from dale.overlay_export import (
 from dale.preferences import (
     ROTATION_VALUE_RANGES,
     TOOL_VALUE_RANGES,
+    load_alchemist_export,
     load_connection_choice,
     load_directory,
     load_export_group_naming,
     load_global_tool_settings,
+    load_height_normalization,
     load_include_json,
+    load_include_png,
     load_language,
+    load_merge_export_contours,
     load_merge_selected_regions,
     load_move_related,
     load_project_dataset,
@@ -110,12 +115,16 @@ from dale.preferences import (
     load_right_panel_visible,
     load_size_to_grid,
     load_tool_values,
+    save_alchemist_export,
     save_connection_choice,
     save_directory,
     save_export_group_naming,
     save_global_tool_settings,
+    save_height_normalization,
     save_include_json,
+    save_include_png,
     save_language,
+    save_merge_export_contours,
     save_merge_selected_regions,
     save_project_dataset,
     save_recent_projects,
@@ -148,7 +157,6 @@ from dale.selection_groups import (
     group_ui_state,
 )
 from dale.session import RasterSelectionEdit, RegionSelection, Session
-from dale.source_editing import source_layers
 from dale.tool_settings import ToolSettingsDialog
 from dale.toolbar import (
     ModeTabButton,
@@ -177,8 +185,10 @@ class ExportWorker(QThread):
         size_to_grid=False,
         grid_size=None,
         include_json=True,
+        include_png=True,
         export_groups=(),
         active_group=None,
+        merge_contours=False,
     ):
         super().__init__(parent)
         self.source = session.source
@@ -187,9 +197,13 @@ class ExportWorker(QThread):
         self.region_indices = tuple(region_indices) if region_indices is not None else None
         self.selected_polygons = tuple(selected_polygons) if selected_polygons is not None else None
         self.merge_adjacent = merge_adjacent
+        self.merge_contours = merge_contours
         self.size_to_grid = size_to_grid
         self.grid_size = grid_size
         self.include_json = include_json
+        self.include_png = include_png
+        self.json_contours = parent.json_contours
+        self.height_normalization = parent.height_normalization
         self.export_groups = tuple(export_groups)
         self.active_group = active_group
         from threading import Event
@@ -211,6 +225,7 @@ class ExportWorker(QThread):
             session.source,
             session.origin,
             list(session.operations),
+            alchemist=session.alchemist,
             gap_tolerance=session.gap_tolerance,
             contour_offset=session.contour_offset,
             json_documents=tuple(
@@ -230,12 +245,16 @@ class ExportWorker(QThread):
                 export_name=self.export_name,
                 selected_polygons=self.selected_polygons,
                 merge_adjacent=self.merge_adjacent,
+                merge_contours=self.merge_contours,
                 size_to_grid=self.size_to_grid,
                 grid_size=self.grid_size,
                 target_directory=self.path,
                 conflict=self.resolve_file_conflict,
                 protected_sources=tuple(self.protected_sources),
                 include_json=self.include_json,
+                include_png=self.include_png,
+                json_contours=self.json_contours,
+                height_normalization=self.height_normalization,
                 export_groups=self.export_groups,
                 active_group=self.active_group,
             )
@@ -269,7 +288,7 @@ class ApplicationContourClipboard(QObject):
         self.changed.emit()
 
 
-class MainWindow(QMainWindow):
+class MainWindow(AlchemistUI, QMainWindow):
     def __init__(self, preferences_path=None):
         super().__init__()
         self.preferences_path = preferences_path or settings_path()
@@ -281,9 +300,17 @@ class MainWindow(QMainWindow):
         self.language = load_language(self.preferences_path)
         self.remembered_move_related = load_move_related(self.preferences_path)
         self.remembered_merge_selected_regions = load_merge_selected_regions(self.preferences_path)
-        self.merge_selected_regions = self.remembered_merge_selected_regions is True
+        self.merge_export_contours = load_merge_export_contours(self.preferences_path)
+        self.merge_selected_regions = (
+            self.remembered_merge_selected_regions is True or self.merge_export_contours
+        )
         self.size_to_grid = load_size_to_grid(self.preferences_path)
+        self.json_contours = load_alchemist_export(self.preferences_path)
+        self.height_normalization = load_height_normalization(self.preferences_path)
         self.include_json = load_include_json(self.preferences_path)
+        self.include_png = load_include_png(self.preferences_path)
+        if not self.include_json and not self.include_png:
+            self.include_png = True
         self.export_group_naming = load_export_group_naming(self.preferences_path)
         self.connection_choices = {
             tool: load_connection_choice(self.preferences_path, tool)
@@ -342,6 +369,9 @@ class MainWindow(QMainWindow):
         self.view.figure_clicked.connect(self.select_figure_at)
         self.view.region_box_selected.connect(self.select_regions_in_box)
         self.view.regions_transformed.connect(self.select_transformed_regions)
+        self.view.alchemist_parameters_changed.connect(
+            lambda args: self.remember_alchemist_parameters(*args)
+        )
         self.view.clipboard_changed.connect(self.capture_contour_clipboard)
         self.view.paste_committed.connect(self.retain_clipboard_sources)
         self._clipboard_documents = ()
@@ -657,6 +687,7 @@ class MainWindow(QMainWindow):
         row.addStretch(1)
         self.top_panels_scroll.setWidget(top_content)
         self.top_panels_host.addWidget(self.top_panels_scroll)
+        self.top_panels_host.layout().setContentsMargins(0, 0, 0, 0)
         self.addToolBar(self.top_panels_host)
         self.top_panels_scroll.horizontalScrollBar().setToolTip(
             "Scroll the top panels horizontally with the mouse wheel."
@@ -1188,8 +1219,10 @@ class MainWindow(QMainWindow):
         }
         for mode, bar in (
             ("Rotate figures", figures),
+            ("Move regions", region_tools),
             ("Rotate regions", region_tools),
             ("Rotate raster regions", pixels),
+            ("Scale raster regions", pixels),
         ):
             self.tool_settings_buttons[mode] = bar.widgetForAction(self.mode_actions[mode])
         for title, button in self.tool_settings_buttons.items():
@@ -1256,12 +1289,12 @@ class MainWindow(QMainWindow):
                 "Create an empty project with one dataset. Unsaved changes can be saved first."
             ),
             "Dataset manager…": "Dataset manager: create, rename, combine or transfer datasets.",
-            "Open project": "Open a .dale project with its files, edits and undo history.",
+            "Open project": "Open a .dale project with its files and applied edits.",
             "Save project": (
-                "Save every dataset and its editing history in the current .dale project."
+                "Save every dataset and its applied edits in the current .dale project."
             ),
             "Save project as…": (
-                "Save all datasets and editing history to a new .dale project file."
+                "Save all datasets and applied edits to a new .dale project file."
             ),
             "Export PNGs": (
                 "Save closed regions as separate transparent PNGs with a coordinate manifest."
@@ -1575,6 +1608,7 @@ class MainWindow(QMainWindow):
                 item.setProperty("dale_tooltip_condition", conditions.get(key))
                 item.setProperty("dale_default_tooltip_condition", conditions.get(key))
                 item.setProperty("dale_tooltip_keys", keys)
+                item.setProperty("dale_default_tooltip_keys", keys)
                 item.setToolTip(
                     format_tooltip(
                         parts,
@@ -1600,6 +1634,7 @@ class MainWindow(QMainWindow):
         sidebar_scroll.horizontalScrollBar().setToolTip("Scroll scene settings and editing help.")
         for control in (self.language_control,):
             form.labelForField(control).setToolTip(control.toolTip())
+        self.setup_alchemist()
         self.initialize_tool_preferences()
         self.rebuild_recent_menu()
         for command in self.findChildren(QAction):
@@ -1622,13 +1657,14 @@ class MainWindow(QMainWindow):
             bar.setFixedWidth(bar.sizeHint().width())
             bar.setFixedHeight(height)
         self.top_panels_scroll.setFixedHeight(height + 3)
+        self.top_panels_host.setFixedHeight(height + 3)
 
     def update_main_delete_action(self):
         if not hasattr(self, "settings_action") or not hasattr(self, "delete_contours_action"):
             return
         target = (
             self.delete_contours_action
-            if self.current_tool_set == "figures"
+            if self.current_tool_set in ("figures", "alchemist")
             else self.delete_regions_action
         )
         if target is not self.main_delete_action:
@@ -1762,8 +1798,10 @@ class MainWindow(QMainWindow):
     def clear_selection(self):
         self.view.cancel_pending()
         before = self.raster_selection_snapshot()
-        if self.current_tool_set == "figures":
+        if self.current_tool_set in ("figures", "alchemist"):
             self.view.figure_line_ids = ()
+            if self.current_tool_set == "alchemist":
+                self.thinning.clear_selection()
             self.view.figure_pivot = None
             self.view.figure_pivot_edges = ()
         elif self.current_tool_set == "geometry":
@@ -1783,10 +1821,10 @@ class MainWindow(QMainWindow):
             return
         self.view.cancel_pending()
         before = self.raster_selection_snapshot()
-        if self.current_tool_set in ("geometry", "figures"):
+        if self.current_tool_set in ("geometry", "figures", "alchemist"):
             geometry = self.view.editing_geometry()
             ids = tuple(record.id for record in geometry.lineage)
-            if self.current_tool_set == "figures":
+            if self.current_tool_set in ("figures", "alchemist"):
                 self.view.figure_line_ids = ids
                 self.view.figure_pivot = None
             else:
@@ -1910,6 +1948,10 @@ class MainWindow(QMainWindow):
         self.update_map_info()
 
     def update_project_info(self):
+        title = application_title()
+        if self.project_path:
+            title += f" - {self.project_path.name}"
+        self.setWindowTitle(title)
         if not self.view.session:
             self.info.setText(self.t("Open a scene image to begin; scene JSON is optional."))
             return
@@ -1963,6 +2005,8 @@ class MainWindow(QMainWindow):
         worker.conflict_event.set()
 
     def show_tool_settings(self, tool):
+        from dale.individual_transform import tool_key
+
         anchor = (
             self.raster_offset_button
             if tool == "Raster artwork offset"
@@ -2001,6 +2045,16 @@ class MainWindow(QMainWindow):
                 )
             )
         question, choices, remembered = None, (), None
+        same_type_question = self.current_tool_set == "alchemist" and tool in (
+            "Select figures",
+            "Move figures",
+        )
+        if same_type_question:
+            from dale.preferences import load_alchemist_same_type
+
+            question = "Select visible objects of this same type?"
+            choices = (("Select the same type", True), ("Select only this contour", False))
+            remembered = load_alchemist_same_type(self.preferences_path)
         if tool in self.connection_choices:
             question = (
                 "Connect new cut endpoints to intersecting contours with shared vertices?"
@@ -2037,6 +2091,8 @@ class MainWindow(QMainWindow):
                 if is_preview
                 else self.remembered_merge_selected_regions
             )
+        if self.current_tool_set == "alchemist":
+            anchor = getattr(self, "alchemist_tool_buttons", {}).get(tool, anchor)
         button = anchor or self.tool_settings_buttons[tool]
         dialog = ToolSettingsDialog(
             self,
@@ -2055,6 +2111,10 @@ class MainWindow(QMainWindow):
             include_json=(preview_settings["preview_json"] if is_preview else self.include_json)
             if is_export
             else None,
+            include_png=self.include_png if tool == "Export selected regions" else None,
+            merge_contours=(
+                self.merge_export_contours if tool == "Export selected regions" else None
+            ),
             group_naming=(
                 preview_settings["preview_naming"] if is_preview else self.export_group_naming
             )
@@ -2082,10 +2142,21 @@ class MainWindow(QMainWindow):
             own_angle_priority=(
                 self.view.right_angle_own_priority if tool == "Right-angle alignment" else None
             ),
+            json_contours=self.json_contours if tool == "Export selected regions" else None,
+            height_normalization=self.height_normalization
+            if tool == "Export selected regions"
+            else None,
+            individual_centers=(
+                self.view.individual_transform_enabled(tool)
+                if tool_key(self.current_tool_set, tool) and self.current_tool_set != "alchemist"
+                else None
+            ),
             figure_double_click=(
                 self.view.figure_move_double_click if tool == "Move figures" else None
             ),
         )
+        dialog.transform_section = self.current_tool_set
+        dialog.same_type_question = same_type_question
         position = button.mapToGlobal(QPoint(button.width() + 8, 0))
         available = button.screen().availableGeometry()
         viewport = self.view.viewport()
@@ -2108,6 +2179,19 @@ class MainWindow(QMainWindow):
             self.tool_settings_popup = None
 
     def apply_tool_settings(self, tool, dialog, value):
+        from dale.individual_transform import tool_key
+        from dale.preferences import save_alchemist_same_type
+
+        if dialog.individual_centers is not None:
+            key = tool_key(dialog.transform_section, tool)
+            self.view.finish_rotation()
+            self.view.individual_transform_settings[key] = dialog.individual_centers.isChecked()
+            self.update_mode_help()
+        if dialog.same_type_question:
+            try:
+                save_alchemist_same_type(self.preferences_path, dialog.default_action.currentData())
+            except OSError:
+                self.statusBar().showMessage(self.t("Preferences could not be written."), 7000)
         if tool == "Move figures":
             self.view.figure_move_double_click = dialog.figure_double_click.isChecked()
             if self.catalog:
@@ -2181,15 +2265,30 @@ class MainWindow(QMainWindow):
                 save_connection_choice(self.preferences_path, tool, self.connection_choices[tool])
             if tool == "Export selected regions":
                 self.remembered_merge_selected_regions = dialog.default_action.currentData()
-                self.merge_selected_regions = self.remembered_merge_selected_regions is True
+                self.merge_export_contours = dialog.merge_contours.isChecked()
+                self.merge_selected_regions = (
+                    self.remembered_merge_selected_regions is True or self.merge_export_contours
+                )
+                save_merge_export_contours(self.preferences_path, self.merge_export_contours)
                 self.size_to_grid = dialog.grid.isChecked()
                 self.include_json = dialog.json_export.isChecked()
+                self.include_png = dialog.png_export.isChecked()
+                self.json_contours = dialog.json_contours.currentData()
+                save_alchemist_export(self.preferences_path, self.json_contours)
+                self.height_normalization = (
+                    dialog.normalize_height.isChecked(),
+                    dialog.base_height.value(),
+                    dialog.top_height.value(),
+                )
+                save_height_normalization(self.preferences_path, self.height_normalization)
                 self.export_group_naming = dialog.naming_action.currentData()
                 save_merge_selected_regions(
                     self.preferences_path, self.remembered_merge_selected_regions
                 )
                 save_size_to_grid(self.preferences_path, self.size_to_grid)
                 save_include_json(self.preferences_path, self.include_json)
+                save_include_png(self.preferences_path, self.include_png)
+                self.update_export_actions()
                 save_export_group_naming(self.preferences_path, self.export_group_naming)
             if tool == "Preview selected regions":
                 self.view.raster_aids.configure(
@@ -2478,8 +2577,12 @@ class MainWindow(QMainWindow):
 
     def configure_json_repair(self, enabled=None):
         source = self.view.session.source if self.view.session else None
-        available = bool(source and source.json_bytes is not None)
+        available = bool(source and (source.json_bytes is not None or self.view.session.alchemist))
         self.json_repair_control.setVisible(available)
+        alchemist = bool(self.view.session and self.view.session.alchemist)
+        self.json_repair_control.setEnabled(not alchemist)
+        if alchemist:
+            enabled = True
         if enabled is None:
             enabled = bool(
                 available
@@ -2487,7 +2590,7 @@ class MainWindow(QMainWindow):
                     source.image_path is None
                     or any(
                         isinstance(w.get("flags"), dict) and "wall-height" in w["flags"]
-                        for w in source.raw["walls"]
+                        for w in source.raw.get("walls", ())
                     )
                 )
             )
@@ -2499,7 +2602,7 @@ class MainWindow(QMainWindow):
     def set_json_repair(self, enabled):
         session = self.view.session
         self.view.cancel_pending()
-        self.view.safe_json_repair = enabled
+        self.view.safe_json_repair = enabled or bool(session and session.alchemist)
         self.view.auto_close_key = None
         blocked = (
             "New circle",
@@ -2520,8 +2623,7 @@ class MainWindow(QMainWindow):
             self.mode_actions[mode].setEnabled(has_image)
         self.tool_set_actions["pixels"].setEnabled(has_image)
         self.sync_raster_aids()
-        self.export_action.setEnabled(has_image and not self.worker)
-        self.export_regions_action.setEnabled(has_image and not self.worker)
+        self.update_export_actions()
         has_data = bool(
             session
             and (
@@ -2569,15 +2671,16 @@ class MainWindow(QMainWindow):
         self.layer_control.blockSignals(True)
         self.layer_control.clear()
         if enabled:
-            choices = source_layers(
-                self.view.session.source, self.view.session.geometry(), self.view.property_documents
-            )
+            self.view.selected_source_layer()
+            choices = self.view._source_layers_cache[2]
             for layer in choices:
                 label = (
                     self.t("All height layers")
                     if layer.kind == "all"
                     else self.t("Ambiguous heights")
                     if layer.kind == "ambiguous"
+                    else self.t("Dungeon Alchemist floor {floor}", floor=layer.key.split(":")[1])
+                    if layer.kind == "alchemist"
                     else self.t("{range} (exact range)", range=layer.range_text)
                     if layer.kind == "range"
                     else layer.range_text
@@ -2607,7 +2710,9 @@ class MainWindow(QMainWindow):
         self.update_mode_help()
 
     def export_identity(self):
-        selection = None if self.current_tool_set == "figures" else self.selected_regions
+        selection = (
+            None if self.current_tool_set in ("figures", "alchemist") else self.selected_regions
+        )
         regions = (
             tuple(self.regions[i] for i in selection)
             if selection
@@ -2619,13 +2724,41 @@ class MainWindow(QMainWindow):
         )
 
     def export_json(self):
+        if self.defer_slice_action(self.export_json):
+            return
         session = self.view.session
         if not session or self.worker:
             return
         if self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
             return
-        document = self.catalog.snapshot() if self.catalog else current_contours_document(session)
+        from dale.alchemist_progress import run_task
+        from dale.project_io import snapshot_project
+
+        frozen, frozen_catalog = snapshot_project(session, self.catalog)
+        chosen = (
+            None if self.current_tool_set in ("figures", "alchemist") else self.selected_regions
+        )
+        polygons = tuple(self.regions[i] for i in chosen) if chosen else None
+
+        def prepare_name(report):
+            report(10, "Preparing Scene JSON")
+            document = (
+                frozen_catalog.snapshot() if frozen_catalog else current_contours_document(frozen)
+            )
+            report(55, "Preparing export identity")
+            geometry = frozen.geometry()
+            number = selection_number(
+                polygons if polygons is not None else frozen.analysis().cells,
+                fallback_edges=geometry_edges(geometry.walls, geometry.closures),
+            )
+            return document, number
+
+        try:
+            document, identity = run_task(self, "Preparing Scene JSON", prepare_name)
+        except Exception as exc:
+            self.warning("Cannot export scene JSON", str(exc))
+            return
         directory = (
             self.output_directory
             or (self.project_path.parent if self.project_path else self.input_directory)
@@ -2634,10 +2767,7 @@ class MainWindow(QMainWindow):
         selected, _ = QFileDialog.getSaveFileName(
             self,
             self.t("Export JSON…"),
-            str(
-                directory
-                / f"{export_family(Path(document.name).stem, self.export_identity())}.json"
-            ),
+            str(directory / f"{export_family(Path(document.name).stem, identity)}.json"),
             self.t("Export assets (*.json *.png);;Scene JSON (*.json);;All files (*)"),
             "",
             QFileDialog.Option.DontConfirmOverwrite,
@@ -2664,13 +2794,29 @@ class MainWindow(QMainWindow):
             sources.extend(self.catalog.protected_inputs)
         try:
             native_session = (
-                replace(session, json_documents=self.catalog.documents) if self.catalog else session
+                replace(frozen, json_documents=frozen_catalog.documents)
+                if frozen_catalog
+                else frozen
             )
-            payload = (
-                repaired_json_bytes(native_session)[0]
-                if session.source.json_bytes is not None
-                else document.data
-            )
+            from dale.alchemist import export_session
+            from dale.export_height import normalize_wall_heights
+
+            include_da, normalization = self.json_contours != "regular", self.height_normalization
+            only_da = self.json_contours == "alchemist"
+
+            def prepare_payload(report):
+                report(10, "Preparing contour categories")
+                source = export_session(native_session, include_da, only_alchemist=only_da)
+                report(45, "Preparing Scene JSON")
+                payload = (
+                    repaired_json_bytes(source)[0]
+                    if source.source.json_bytes is not None
+                    else current_contours_document(source).data
+                )
+                report(85, "Applying export heights")
+                return normalize_wall_heights(payload, normalization)
+
+            payload = run_task(self, "Preparing Scene JSON", prepare_payload)
             destination = write_json_copy(
                 payload, destination, sources, conflict=self.confirm_export_file
             )
@@ -2773,14 +2919,20 @@ class MainWindow(QMainWindow):
         self.warning("Native raster resolution", message)
 
     def select_tool_set(self, key, activate=True):
+        if key == "alchemist" and not (self.view.session and self.view.session.alchemist):
+            key = "figures"
         changed = key != self.current_tool_set
+        if changed and key == "alchemist" and not getattr(self, "_entering_da_mode", False):
+            self.enter_alchemist_mode(activate)
+            return
         if changed:
+            self._figure_controls_key = None
             self.view.cancel_pending()
         self.switch_region_selection(key)
         self.left_panel.show()
         self.show_sidebar("project")
         self.current_tool_set = key
-        self.view.figure_selection = key == "figures"
+        self.view.figure_selection = key in ("figures", "alchemist")
         self.view.selection_section = key
         self.sync_raster_aids()
         self.view.contour_selection_context = key == "geometry"
@@ -2790,7 +2942,7 @@ class MainWindow(QMainWindow):
         self.view.update_hover()
         self.update_clipboard_actions()
         self.tool_stack.setCurrentIndex(
-            {"geometry": 0, "figures": 1, "regions": 2, "pixels": 3}[key]
+            {"geometry": 0, "figures": 1, "regions": 2, "pixels": 3, "alchemist": 4}[key]
         )
         self.tool_stack.setFixedHeight(self.tool_stack.currentWidget().sizeHint().height())
         self.update_size_help()
@@ -2801,9 +2953,16 @@ class MainWindow(QMainWindow):
             self.activate_mode(self.last_tool_modes[key])
         if changed:
             self.rebuild_group_controls()
+            if self.view.session and self.view.session.alchemist:
+                self._alchemist_navigation = True
+                try:
+                    self.refresh()
+                finally:
+                    self._alchemist_navigation = False
 
     def sync_mode_shortcuts(self):
         modes = {
+            "alchemist": ("Select figures", None, "Rotate figures"),
             "geometry": ("Edit points", None, None),
             "figures": ("Select figures", "Move figures", "Rotate figures"),
             "regions": ("Select regions", "Move regions", "Rotate regions"),
@@ -2961,6 +3120,82 @@ class MainWindow(QMainWindow):
         if not self.mode_actions["Edit points"].property("dale_default_tooltip_parts"):
             return
         mode = self.view.mode
+        individual = self.view.individual_transform_enabled()
+        for tool, ordinary, separate in (
+            (
+                "Rotate figures",
+                "Rotate selected contour lines around their common center.",
+                "Rotate selected objects around their own contour centers.",
+            ),
+            (
+                "Scale figures",
+                "Resize selected contour lines around their common center.",
+                "Resize selected objects around their own contour centers.",
+            ),
+            (
+                "Rotate regions",
+                "Rotate selected region contours around their common center.",
+                "Rotate selected objects around their own contour centers.",
+            ),
+            (
+                "Rotate raster regions",
+                "Rotate selected raster regions around their common center.",
+                "Rotate selected objects around their own contour centers.",
+            ),
+            (
+                "Scale raster regions",
+                "Resize selected raster regions around their common center.",
+                "Resize selected objects around their own contour centers.",
+            ),
+        ):
+            action = self.mode_actions[tool]
+            purpose = separate if self.view.individual_transform_enabled(tool) else ordinary
+            action.setProperty("dale_tooltip_parts", [purpose])
+            action.setToolTip(
+                format_tooltip(
+                    [purpose],
+                    self.language,
+                    action.shortcut(),
+                    condition=action.property("dale_tooltip_condition"),
+                    keys=action.property("dale_tooltip_keys") or [],
+                    title=action.text(),
+                    shortcut_label=action.text(),
+                )
+            )
+            for button in (
+                self.sized_tools.get(tool),
+                getattr(self, "alchemist_tool_buttons", {}).get(tool),
+            ):
+                if isinstance(button, SizedToolButton):
+                    button.set_help(self.language)
+        for tool in ("Select figures", "Move figures"):
+            action = self.mode_actions[tool]
+            keys = list(action.property("dale_default_tooltip_keys") or [])
+            parts = action.property("dale_default_tooltip_parts")
+            if self.current_tool_set == "alchemist":
+                parts = ["Click or drag a selection box to select whole DA objects."]
+                keys = [
+                    "Click or drag a selection box to select whole DA objects.",
+                    "Escape: cancel the current gesture.",
+                ]
+                keys.append(
+                    "Double-click: offer to select visible objects of the same exact type. "
+                    "Right-click Select contours to change the remembered answer."
+                )
+                keys = list(dict.fromkeys([*keys, "Right-click: open tool settings."]))
+            action.setProperty("dale_tooltip_parts", parts)
+            action.setProperty("dale_tooltip_keys", keys)
+            action.setToolTip(
+                format_tooltip(
+                    action.property("dale_tooltip_parts"),
+                    self.language,
+                    action.shortcut(),
+                    condition=action.property("dale_tooltip_condition"),
+                    keys=keys,
+                    title=action.text(),
+                    shortcut_label=action.text(),
+                )
+            )
         instructions = {
             "Pan": ["Left-drag: pan the scene image."],
             "Move guides": [
@@ -3142,6 +3377,37 @@ class MainWindow(QMainWindow):
                     "hold Alt to align."
                 ),
             ]
+        if individual and mode in ROTATE_TOOLS:
+            instructions[0] = "Wheel: rotate each selected object around its own contour center."
+        if individual and mode in (
+            "Scale figures",
+            "Scale raster regions",
+            "Move regions",
+            "Move figures",
+        ):
+            instructions = [
+                *instructions,
+                "Each selected object scales around its own contour center.",
+            ]
+        if self.current_tool_set == "alchemist" and mode in ("Select figures", "Move figures"):
+            instructions = [
+                *instructions,
+                "Double-click: offer to select visible objects of the same exact type. "
+                "Right-click Select contours to change the remembered answer.",
+            ]
+        if self.current_tool_set == "alchemist" and mode in (
+            "Select figures",
+            "Rotate figures",
+            "Scale figures",
+        ):
+            instructions = [
+                "Click or drag a selection box to select whole DA objects."
+                if mode == "Select figures"
+                else "Wheel: rotate each selected object around its own contour center."
+                if mode == "Rotate figures"
+                else "Wheel: resize each selected object around its own contour center.",
+                "Object slices changes the selected whole objects.",
+            ]
         lines = [self.mode_actions[mode].text(), *(self.t(line) for line in instructions)]
         lines.append(self.t("Right-drag: pan the scene image."))
         if mode not in (*ROTATE_TOOLS, "Scale figures", "Scale raster regions"):
@@ -3157,6 +3423,14 @@ class MainWindow(QMainWindow):
             label.setText("\n".join(lines))
 
     def activate_mode(self, mode, prompt=True):
+        if self.current_tool_set == "alchemist" and mode not in (
+            "Pan",
+            "Move guides",
+            "Select figures",
+            "Rotate figures",
+            "Scale figures",
+        ):
+            mode = "Select figures"
         if (
             not prompt
             and self.view.session
@@ -3192,6 +3466,8 @@ class MainWindow(QMainWindow):
                 if mode in REGION_TOOLS
                 else "geometry"
             )
+            if self.current_tool_set == "alchemist" and mode in (*FIGURE_TOOLS, "Edit points"):
+                key = "alchemist"
             self.last_tool_modes[key] = mode
             self.select_tool_set(key, activate=False)
         self.mode_actions[mode].setChecked(True)
@@ -3212,6 +3488,10 @@ class MainWindow(QMainWindow):
     def sync_tool_sizes(self):
         for control, value in (
             (self.figure_scale_control, self.view.figure_scale_step_percent),
+            (
+                self.alchemist_tool_buttons["Scale figures"].editor(),
+                self.view.figure_scale_step_percent,
+            ),
             (self.brush_control, self.view.raster_diameters["Erase"]),
             (self.restore_brush_control, self.view.raster_diameters["Restore"]),
             (self.square_brush_control, self.view.raster_diameters["Erase square"]),
@@ -3244,6 +3524,33 @@ class MainWindow(QMainWindow):
         self.view.viewport().update()
 
     def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.Type.Wheel
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            and hasattr(self, "thinning")
+            and isinstance(watched, QWidget)
+            and self.current_tool_set == "alchemist"
+            and (
+                watched is self.thinning_button
+                or self.thinning_button.isAncestorOf(watched)
+                or (
+                    self.thinning.action.isChecked()
+                    and watched in (self.view, self.view.viewport())
+                )
+            )
+        ):
+            delta = event.angleDelta().y() or event.angleDelta().x()
+            if delta:
+                self.thinning_value.stepBy(round(delta / 120) or (1 if delta > 0 else -1))
+            event.accept()
+            return True
+        panel = getattr(self, "slice_window", None)
+        if (
+            panel
+            and isinstance(watched, QWidget)
+            and (watched is panel or panel.isAncestorOf(watched))
+        ):
+            return super().eventFilter(watched, event)
         if (
             event.type() == QEvent.Type.Wheel
             and isinstance(watched, QWidget)
@@ -3304,6 +3611,7 @@ class MainWindow(QMainWindow):
                 control = watched
                 sizeable = (
                     self.figure_scale_control,
+                    self.alchemist_tool_buttons["Scale figures"].editor(),
                     self.brush_control,
                     self.restore_brush_control,
                     self.square_brush_control,
@@ -3351,7 +3659,7 @@ class MainWindow(QMainWindow):
     def apply_section_alignment(self, _enabled=None):
         actions, prefix = (
             (self.figure_alignment_actions, "Figure")
-            if self.current_tool_set == "figures"
+            if self.current_tool_set in ("figures", "alchemist")
             else (self.region_alignment_actions, "Region")
             if self.current_tool_set == "regions"
             else (None, None)
@@ -3375,7 +3683,7 @@ class MainWindow(QMainWindow):
             and self.alignment_actions["right_angle_alignment"].isChecked()
         )
         self.view.extension_alignment = (
-            self.current_tool_set == "figures"
+            self.current_tool_set in ("figures", "alchemist")
             and self.figure_alignment_actions["Figure extension alignment"].isChecked()
         )
         self.view.snap = None
@@ -3386,6 +3694,7 @@ class MainWindow(QMainWindow):
         return {
             "snap_enabled": self.snap_action.isChecked(),
             "figure_move_double_click": self.view.figure_move_double_click,
+            "individual_transform_settings": dict(self.view.individual_transform_settings),
             "right_angle_neighbours": self.view.right_angle_neighbours,
             "right_angle_own_priority": self.view.right_angle_own_priority,
             "figure_extension_alignment": self.figure_alignment_actions[
@@ -3406,6 +3715,9 @@ class MainWindow(QMainWindow):
         }
 
     def restore_alignment_state(self, settings):
+        self.view.individual_transform_settings = dict(
+            settings.get("individual_transform_settings", {})
+        )
         self.view.figure_move_double_click = settings.get("figure_move_double_click", True)
         self.view.extension_connected = settings.get("extension_connected", False)
         self.figure_alignment_actions["Figure extension alignment"].setChecked(
@@ -3431,9 +3743,14 @@ class MainWindow(QMainWindow):
             self.apply_dataset_manager(DatasetCatalog())
 
     def close_document(self):
+        self._figure_live_ids = None
         if self.worker or not self.can_discard():
             return False
         self.view.clear_map()
+        if self.slice_window:
+            self.slice_window.clear_document()
+        self.thinning.clear_document()
+        self._group_render_cache = self._figure_controls_key = None
         self.custom_colors = DEFAULT_CUSTOM_COLORS
         self.reset_region_selections()
         self.bounds_preview.clear()
@@ -3448,7 +3765,7 @@ class MainWindow(QMainWindow):
         self.rebuild_dataset_controls()
         self.project_path = self.saved_state = None
         self._project_tool_values = None
-        self.info.setText(self.t("Open a scene image to begin; scene JSON is optional."))
+        self.update_project_info()
         self.diagnostics.clear()
         self.update_map_info()
         return True
@@ -3473,6 +3790,7 @@ class MainWindow(QMainWindow):
         if self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
             return False
+        self.flush_slice_window()
         if not self.view.session:
             return True
         if self.saved_state is not None and self.document_state() == self.saved_state:
@@ -3481,7 +3799,7 @@ class MainWindow(QMainWindow):
             return True
         answer = self.question(
             "Save changes?",
-            "Save the project and editing history before continuing?",
+            "Save the project before continuing?",
             QMessageBox.StandardButton.Save
             | QMessageBox.StandardButton.Discard
             | QMessageBox.StandardButton.Cancel,
@@ -3508,6 +3826,7 @@ class MainWindow(QMainWindow):
             if self.use_global_tool_settings and self._project_tool_values is not None
             else session.contour_offset,
             self.custom_colors,
+            session.alchemist,
         )
 
     def ui_state(self):
@@ -3594,17 +3913,28 @@ class MainWindow(QMainWindow):
         }
 
     def update_clipboard_actions(self):
+        if hasattr(self, "alchemist_same_type_action"):
+            self.alchemist_same_type_action.setEnabled(
+                bool(
+                    self.current_tool_set == "alchemist"
+                    and self.view.session
+                    and self.view.session.alchemist
+                    and self.view.figure_line_ids
+                    and not self.worker
+                    and not self.view.active_gesture
+                )
+            )
         if self.group_manager and self.group_manager.isVisible():
             self.group_manager.update_actions()
         if not hasattr(self, "paste_regions_action"):
             return
-        figures = self.current_tool_set == "figures"
+        figures = self.current_tool_set in ("figures", "alchemist")
         paste_figures = figures or (
-            self.current_tool_set not in ("figures", "regions")
+            self.current_tool_set not in ("figures", "alchemist", "regions")
             and self._clipboard_section == "figures"
         )
         if hasattr(self, "select_all_action"):
-            contours = self.current_tool_set in ("geometry", "figures")
+            contours = self.current_tool_set in ("geometry", "figures", "alchemist")
             caption = "Select all contour lines" if contours else "Select all regions"
             command = self.select_all_action
             if command.property("dale_display_key") != caption:
@@ -3680,7 +4010,10 @@ class MainWindow(QMainWindow):
             and bool(self.view.figure_line_ids if figures else self.selected_regions)
         )
         paste_enabled = bool(
-            self.view.session and self.view.region_clipboard is not None and not self.worker
+            self.view.session
+            and self.view.region_clipboard is not None
+            and not self.worker
+            and self.current_tool_set != "alchemist"
         )
         # QAction.changed refreshes help; avoid recursive unchanged writes.
         if self.copy_regions_action.isEnabled() != copy_enabled:
@@ -3716,7 +4049,7 @@ class MainWindow(QMainWindow):
                 self.view.session
                 and self.view.session.source.image_path
                 and self.view.region_polygons
-                and self.current_tool_set != "figures"
+                and self.current_tool_set not in ("figures", "alchemist")
                 and not self.view.active_gesture
                 and not self.worker
             )
@@ -3828,6 +4161,8 @@ class MainWindow(QMainWindow):
                     if hashlib.sha256(d.data).hexdigest() in needed
                 }.values()
             )
+            self.contour_clipboard.alchemist = self.view.session.alchemist
+            self.view.clipboard_alchemist = self.view.session.alchemist
             self.contour_clipboard.store(
                 self.view.region_clipboard,
                 self.view.clipboard_source,
@@ -3836,6 +4171,7 @@ class MainWindow(QMainWindow):
             )
 
     def restore_contour_clipboard(self):
+        self.view.clipboard_alchemist = getattr(self.contour_clipboard, "alchemist", None)
         if self.contour_clipboard.content is not None:
             if self.view.paste_delta is not None:
                 self.view.cancel_pending()
@@ -3872,15 +4208,19 @@ class MainWindow(QMainWindow):
         return additions
 
     def paste_region_contours(self):
+        if self.current_tool_set == "alchemist":
+            return
         try:
             self.clipboard_source_additions()
-            if self.current_tool_set not in ("figures", "regions"):
+            if self.current_tool_set not in ("figures", "alchemist", "regions"):
                 self.activate_mode(
                     "Select figures" if self._clipboard_section == "figures" else "Select regions"
                 )
             elif self.view.mode not in TRANSFORM_TOOLS:
                 self.activate_mode(
-                    "Select figures" if self.current_tool_set == "figures" else "Select regions"
+                    "Select figures"
+                    if self.current_tool_set in ("figures", "alchemist")
+                    else "Select regions"
                 )
             self.view.begin_paste_regions()
         except ValueError as exc:
@@ -3893,6 +4233,7 @@ class MainWindow(QMainWindow):
             self.rebuild_dataset_controls()
 
     def project_ui_state(self):
+        self.flush_slice_window()
         settings = self.ui_state()
         if self.use_global_tool_settings and self._project_tool_values is not None:
             settings.update(self._project_tool_values)
@@ -3954,13 +4295,14 @@ class MainWindow(QMainWindow):
         if not self.view.session:
             return frozenset()
         group = next((g for g in self.selection_groups() if g.id == identifier), None)
-        return group_members(group, self.view.editing_geometry()) if group else frozenset()
+        members = group_members(group, self.view.editing_geometry()) if group else frozenset()
+        return frozenset(self.view.whole_da_selection(members))
 
     def group_selection_ids(self):
         if not self.view.session:
             return frozenset()
         geometry = self.view.editing_geometry()
-        if self.current_tool_set == "figures":
+        if self.current_tool_set in ("figures", "alchemist"):
             selected = self.view.figure_line_ids
         elif self.current_tool_set == "geometry":
             selected = self.view.contour_line_ids
@@ -4142,7 +4484,7 @@ class MainWindow(QMainWindow):
             return
         if identifier is not None:
             members = self.resolved_group_members(identifier)
-            if self.current_tool_set == "figures":
+            if self.current_tool_set in ("figures", "alchemist"):
                 self.view.figure_line_ids = tuple(sorted(members))
                 self.view.figure_pivot = None
             elif self.current_tool_set == "geometry":
@@ -4262,7 +4604,7 @@ class MainWindow(QMainWindow):
         )
         highlight = frozenset(
             self.view.figure_line_ids
-            if self.current_tool_set == "figures"
+            if self.current_tool_set in ("figures", "alchemist")
             else self.view.contour_line_ids
             if self.current_tool_set == "geometry"
             else ()
@@ -4303,41 +4645,77 @@ class MainWindow(QMainWindow):
         if self.worker or self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
             return
-        if self.catalog:
-            self.catalog.capture(self.project_ui_state())
-        from dale.dataset_manager import DatasetManager
+        dialog = None
+        try:
+            from dale.dataset_manager import DatasetManager
 
-        dialog = DatasetManager(self)
-        dialog.exec()
-        dialog.deleteLater()
-        self.release_json_workspaces(keep_current=True)
+            if self.catalog:
+                self.catalog.capture(self.project_ui_state())
+            dialog = DatasetManager(self)
+            dialog.exec()
+        except Exception as error:
+            self.warning("Dataset manager", str(error))
+        finally:
+            if dialog is not None:
+                dialog.deleteLater()
+            self.release_json_workspaces(keep_current=True)
 
     def apply_dataset_manager(self, catalog, open_id=None):
+        from dale.alchemist_progress import prepare_project_view, run_task
+
         previous_catalog = self.catalog
         previous_preview = self.view.preview
         previous_ui = self.project_ui_state()
         previous_id = self.catalog.active_key if self.catalog else None
         identifier = open_id or (previous_id if previous_id in catalog.views else catalog.base_key)
+        candidate = catalog.fork()
+        previous_source = self.view.session.source if self.view.session else None
+        published = False
         try:
-            catalog.activate(identifier)
-            catalog.prepare()
-            source = catalog.current.session.source
-            preview = (
-                self.view.preview
-                if self.view.session
-                and self.view.session.source.image_path == source.image_path
-                and self.view.session.source.size == source.size
-                else load_preview(source)
+
+            def prepare(report):
+                report(5, "Preparing project state")
+                candidate.activate(identifier)
+                candidate.prepare()
+                session = candidate.current.session
+                section = candidate.current.ui.get("tool_set", previous_ui["tool_set"])
+                reuse = (
+                    previous_source is not None
+                    and previous_source.image_path == session.source.image_path
+                    and previous_source.size == session.source.size
+                )
+                return prepare_project_view(
+                    session,
+                    section,
+                    tuple(candidate.documents),
+                    report,
+                    (lambda _source: previous_preview) if reuse else load_preview,
+                )
+
+            def publish(result):
+                nonlocal published
+                preview, prepared, da_cache = result
+                self.catalog = candidate
+                published = True
+                self.show_catalog_view(
+                    candidate.current, preview, True, prepared=(prepared, da_cache)
+                )
+
+            run_task(
+                self,
+                "Applying dataset changes",
+                prepare,
+                publish,
+                object_name="datasetApplyProgress",
+                publish_refresh=True,
             )
-            self.catalog = catalog
-            self.show_catalog_view(catalog.current, preview, True)
             return True
         except Exception as exc:
             self.catalog = previous_catalog
-            if previous_catalog:
+            if published and previous_catalog:
                 old = replace(previous_catalog.current, ui=previous_ui)
                 self.show_catalog_view(old, previous_preview, True)
-            else:
+            elif published:
                 self.view.clear_map()
                 self.configure_json_repair(False)
                 self.refresh()
@@ -4366,8 +4744,32 @@ class MainWindow(QMainWindow):
             return
         self.show_catalog_view(draft, preview, True)
 
-    def show_catalog_view(self, draft, preview, existing):
+    def show_catalog_view(self, draft, preview, existing, *, prepared=None):
         self.view.safe_json_repair = False
+        if prepared is not None:
+            analysis, da_cache = prepared
+            self.view.selection_section = draft.ui.get("tool_set", self.current_tool_set)
+            self.view.property_documents = self.catalog.documents
+            self.view._alchemist_contour_analysis_cache = da_cache
+            if analysis:
+                visible, combined, analyses, choices = analysis
+                self.view._alchemist_analysis_cache = visible
+                self.view._alchemist_prepared_analyses = analyses
+                if combined is not None:
+                    draft.session._analysis_cache = combined
+                geometry = draft.session.geometry()
+                self.view._source_layers_cache = (
+                    draft.session.source,
+                    (
+                        None,
+                        geometry.lineage,
+                        geometry.ancestry,
+                        geometry.wall_styles,
+                        tuple(self.catalog.documents),
+                        draft.session.alchemist.objects,
+                    ),
+                    choices,
+                )
         self.view.assign(draft.session, preview)
         self.reset_region_selections()
         settings = {**self.project_ui_state(), **draft.ui}
@@ -4401,6 +4803,7 @@ class MainWindow(QMainWindow):
         self.view.show_walls = settings.get("show_walls", True)
         self.walls_action.setChecked(self.view.show_walls)
         self.restore_alignment_state(settings)
+        self.select_tool_set(settings.get("tool_set", "geometry"), activate=False)
         self.activate_mode(settings.get("mode", "Edit points"), prompt=False)
         self.refresh()
         self.restore_region_selection(settings)
@@ -4413,7 +4816,8 @@ class MainWindow(QMainWindow):
 
     def restore_camera(self, settings):
         if "zoom" in settings:
-            self.view.setTransform(QTransform.fromScale(settings["zoom"], settings["zoom"]))
+            zoom = self.view.bounded_zoom(settings["zoom"])
+            self.view.setTransform(QTransform.fromScale(zoom, zoom))
         if "center" in settings:
             self.view.centerOn(*settings["center"])
         self.view.update_hover()
@@ -4476,6 +4880,8 @@ class MainWindow(QMainWindow):
             self.warning("Cannot export dataset", str(exc))
 
     def save_project_file(self, checked=False, save_as=False):
+        if self.defer_slice_action(lambda: self.save_project_file(checked, save_as)):
+            return False
         self.view.finish_rotation()
         if not self.view.session:
             return False
@@ -4511,13 +4917,19 @@ class MainWindow(QMainWindow):
                     project_session, contour_offset=self._project_tool_values["artwork_offset_px"]
                 )
                 project_ui.update(self._project_tool_values)
-            save_project(
-                project_session,
-                path,
-                project_ui,
-                catalog=self.catalog,
-                custom_colors=list(self.custom_colors),
-            )
+            from dale.alchemist_progress import run_task
+            from dale.project_io import publish_saved_state, snapshot_project
+
+            frozen, catalog = snapshot_project(project_session, self.catalog)
+            colors = list(self.custom_colors)
+
+            def write_project(report):
+                save_project(
+                    frozen, path, project_ui, catalog=catalog, custom_colors=colors, progress=report
+                )
+
+            run_task(self, "Saving DALE project", write_project, object_name="projectSaveProgress")
+            publish_saved_state(project_session, self.catalog, frozen, catalog)
             self.remember_directory("output", path.parent)
             self.project_path = path
             self.saved_state = self.document_state()
@@ -4545,81 +4957,121 @@ class MainWindow(QMainWindow):
             self.load_project_file(Path(selected))
 
     def load_project_file(self, path):
+        from dale.alchemist_progress import prepare_project_view, run_task
+
         loaded = None
         was_applying = self._applying_tool_values
         self._applying_tool_values = True
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-            loaded = load_project(path)
-            loaded.catalog = DatasetCatalog.from_catalog(loaded.catalog)
             remembered = load_project_dataset(self.preferences_path, path)
-            if remembered in loaded.catalog.views:
-                loaded.catalog.activate(remembered)
-            loaded.session = loaded.catalog.current.session
-            loaded.ui_state = loaded.catalog.current.ui
-            preview = load_preview(loaded.session.source)
-            self.view.safe_json_repair = False
-            self.catalog = loaded.catalog
-            self.view.assign(loaded.session, preview)
-            self.reset_region_selections()
-            if self.loaded_project:
-                self.loaded_project.close()
-            self.loaded_project, loaded = loaded, None
-            session, settings = self.loaded_project.session, self.loaded_project.ui_state
-            self.custom_colors = self.loaded_project.custom_colors
-            self.configure_json_repair(settings["safe_json_repair"])
-            self.view.source_layer = settings["source_layer"]
-            self._project_tool_values = {
-                key: session.contour_offset if key == "artwork_offset_px" else settings[key]
-                for key in TOOL_VALUE_RANGES
-            }
-            active_tool_values = (
-                self.current_tool_values()
-                if self.use_global_tool_settings
-                else self._project_tool_values
+
+            def prepare(report):
+                candidate = load_project(path, progress=report)
+                try:
+                    candidate.catalog = DatasetCatalog.from_catalog(candidate.catalog)
+                    if remembered in candidate.catalog.views:
+                        candidate.catalog.activate(remembered)
+                    candidate.session = candidate.catalog.current.session
+                    candidate.ui_state = candidate.catalog.current.ui
+                    preview, prepared, da_cache = prepare_project_view(
+                        candidate.session,
+                        candidate.ui_state["tool_set"],
+                        tuple(candidate.catalog.documents),
+                        report,
+                        load_preview,
+                    )
+                    return candidate, preview, prepared, da_cache
+                except Exception:
+                    candidate.close()
+                    raise
+
+            def publish(result):
+                nonlocal loaded
+                loaded, preview, prepared, da_cache = result
+                self.view._alchemist_contour_analysis_cache = da_cache
+                if prepared:
+                    visible, combined, analyses, _ = prepared
+                    self.view._alchemist_analysis_cache = visible
+                    self.view._alchemist_prepared_analyses = analyses
+                    if combined is not None:
+                        loaded.session._analysis_cache = combined
+                    self.view.selection_section = loaded.ui_state["tool_set"]
+                self.publish_loaded_project(path, loaded, preview)
+                loaded = None
+
+            run_task(
+                self,
+                "Opening DALE project",
+                prepare,
+                publish,
+                object_name="projectProgress",
+                publish_refresh=True,
             )
-            self.set_language(settings["language"])
-            controls = (self.gap_tolerance, self.contour_offset, self.origin_x, self.origin_y)
-            for control in controls:
-                control.blockSignals(True)
-            self.gap_tolerance.setValue(session.gap_tolerance)
-            self.origin_x.setValue(session.origin[0])
-            self.origin_y.setValue(session.origin[1])
-            for control in controls:
-                control.blockSignals(False)
-            self.apply_tool_values(active_tool_values)
-            self.restore_alignment_state(settings)
-            self.view.raster_aids.restore(settings.get("raster_aids"))
-            self.view.raster_brushes = brush_settings(settings.get("raster_brushes"))
-            self.sync_raster_aids()
-            self.walls_action.setChecked(settings["show_walls"])
-            self.view.show_walls = settings["show_walls"]
-            self.select_tool_set(settings["tool_set"], activate=False)
-            self.view.move_related = settings["move_related_lines"]
-            self.activate_mode(settings["mode"], prompt=False)
-            # Build the saved mode's figure/cell choices before restoring its indices.
-            self.selected_regions = settings["export_regions"]
-            self.update_map_info()
-            self.restore_region_selection(settings)
-            self.project_path = path
-            self.remember_directory("input", path.resolve().parent)
-            self.remember_recent_project(path)
-            self.saved_state = self.document_state()
-            self.rebuild_dataset_controls()
-            self.update_project_info()
-            self.refresh()
-            self.restore_camera(settings)
-            self.remember_tool_values()
-            self.remember_active_dataset()
             return True
         except Exception as exc:
-            if loaded:
+            if loaded and loaded is not self.loaded_project:
                 loaded.close()
             self.warning("Cannot open project", str(exc))
             return False
         finally:
             self._applying_tool_values = was_applying
             QApplication.restoreOverrideCursor()
+
+    def publish_loaded_project(self, path, loaded, preview):
+        self.view.safe_json_repair = False
+        self.catalog = loaded.catalog
+        self.view.assign(loaded.session, preview)
+        self.reset_region_selections()
+        if self.loaded_project:
+            self.loaded_project.close()
+        self.loaded_project, loaded = loaded, None
+        session, settings = self.loaded_project.session, self.loaded_project.ui_state
+        self.custom_colors = self.loaded_project.custom_colors
+        self.configure_json_repair(settings["safe_json_repair"])
+        self.view.source_layer = settings["source_layer"]
+        self._project_tool_values = {
+            key: session.contour_offset if key == "artwork_offset_px" else settings[key]
+            for key in TOOL_VALUE_RANGES
+        }
+        active_tool_values = (
+            self.current_tool_values()
+            if self.use_global_tool_settings
+            else self._project_tool_values
+        )
+        self.set_language(settings["language"])
+        controls = (self.gap_tolerance, self.contour_offset, self.origin_x, self.origin_y)
+        for control in controls:
+            control.blockSignals(True)
+        self.gap_tolerance.setValue(session.gap_tolerance)
+        self.origin_x.setValue(session.origin[0])
+        self.origin_y.setValue(session.origin[1])
+        for control in controls:
+            control.blockSignals(False)
+        self.apply_tool_values(active_tool_values)
+        self.restore_alignment_state(settings)
+        self.view.raster_aids.restore(settings.get("raster_aids"))
+        self.view.raster_brushes = brush_settings(settings.get("raster_brushes"))
+        self.sync_raster_aids()
+        self.walls_action.setChecked(settings["show_walls"])
+        self.view.show_walls = settings["show_walls"]
+        self.select_tool_set(settings["tool_set"], activate=False)
+        self.view.move_related = settings["move_related_lines"]
+        self.activate_mode(settings["mode"], prompt=False)
+        # Build the saved mode's figure/cell choices before restoring its indices.
+        self.selected_regions = settings["export_regions"]
+        self.update_map_info()
+        self.restore_region_selection(settings)
+        self.project_path = path
+        self.remember_directory("input", path.resolve().parent)
+        self.remember_recent_project(path)
+        self.saved_state = self.document_state()
+        self.rebuild_dataset_controls()
+        self.update_project_info()
+        self.refresh()
+        self.restore_camera(settings)
+        self.remember_tool_values()
+        self.remember_active_dataset()
 
     def save_catalog_json(self, document, project_path):
         selected, _ = QFileDialog.getSaveFileName(
@@ -4765,12 +5217,25 @@ class MainWindow(QMainWindow):
             self.update_map_info()
 
     def refresh(self):
+        if getattr(self, "_alchemist_task_active", False):
+            return
+        self.view.property_documents = self.catalog.documents if self.catalog else ()
+        if self.prepare_alchemist_display():
+            return
+        self.refresh_display()
+
+    def refresh_display(self):
+        self.sync_alchemist_controls()
         self.view.property_documents = self.catalog.documents if self.catalog else ()
         self.update_clipboard_actions()
         self.view.refresh()
         self.rebuild_source_layers()
         self.update_map_info()
-        if self.view.session and self.view.safe_json_repair and self.current_tool_set != "figures":
+        if (
+            self.view.session
+            and self.view.safe_json_repair
+            and self.current_tool_set not in ("figures", "alchemist")
+        ):
             self.diagnostics.setText(
                 self.t(
                     "Editing operations: {operations}", operations=len(self.view.session.operations)
@@ -4792,9 +5257,11 @@ class MainWindow(QMainWindow):
     def select_region(self, index):
         self.view.finish_rotation()
         before = self.raster_selection_snapshot()
-        if self.current_tool_set == "figures":
+        if self.current_tool_set in ("figures", "alchemist"):
             data = self.region_control.itemData(index)
             self.view.figure_line_ids = tuple(data or ())
+            if self.current_tool_set == "alchemist" and not data:
+                self.thinning.clear_selection()
             self.view.figure_pivot = None
             self.update_map_info()
             return
@@ -4847,13 +5314,20 @@ class MainWindow(QMainWindow):
 
     def select_figure_at(self, event):
         point = ShapePoint(event["point"])
-        components = self.view.contour_figures()
+        first = event.get("first_click") if event.get("double") else None
+        tolerance = 6 / max(self.view.transform().m11(), 1e-9)
+        components = (
+            self.view.da_figures_in_bounds(
+                (point.x - tolerance, point.y - tolerance, point.x + tolerance, point.y + tolerance)
+            )
+            if self.current_tool_set == "alchemist" and first is None
+            else self.view.contour_figures()
+        )
         candidates = [
             (LineString(edge).distance(point), line_id, component)
             for component in components
             for edge, line_id in zip(component.edges, component.line_ids, strict=True)
         ]
-        first = event.get("first_click") if event.get("double") else None
         hit = (
             next(
                 (
@@ -4867,7 +5341,6 @@ class MainWindow(QMainWindow):
             else min(candidates, key=lambda item: item[0], default=None)
         )
         before = self.view.figure_line_ids
-        tolerance = 6 / max(self.view.transform().m11(), 1e-9)
         if event.get("remember_only"):
             target = hit[1] if hit and hit[0] <= tolerance else None
             self.view.remember_figure_click(event["point"], target, before)
@@ -4880,9 +5353,28 @@ class MainWindow(QMainWindow):
         selected = set(first["before"] if first is not None else before)
         if event.get("double"):
             component = set(hit[2].line_ids)
-            if self.view.mode == "Move figures":
-                selected = component
+            if self.current_tool_set == "alchemist":
+                peers = self.alchemist_double_click_peers(hit[1])
+                if peers is None:
+                    self.view.figure_line_ids = tuple(sorted(selected))
+                    self.view.figure_pivot = None
+                    self.update_map_info()
+                    return
+                self.sync_alchemist_controls()
+                if peers:
+                    component = set(peers)
+            if self.view.mode == "Move figures" or (self.current_tool_set == "alchemist" and peers):
+                if self.view.mode == "Move figures":
+                    selected = component
+                else:
+                    selected.update(component)
             elif component.issubset(selected):
+                selected.difference_update(component)
+            else:
+                selected.update(component)
+        elif self.current_tool_set == "alchemist":
+            component = set(hit[2].line_ids)
+            if component.issubset(selected):
                 selected.difference_update(component)
             else:
                 selected.update(component)
@@ -4907,12 +5399,22 @@ class MainWindow(QMainWindow):
             elif phase == "preview":
                 x0, y0, x1, y1 = event["bounds"]
                 rectangle = box(x0, y0, x1, y1)
-                hits = {
-                    line_id
-                    for component in self.view.contour_figures()
-                    for line_id, edge in zip(component.line_ids, component.edges, strict=True)
-                    if x1 > x0 and y1 > y0 and LineString(edge).intersects(rectangle)
-                }
+                if self.current_tool_set == "alchemist":
+                    hits = {
+                        identifier
+                        for component in self.view.da_figures_in_bounds((x0, y0, x1, y1))
+                        if x1 > x0
+                        and y1 > y0
+                        and any(LineString(edge).intersects(rectangle) for edge in component.edges)
+                        for identifier in component.line_ids
+                    }
+                else:
+                    hits = {
+                        line_id
+                        for component in self.view.contour_figures()
+                        for line_id, edge in zip(component.line_ids, component.edges, strict=True)
+                        if x1 > x0 and y1 > y0 and LineString(edge).intersects(rectangle)
+                    }
                 self.view.figure_line_ids = tuple(sorted(set(self.figure_marquee[0]) ^ hits))
                 self.view.figure_pivot = None
             else:
@@ -4920,7 +5422,7 @@ class MainWindow(QMainWindow):
         self.update_map_info()
 
     def select_regions_in_box(self, event):
-        if self.current_tool_set == "figures":
+        if self.current_tool_set in ("figures", "alchemist"):
             self.select_figures_in_box(event)
             return
         phase = event["phase"]
@@ -4973,7 +5475,7 @@ class MainWindow(QMainWindow):
         if self.current_tool_set == "pixels" and result.get("raster_cells"):
             self.select_raster_cells(result["raster_cells"], result["pivot"])
             return
-        if self.current_tool_set == "figures":
+        if self.current_tool_set in ("figures", "alchemist"):
             self.view.figure_line_ids = tuple(result.get("line_ids", ()))
             self.view.figure_pivot = result["pivot"]
             self.view.figure_pivot_edges = self.view.selected_figure_edges()
@@ -5046,30 +5548,58 @@ class MainWindow(QMainWindow):
     def update_figure_info(self):
         session = self.view.session
         components = self.view.contour_figures()
-        live = {i for component in components for i in component.line_ids}
-        self.view.figure_line_ids = tuple(i for i in self.view.figure_line_ids if i in live)
+        cached = getattr(self, "_figure_live_ids", None)
+        if cached is None or cached[0] is not components:
+            cached = components, frozenset(i for c in components for i in c.line_ids)
+            self._figure_live_ids = cached
+        live = cached[1]
+        selection = self.view.selection_display() if session else None
+        if selection is not None and not selection.selected <= live:
+            self.view.figure_line_ids = tuple(i for i in self.view.figure_line_ids if i in live)
         self.view.update_move_cursor()
         self.view.selected_path = self.view.figure_path()
-        self.regions_group.setTitle(self.t("Contours"))
-        self.region_control.setToolTip(
-            self.t("Choose a connected contour or all contour lines to select.")
+        controls_key = (
+            tuple(c.line_ids for c in components),
+            self.view.figure_line_ids,
+            self.language,
         )
-        self.region_control.blockSignals(True)
-        self.region_control.clear()
-        self.region_control.addItem(self.t("No selected contours"), ())
-        self.region_control.addItem(self.t("All contours"), tuple(sorted(live)))
-        for i, component in enumerate(components):
-            self.region_control.addItem(
-                self.t("Contour {number}", number=i + 1), component.line_ids
+        if controls_key != getattr(self, "_figure_controls_key", None):
+            self._figure_controls_key = controls_key
+            self.regions_group.setTitle(self.t("Contours"))
+            self.region_control.setToolTip(
+                self.t(
+                    "Choose a whole DA object or all visible objects."
+                    if self.current_tool_set == "alchemist"
+                    else "Choose a connected contour or all contour lines to select."
+                )
             )
-        if self.view.figure_line_ids:
-            self.region_control.addItem(
-                self.t("Selected lines: {count}", count=len(self.view.figure_line_ids)),
-                self.view.figure_line_ids,
-            )
-            self.region_control.setCurrentIndex(self.region_control.count() - 1)
-        self.region_control.setEnabled(bool(components))
-        self.region_control.blockSignals(False)
+            self.region_control.blockSignals(True)
+            self.region_control.clear()
+            self.region_control.addItem(self.t("No selected contours"), ())
+            self.region_control.addItem(self.t("All contours"), tuple(sorted(live)))
+            for i, component in enumerate(components):
+                self.region_control.addItem(
+                    self.t("Contour {number}", number=i + 1), component.line_ids
+                )
+            if self.view.figure_line_ids:
+                selected_ids = set(self.view.figure_line_ids)
+                selected_count = (
+                    sum(bool(selected_ids.intersection(c.line_ids)) for c in components)
+                    if self.current_tool_set == "alchemist"
+                    else len(self.view.figure_line_ids)
+                )
+                self.region_control.addItem(
+                    self.t(
+                        "Selected objects: {count}"
+                        if self.current_tool_set == "alchemist"
+                        else "Selected lines: {count}",
+                        count=selected_count,
+                    ),
+                    self.view.figure_line_ids,
+                )
+                self.region_control.setCurrentIndex(self.region_control.count() - 1)
+            self.region_control.setEnabled(bool(components))
+            self.region_control.blockSignals(False)
         self.diagnostics.setText(
             self.t(
                 "Contour groups: {groups}\nSelected lines: {lines}",
@@ -5077,11 +5607,22 @@ class MainWindow(QMainWindow):
                 lines=len(self.view.figure_line_ids),
             )
         )
+        if self.current_tool_set == "alchemist":
+            selected = set(self.view.figure_line_ids)
+            self.diagnostics.setText(
+                self.t(
+                    "Selected objects: {count}",
+                    count=sum(bool(selected.intersection(c.line_ids)) for c in components),
+                )
+            )
         self.update_clipboard_actions()
         if not session or not session.source.image_path:
             self.bounds_preview.clear()
             self.map_info.setText(self.t("No image"))
             self.view.viewport().update()
+            return
+        if session.alchemist:
+            self.show_deferred_export_info(session)
             return
         try:
             selected = export_regions(session)
@@ -5092,7 +5633,10 @@ class MainWindow(QMainWindow):
             self.view.update_image()
 
     def update_map_info(self):
-        if self.current_tool_set == "figures":
+        if self.current_tool_set == "alchemist":
+            self.view.figure_line_ids = self.view.whole_da_selection(self.view.figure_line_ids)
+        self.sync_slice_window()
+        if self.current_tool_set in ("figures", "alchemist"):
             self.update_figure_info()
             return
         self.region_control.setToolTip(
@@ -5104,7 +5648,7 @@ class MainWindow(QMainWindow):
             session
             and session.source.image_path is None
             and self.view.mode not in AREA_TOOLS
-            and self.current_tool_set not in ("regions", "figures")
+            and self.current_tool_set not in ("regions", "figures", "alchemist")
         ):
             self.bounds_preview.clear()
             self.regions = ()
@@ -5113,9 +5657,17 @@ class MainWindow(QMainWindow):
             self.region_control.clear()
             self.region_control.setEnabled(False)
             self.region_control.blockSignals(False)
-            layers, ambiguous = infer_layers(
-                session.source, session.geometry(), self.view.property_documents
-            )
+            if session.alchemist:
+                self.view.selected_source_layer()
+                choices = self.view._source_layers_cache[2]
+                layers = tuple(layer for layer in choices if layer.kind != "all")
+                ambiguous = next(
+                    (layer.indices for layer in choices if layer.kind == "ambiguous"), ()
+                )
+            else:
+                layers, ambiguous = infer_layers(
+                    session.source, session.geometry(), self.view.property_documents
+                )
             self.map_info.setText(
                 self.t(
                     "Original contours: {count}\nNew contours: {added}\n"
@@ -5200,6 +5752,9 @@ class MainWindow(QMainWindow):
             self.bounds_preview.clear()
             self.map_info.setText(self.t("No image"))
             return
+        if session.alchemist:
+            self.show_deferred_export_info(session)
+            return
         try:
             selected = (
                 export_regions(session)
@@ -5216,6 +5771,35 @@ class MainWindow(QMainWindow):
         except ValueError:
             selected = ()
         self.update_png_info(session, selected)
+
+    def show_deferred_export_info(self, session):
+        """Editing DA geometry must not calculate the combined export topology or PNG bounds."""
+        self.bounds_preview.clear()
+        self.view.export_preview_bounds = ()
+        self.map_info.setText(
+            self.t(
+                "Scene image: {width} x {height} px\nPNG dimensions are calculated when exporting.",
+                width=session.source.size[0],
+                height=session.source.size[1],
+            )
+        )
+        self.map_info.setToolTip(
+            self.t(
+                "Export uses the current geometry and visibility settings. "
+                "Editing does not prepare PNG dimensions."
+            )
+        )
+        settings = self.view.raster_aids.settings
+        self.view.preview_merge_adjacent = settings["preview_merge"] is True
+        self.view.export_grid_frame = None
+        if settings["export_grid_visible"]:
+            try:
+                self.view.export_grid_frame = export_grid(
+                    session, settings["export_grid_size"] or None
+                )
+            except ValueError:
+                pass
+        self.view.viewport().update()
 
     def update_png_info(self, session, selected):
         settings = self.view.raster_aids.settings
@@ -5317,6 +5901,10 @@ class MainWindow(QMainWindow):
             self.refresh()
 
     def history(self, redo):
+        if self.slice_window and self.slice_window.isVisible():
+            self.slice_window.flush()
+            self.slice_window.last_edit = None
+            self.slice_window.baseline = None
         self.view.cancel_pending()
         if self.view.session:
             session = self.view.session
@@ -5349,7 +5937,7 @@ class MainWindow(QMainWindow):
             or not self.view.region_polygons
             or self.view.active_gesture
             or self.worker
-            or self.current_tool_set == "figures"
+            or self.current_tool_set in ("figures", "alchemist")
         ):
             return
         analysis = self.view.analysis
@@ -5386,22 +5974,35 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def export(self, selected_only=False):
+        if self.defer_slice_action(lambda: self.export(selected_only)):
+            return
         try:
             self.start_png_export(selected_only)
         except Exception as exc:
             if self.worker is None and self.progress is not None:
                 self.progress.close()
                 self.progress = None
-            has_image = bool(self.view.session and self.view.session.source.image_path)
-            self.export_action.setEnabled(has_image and not self.worker)
-            self.export_regions_action.setEnabled(has_image and not self.worker)
+            self.update_export_actions()
             self.warning("Export failed", str(exc))
+
+    def update_export_actions(self):
+        session = self.view.session
+        enabled = bool(
+            session
+            and not self.worker
+            and (session.source.image_path or (self.include_json and not self.include_png))
+        )
+        self.export_action.setEnabled(enabled)
+        self.export_regions_action.setEnabled(enabled)
 
     def start_png_export(self, selected_only):
         self.view.finish_rotation()
         if not self.view.session or self.worker:
             return
-        if self.view.session.source.image_path is None:
+        if not (self.include_png or self.include_json):
+            self.information("Export files", "Enable PNG or JSON export.")
+            return
+        if self.include_png and self.view.session.source.image_path is None:
             self.information(
                 "PNG export", "Disable JSON repair and open a scene image for PNG export."
             )
@@ -5409,14 +6010,16 @@ class MainWindow(QMainWindow):
         if self.view.active_gesture:
             self.information("Finish editing", "Finish or cancel the active gesture first.")
             return
-        selection = None if self.current_tool_set == "figures" else self.selected_regions
+        selection = (
+            None if self.current_tool_set in ("figures", "alchemist") else self.selected_regions
+        )
         if selection == () or (selected_only and selection is None):
             self.activate_mode("Select regions")
             self.information(
                 "Select regions", "Select at least one closed region on the scene image."
             )
             return
-        if self.size_to_grid:
+        if self.size_to_grid and self.include_png:
             try:
                 export_grid(
                     self.view.session, self.view.raster_aids.settings["export_grid_size"] or None
@@ -5425,21 +6028,30 @@ class MainWindow(QMainWindow):
                 self.warning("PNG export", str(exc))
                 return
         merge_adjacent = False
-        if selection is not None:
+        merge_contours = self.merge_export_contours and selection is not None
+        if merge_contours:
+            merge_adjacent = True
+        elif selection is not None:
             merge_adjacent = self.confirm_merge_selected_regions()
             if merge_adjacent is None:
                 return
         polygons = tuple(self.regions[i] for i in selection) if selection is not None else None
         groups = self.selection_groups()
         active_group = self.active_selection_group()
-        stem = self.catalog.name if self.catalog else self.view.session.source.image_path.stem
+        stem = self.catalog.name if self.catalog else Path(self.view.session.source.name).stem
         if groups:
+            group_session, group_polygons = self.view.session, polygons
+            if self.json_contours == "alchemist":
+                from dale.overlay_export import da_export_regions
+
+                group_session, group_polygons = da_export_regions(group_session, polygons)
             plan = overlay_region_plan(
-                self.view.session,
-                selected_polygons=polygons,
+                group_session,
+                selected_polygons=group_polygons,
                 merge_adjacent=merge_adjacent,
+                allow_empty=not self.include_png,
             )
-            matches = export_group_matches(self.view.session, groups, plan, active_group)
+            matches = export_group_matches(group_session, groups, plan, active_group)
             if any(matches):
                 naming = self.confirm_export_group_naming(stem, matches)
                 if naming is None:
@@ -5462,7 +6074,11 @@ class MainWindow(QMainWindow):
         self.export_action.setEnabled(False)
         self.export_regions_action.setEnabled(False)
         self.progress = QProgressDialog(
-            self.t("Exporting separate PNGs…"), self.t("Cancel"), 0, 100, self
+            self.t("Exporting separate PNGs…" if self.include_png else "Exporting contours…"),
+            self.t("Cancel"),
+            0,
+            100,
+            self,
         )
         self.progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.progress.setAutoClose(False)
@@ -5476,8 +6092,10 @@ class MainWindow(QMainWindow):
             selected_polygons=polygons,
             merge_adjacent=merge_adjacent,
             size_to_grid=self.size_to_grid,
+            merge_contours=merge_contours,
             grid_size=self.view.raster_aids.settings["export_grid_size"] or None,
             include_json=self.include_json,
+            include_png=self.include_png,
             export_groups=groups,
             active_group=active_group,
         )
@@ -5526,6 +6144,7 @@ class MainWindow(QMainWindow):
             )
             event.ignore()
         elif self.can_discard():
+            self.close_slice_controls()
             if self._clipboard_connected:
                 self.contour_clipboard.changed.disconnect(self.restore_contour_clipboard)
                 self._clipboard_connected = False
@@ -5543,7 +6162,14 @@ class MainWindow(QMainWindow):
 def configure_application(app):
     app.setApplicationName("DALE")
     app.setWindowIcon(QIcon(str(Path(__file__).with_name("assets") / "favicon.ico")))
-    app.setStyle("Fusion")
+    from shiboken6 import isValid
+
+    from dale.application_style import DaleStyle
+
+    if not (getattr(app, "_dale_style", None) and isValid(app._dale_style)):
+        style = DaleStyle()
+        app.setStyle(style)
+        app._dale_style = style
     apply_theme(app)
     if sys.platform == "win32" and not QFontDatabase.families():
         font_path = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "segoeui.ttf"

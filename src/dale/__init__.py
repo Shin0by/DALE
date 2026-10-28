@@ -1,6 +1,6 @@
 """DALE: local contour-guided transparency editing."""
 
-__version__ = "1.3.88"
+__version__ = "1.4.137"
 
 
 def application_title():

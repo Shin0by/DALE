@@ -1,7 +1,6 @@
 """Checkpoint old actions without changing current schema, pixels or source ownership."""
 
 import json
-from dataclasses import replace
 from zipfile import ZipFile
 
 import pytest
@@ -10,10 +9,39 @@ from shapely.geometry import box
 from dale.datasets import DatasetCatalog
 from dale.editing import add_line
 from dale.json_repair import repaired_json_bytes
-from dale.project_io import LIMITS, SCHEMA_VERSION, _encode, _json_bytes, load_project, save_project
+from dale.project_io import LIMITS, SCHEMA_VERSION, _encode, load_project, save_project
 from dale.raster import render_export_alpha
 from dale.region_transform import plan_figure_transform
 from dale.session import ContourMask, Session, Stroke
+
+
+def test_large_snapshot_keeps_exact_provenance_without_repeated_vertex_diagnostics(
+    pair_factory, tmp_path
+):
+    from dale.provenance import LineRecord
+    from dale.session import GeometryEdit
+
+    session = Session(pair_factory())
+    walls = tuple(((float(i), 0.0), (float(i), 1.0)) for i in range(10_001))
+    records = tuple(
+        LineRecord(f"obstacle:{i}", connection_group=f"object:{i}") for i in range(len(walls))
+    )
+    geometry = GeometryEdit(walls, lineage=records)
+    session.add(geometry)
+    encoded = _encode(geometry)
+    assert "vertices" not in encoded
+    assert len(encoded["lineage"]) == len(walls)
+    path = tmp_path / "large.dale"
+    save_project(session, path)
+    with load_project(path) as loaded:
+        actual = loaded.session.geometry()
+        assert actual.walls == walls
+        assert actual.lineage == records
+        assert actual.connection_state == geometry.connection_state
+        assert actual.vertex_lineage == geometry.vertex_lineage
+        loaded.session.undo()
+        loaded.session.redo()
+        assert loaded.session.geometry().walls == walls
 
 
 def many_edits(source, count=160):
@@ -88,10 +116,10 @@ def test_old_long_history_and_raster_roundtrip_without_schema_change(
         assert (
             render_export_alpha(source.size, source.size, restored.operations).tobytes() == pixels
         )
-        assert len(restored.operations) - restored.history_floor + len(restored.future) == 100
+        assert len(restored.operations) - restored.history_floor + len(restored.future) == 0
         if catalogued:
             other_session = loaded.catalog.views[other.id].session
-            assert len(other_session.operations) - other_session.history_floor == 100
+            assert len(other_session.operations) - other_session.history_floor == 0
         for _ in range(20):
             restored.undo()
         restored.add(add_line(restored.geometry(), (0, 0), (5, 5)))
@@ -104,25 +132,23 @@ def test_old_long_history_and_raster_roundtrip_without_schema_change(
             assert len(branched.session.operations) == branched.session.history_floor
 
 
-def test_catalog_bytes_adapt_before_limit_and_failed_save_keeps_live_history(
+def test_catalog_keeps_history_without_byte_limit_and_failed_save_keeps_live_history(
     pair_factory, tmp_path, monkeypatch
 ):
     session = many_edits(pair_factory(), 140)
     catalog = DatasetCatalog(session)
-    initial = list(session.operations)
-    checkpointed = replace(session, operations=list(initial), future=[])
-    checkpointed.trim_history(25)
-    small = DatasetCatalog(checkpointed)
-    budget = len(_json_bytes(small.encode())) + 3000
-    monkeypatch.setitem(LIMITS, "history.json", budget)
-    assert len(_json_bytes(catalog.encode())) > budget
+    assert LIMITS["history.json"] is None
+    catalog.views[catalog.base_key].ui["large_test_payload"] = "a" * (65 * 1024 * 1024)
     path = tmp_path / "bounded.dale"
     native = repaired_json_bytes(session)
     save_project(session, path, catalog=catalog)
-    assert len(session.operations) - session.history_floor <= 25
+    assert len(session.operations) - session.history_floor == 100
     assert repaired_json_bytes(session) == native
+    with ZipFile(path) as archive:
+        assert archive.getinfo("datasets.json").file_size > 64 * 1024 * 1024
     with load_project(path) as loaded:
         assert repaired_json_bytes(loaded.session) == native
+        assert len(loaded.session.operations) - loaded.session.history_floor == 0
     initial = list(session.operations)
     floor = session.history_floor
     monkeypatch.setattr(

@@ -144,10 +144,16 @@ def test_lineage_and_vertex_contacts_survive_zip_undo_redo(pair_factory, tmp_pat
         assert loaded.session.geometry().lineage == current.lineage
         assert loaded.session.geometry().vertex_lineage == current.vertex_lineage
         loaded.session.redo()
-        assert loaded.session.geometry().lineage == future.lineage
-        assert loaded.session.geometry().ancestry == future.ancestry
-        assert loaded.session.geometry().vertex_lineage == future.vertex_lineage
+        assert loaded.session.geometry().lineage == current.lineage
+        restored = loaded.session.geometry()
+        assert {r.id: r for r in (*restored.ancestry, *restored.lineage)} == {
+            r.id: r for r in (*current.ancestry, *current.lineage)
+        }
+        assert loaded.session.geometry().vertex_lineage == current.vertex_lineage
+        assert not loaded.session.future
         assert all(edge_key(edge) for edge in loaded.session.walls)
+    session.redo()
+    assert session.geometry() == future
 
 
 @pytest.mark.parametrize("version", [0, 1, 999])

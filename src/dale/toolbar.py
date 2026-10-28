@@ -91,7 +91,42 @@ def tool_icon(name):
     def circle(x, y, r=2):
         painter.drawEllipse(QPointF(x, y), r, r)
 
-    if name in ("Copy region contours", "Copy contours"):
+    if name == "Thin objects":
+        for x, y in ((6, 6), (18, 6), (6, 18), (18, 18)):
+            circle(x, y, 4)
+        painter.setPen(QPen(QColor("#929ba8"), 1, Qt.PenStyle.DashLine))
+        circle(12, 12, 5)
+    elif name == "Object slices":
+        for y in (5, 11, 17):
+            painter.drawPolygon(
+                QPolygonF([QPointF(x, yy) for x, yy in ((3, y), (12, y - 3), (21, y), (12, y + 3))])
+            )
+    elif name == "DA walls":
+        painter.drawRect(QRectF(2, 5, 20, 15))
+        for y in (10, 15):
+            line((2, y), (22, y))
+        for x, y in ((8, 5), (16, 5), (6, 10), (14, 10), (10, 15), (18, 15)):
+            line((x, y), (x, y + 5))
+    elif name == "DA trees":
+        line((10, 21), (10, 14))
+        line((14, 21), (14, 14))
+        painter.drawEllipse(QRectF(4, 2, 16, 14))
+        line((7, 21), (17, 21))
+    elif name == "DA bushes":
+        painter.drawEllipse(QRectF(2, 9, 10, 11))
+        painter.drawEllipse(QRectF(7, 4, 11, 15))
+        painter.drawEllipse(QRectF(13, 9, 9, 11))
+        line((3, 21), (21, 21))
+    elif name == "DA rocks":
+        painter.drawPolygon(
+            QPolygonF(
+                [QPointF(x, y) for x, y in ((2, 18), (6, 8), (14, 4), (21, 12), (22, 19), (11, 21))]
+            )
+        )
+        line((6, 8), (13, 13))
+        line((13, 13), (14, 4))
+        line((13, 13), (11, 21))
+    elif name in ("Copy region contours", "Copy contours"):
         painter.drawRect(QRectF(3, 3, 12, 14))
         painter.setBrush(QColor("#383838"))
         painter.drawRect(QRectF(8, 7, 13, 15))
@@ -151,6 +186,18 @@ def tool_icon(name):
         line((9, 15), (21, 3))
         line((15, 3), (21, 3))
         line((21, 3), (21, 9))
+    elif name == "Individual object centers":
+        for x, y in ((7, 7), (17, 17)):
+            circle(x, y, 5)
+            line((x - 2, y), (x + 2, y))
+            line((x, y - 2), (x, y + 2))
+        line((15, 2), (22, 2))
+        line((22, 2), (22, 9))
+    elif name == "Select same object type":
+        for x, y in ((7, 7), (17, 7), (7, 17)):
+            circle(x, y, 4)
+        line((13, 16), (16, 19))
+        line((16, 19), (22, 12))
     elif name == "Select all contour lines":
         painter.drawRect(QRectF(2, 2, 20, 20))
         for y in (7, 12, 17):
@@ -525,6 +572,10 @@ class SizedToolButton(QToolButton):
             "Raster artwork offset": "Artwork offset (px)",
         }.get(tool_name, tool_name)
         value_help = {
+            "Thin objects": "Number: thinning strength, 0 restores all, 10 keeps disjoint objects.",
+            "DA trees": "Number: height slice, 0..10; -1 follows the ground automatically.",
+            "DA bushes": "Number: height slice, 0..10; -1 follows the ground automatically.",
+            "DA rocks": "Number: height slice, 0..10; -1 follows the ground automatically.",
             "Scale figures": "Number: contour scaling step, in percent. Shared with Move contours.",
             "Figure extension alignment": (
                 "Number: perpendicular distance to a virtual line, in screen pixels."
@@ -553,7 +604,9 @@ class SizedToolButton(QToolButton):
             ),
         }[tool_name]
         modifier = (
-            "Ctrl+wheel: change brush diameter."
+            "Ctrl+wheel: choose the height slice; -1 uses the ground."
+            if tool_name in ("DA trees", "DA bushes", "DA rocks")
+            else "Ctrl+wheel: change brush diameter."
             if tool_name in ("Erase", "Restore", "Erase square", "Restore square")
             else "Ctrl+wheel: change this value."
         )

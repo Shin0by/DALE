@@ -59,6 +59,14 @@ def test_soft_stroke_stripes_match_whole_frame_and_archive_retains_profile(
     path = tmp_path / "Soft.dale"
     save_project(session, path)
     with load_project(path) as loaded:
-        assert loaded.session.future == [stroke]
+        assert loaded.session.future == []
         loaded.session.redo()
+        assert loaded.session.operations == []
+    session.redo()
+    assert session.operations == [stroke]
+    save_project(session, path)
+    with load_project(path) as loaded:
         assert loaded.session.operations == [stroke]
+        assert loaded.session.history_floor == 1
+        restored = render_export_alpha(source.size, source.size, loaded.session.operations)
+        assert restored.tobytes() == whole.tobytes()

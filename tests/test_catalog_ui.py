@@ -1666,8 +1666,9 @@ def test_line_eraser_frozen_stroke_cancel_undo_and_archive(window, pair_factory,
     assert window.save_project_file() and window.load_project_file(window.project_path)
     assert view.session.geometry() == original
     window.history(True)
-    assert view.session.geometry() == edited
-    assert view.session.geometry().lineage == edited.lineage
+    assert view.session.geometry() == original
+    assert not view.session.future
+    assert edited != original
 
 
 @pytest.mark.parametrize("answer", [True, False, None])
@@ -1977,7 +1978,8 @@ def test_rotation_wheel_series_is_one_history_entry_then_next_action_starts_anot
     assert view.session.geometry() == saved
     assert window.load_project_file(window.project_path)
     window.history(False)
-    assert view.session.geometry() == final
+    assert view.session.geometry().walls == saved.walls
+    assert not view.session.future
 
 
 @pytest.mark.parametrize("section", ["geometry", "figures", "regions", "pixels"])
@@ -2071,7 +2073,12 @@ def test_figures_click_double_click_marquee_ctrl_a_and_clear(window, pair_factor
     view.setTransform(QTransform.fromScale(zoom, zoom))
     view.centerOn(160, 160)
     ids = tuple(r.id for r in view.session.geometry().lineage)
-    assert list(window.tool_set_actions) == ["geometry", "figures", "regions", "pixels"]
+    assert [k for k, a in window.tool_set_actions.items() if a.isVisible()] == [
+        "geometry",
+        "figures",
+        "regions",
+        "pixels",
+    ]
     assert view.figure_selection and view.mode == "Select figures"
     assert len(view.contour_figures()) == 3
     p = view.mapFromScene(55, 60)
@@ -2682,8 +2689,8 @@ def test_section_region_selections_and_detached_shape_roundtrip(
     window.select_tool_set("regions")
     assert view.region_polygons == frozen["polygons"]
     assert view.detached_selection["line_ids"] == frozen["line_ids"]
-    assert len(view.session.operations) == 2
-    assert isinstance(view.session.operations[-1], RasterSelectionEdit)
+    assert len(view.session.operations) == view.session.history_floor == 1
+    assert not any(isinstance(op, RasterSelectionEdit) for op in view.session.operations)
 
 
 def test_hidden_section_selections_cannot_reveal_group_lines(window, pair_factory):
@@ -2824,16 +2831,16 @@ def test_raster_selection_is_first_and_masks_only_selected_immutable_cells(
     save_project(view.session, path, window.ui_state())
     with load_project(path) as loaded:
         assert loaded.ui_state["mode"] == "Select raster regions"
-        assert loaded.session.operations[1].boundary.equals(mask.boundary)
+        assert loaded.session.operations[0].boundary.equals(mask.boundary)
         assert loaded.session.contour_offset == 5
         loaded.session.undo()
-        assert loaded.session.operations[-1] == mask  # Undo the later selection first.
+        assert loaded.session.operations[-1] == mask  # Reopening has no selection history.
         loaded.session.undo()
-        assert not raster_operations(loaded.session.operations)
+        assert raster_operations(loaded.session.operations) == (mask,)
         loaded.session.undo()
-        assert not loaded.session.operations
+        assert len(loaded.session.operations) == loaded.session.history_floor
         loaded.session.redo()
-        assert isinstance(loaded.session.operations[-1], RasterSelectionEdit)
+        assert loaded.session.operations[-1] == mask
         loaded.session.redo()
         assert loaded.session.operations[-1] == mask
     assert (
@@ -3181,7 +3188,8 @@ def test_common_clipboard_paste_between_sets_keeps_sources_and_undo(
     with load_project(window.project_path) as loaded:
         assert loaded.session.geometry().lineage == view.session.geometry().lineage
         loaded.session.undo()
-        assert not loaded.session.walls
+        assert len(loaded.session.walls) == 4
+        assert not loaded.session.future
         loaded.session.redo()
         assert len(loaded.session.walls) == 4
     window.paste_regions_action.trigger()
@@ -3292,7 +3300,8 @@ def test_application_clipboard_survives_source_project_window_and_extraction_clo
         assert loaded.session.geometry().lineage == target.view.session.geometry().lineage
         assert any(d.data == source.json_bytes for d in loaded.session.json_documents)
         loaded.session.undo()
-        assert not loaded.session.walls
+        assert len(loaded.session.walls) == 4
+        assert not loaded.session.future
     target.close()
     target.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
@@ -3820,7 +3829,8 @@ def test_delete_region_keeps_coincident_pasted_surroundings_after_project_reopen
     assert window.save_project_file() and window.load_project_file(window.project_path)
     assert view.session.walls == original.walls
     window.history(False)
-    assert len(view.session.walls) == 13
+    assert view.session.walls == original.walls
+    assert not view.session.future
 
 
 def test_delete_region_does_not_take_delete_from_text_input_or_active_paste(window, pair_factory):
@@ -3921,7 +3931,8 @@ def test_delete_contours_shortcut_exact_ids_native_properties_and_archive(
     assert window.save_project_file() and window.load_project_file(window.project_path)
     assert json.loads(repaired_json_bytes(view.session)[0]) == output
     window.history(False)
-    assert view.session.geometry() == initial
+    assert json.loads(repaired_json_bytes(view.session)[0]) == output
+    assert not view.session.future
 
 
 def test_delete_contours_respects_text_focus_active_gestures_and_empty_selection(
@@ -4024,7 +4035,8 @@ def test_native_creation_buttons_commit_in_all_layers_and_selected_band(
     assert window.save_project_file() and window.load_project_file(window.project_path)
     assert repaired_json_bytes(view.session)[0] == payload
     window.history(False)
-    assert len(view.session.walls) == 2
+    assert len(view.session.walls) == 2 + edges
+    assert not view.session.future
     window.history(True)
     assert repaired_json_bytes(view.session)[0] == payload
 
@@ -4171,7 +4183,8 @@ def test_region_stays_whole_over_surroundings_repeated_transforms_and_reopen(
     assert repaired_json_bytes(view.session)[0] == payload
     for _ in range(4):
         window.history(False)
-    assert view.session.walls == original.walls
+    assert repaired_json_bytes(view.session)[0] == payload
+    assert len(view.session.operations) == view.session.history_floor
     for _ in range(4):
         window.history(True)
     assert repaired_json_bytes(view.session)[0] == payload
@@ -4568,7 +4581,7 @@ def test_mirror_contour_button_uses_common_center_keeps_properties_and_roundtrip
     window.history(False)
     assert view.session.geometry() == first
     window.history(False)
-    assert view.session.geometry() == original
+    assert view.session.geometry() == first
     window.history(True)
     window.history(True)
     assert json.loads(repaired_json_bytes(view.session)[0]) == json.loads(before_native)

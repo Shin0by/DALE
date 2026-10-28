@@ -66,6 +66,62 @@ def save_language(path: Path, language: str):
     _save(path, language=language)
 
 
+def load_alchemist_path(path: Path) -> str:
+    value = _load(path).get("alchemist_executable", "")
+    return value if isinstance(value, str) and len(value) <= 32768 else ""
+
+
+def save_alchemist_path(path: Path, executable: str):
+    _save(path, alchemist_executable=executable)
+
+
+def load_slice_window_geometry(path: Path):
+    value = _load(path).get("slice_window_geometry")
+    if (
+        not isinstance(value, list)
+        or len(value) != 6
+        or any(type(v) is not int for v in value)
+        or any(not 0 <= v <= 100000 for v in value[:2])
+        or not 300 <= value[2] <= 100000
+        or not 360 <= value[3] <= 100000
+        or any(v not in (-1, 0, 1) for v in value[4:])
+    ):
+        return None
+    return tuple(value)
+
+
+def save_slice_window_geometry(path: Path, value):
+    _save(path, slice_window_geometry=list(value))
+
+
+def load_alchemist_export(path: Path) -> str:
+    value = _load(path).get("json_contours", "combined")
+    return value if value in ("all", "regular", "combined", "alchemist") else "combined"
+
+
+def save_alchemist_export(path: Path, choice: str):
+    if choice not in ("all", "regular", "combined", "alchemist"):
+        raise ValueError("Invalid JSON contour export choice.")
+    _save(path, json_contours=choice)
+
+
+def load_height_normalization(path: Path) -> tuple:
+    from dale.export_height import DEFAULT_HEIGHT_NORMALIZATION, validate_height_normalization
+
+    try:
+        return validate_height_normalization(
+            _load(path).get("height_normalization", DEFAULT_HEIGHT_NORMALIZATION)
+        )
+    except ValueError:
+        return DEFAULT_HEIGHT_NORMALIZATION
+
+
+def save_height_normalization(path: Path, settings):
+    from dale.export_height import validate_height_normalization
+
+    _save(path, height_normalization=validate_height_normalization(settings))
+
+
 def load_right_panel_visible(path: Path) -> bool:
     value = _load(path).get("right_panel_visible", True)
     return value if type(value) is bool else True
@@ -107,6 +163,17 @@ def load_move_related(path: Path) -> bool | None:
     return value if type(value) is bool else None
 
 
+def load_alchemist_same_type(path: Path) -> bool | None:
+    value = _load(path).get("alchemist_same_type")
+    return value if type(value) is bool else None
+
+
+def save_alchemist_same_type(path: Path, choice: bool | None):
+    if choice is not None and type(choice) is not bool:
+        raise ValueError("Invalid Dungeon Alchemist selection preference.")
+    _save(path, alchemist_same_type=choice)
+
+
 def save_move_related(path: Path, choice: bool | None):
     _save(path, move_related_lines=choice)
 
@@ -142,10 +209,32 @@ def load_include_json(path: Path) -> bool:
     return value if type(value) is bool else True
 
 
+def load_include_png(path: Path) -> bool:
+    value = _load(path).get("include_png", True)
+    return value if type(value) is bool else True
+
+
+def save_include_png(path: Path, enabled: bool):
+    if type(enabled) is not bool:
+        raise ValueError("Invalid PNG export preference.")
+    _save(path, include_png=enabled)
+
+
 def save_include_json(path: Path, enabled: bool):
     if type(enabled) is not bool:
         raise ValueError("Invalid JSON export preference.")
     _save(path, include_json=enabled)
+
+
+def load_merge_export_contours(path: Path) -> bool:
+    value = _load(path).get("merge_export_contours", False)
+    return value if type(value) is bool else False
+
+
+def save_merge_export_contours(path: Path, enabled: bool):
+    if type(enabled) is not bool:
+        raise ValueError("Invalid contour merge export setting.")
+    _save(path, merge_export_contours=enabled)
 
 
 def save_size_to_grid(path: Path, enabled: bool):

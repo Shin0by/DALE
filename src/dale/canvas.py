@@ -142,6 +142,7 @@ class MapView(QGraphicsView):
     figure_clicked = Signal(object)
     region_box_selected = Signal(object)
     regions_transformed = Signal(object)
+    alchemist_parameters_changed = Signal(object)
     clipboard_changed = Signal()
     paste_committed = Signal(object)
 
@@ -240,12 +241,14 @@ class MapView(QGraphicsView):
         self.region_polygons = ()
         self.figure_selection = False
         self.selection_section = None
+        self.alchemist_isolated_category = None
         self.figure_line_ids = ()
         self.figure_pivot = None
         self.figure_pivot_edges = ()
         self.figure_click = None
         self.figure_move_origin = None
         self.figure_move_double_click = True
+        self.individual_transform_settings = {}
         self.figure_scale_step_percent = 5
         self.point_snap_geometry = self.point_snap_targets = None
         self.drag_vector = self.vector_guide = None
@@ -280,6 +283,7 @@ class MapView(QGraphicsView):
         self.raster_aids = RasterAids(self)
 
     def assign(self, session, preview):
+        self._selection_display_cache = None
         self.export_grid_frame = None
         self.cancel_pending()
         self.cursor_point = self.copy_cursor_point = None
@@ -310,6 +314,8 @@ class MapView(QGraphicsView):
         self.scene().setSceneRect(
             self.image_rect.adjusted(-margin_x, -margin_y, margin_x, margin_y)
         )
+        if not session.source.image_path and not session.source.json_bytes and not session.walls:
+            self.scene().setSceneRect(self.image_rect)
         self.walls = session.walls
         self.original_path = line_path(self.walls)
         self.geometry_key = None
@@ -318,8 +324,35 @@ class MapView(QGraphicsView):
 
     def fit_map(self):
         if self.session:
+            if (
+                not self.session.source.image_path
+                and not self.session.source.json_bytes
+                and not self.session.walls
+            ):
+                self.resetTransform()
+                self.centerOn(self.image_rect.center())
+                self.update_hover()
+                return
             self.fitInView(self.image_rect, Qt.AspectRatioMode.KeepAspectRatio)
+            zoom = self.transform().m11()
+            self.scale(self.bounded_zoom(zoom) / zoom, self.bounded_zoom(zoom) / zoom)
             self.update_hover()
+
+    def bounded_zoom(self, zoom):
+        if not self.session or (
+            not self.session.source.image_path
+            and not self.session.source.json_bytes
+            and not self.session.walls
+        ):
+            return 1.0
+        width, height = self.session.source.size
+        fit = min(
+            max(1, self.viewport().width() - 4) / max(1, width),
+            max(1, self.viewport().height() - 4) / max(1, height),
+        )
+        # Keep the map at least32 screen pixels across, or a quarter of a tiny viewport.
+        minimum = min(1.0, fit / 4, 32 / max(1, width, height))
+        return max(minimum, min(16.0, zoom))
 
     def center_map(self):
         if self.session:
@@ -335,12 +368,43 @@ class MapView(QGraphicsView):
         )
 
     def clear_map(self):
+        from dale.alchemist import _memberships
+        from dale.alchemist_render import _part
+
+        _memberships.cache_clear()
+        _part.cache_clear()
+        from dale.alchemist_outline import clear_outline_cache
+
+        clear_outline_cache()
+        from dale.object_index import clear_indexes
+
+        clear_indexes()
+        for name in (
+            "_alchemist_scope_cache",
+            "_alchemist_analysis_cache",
+            "_source_layers_cache",
+            "_alchemist_contour_analysis_cache",
+            "_editing_geometry_cache",
+            "_alchemist_object_figures",
+            "_alchemist_object_hit_index",
+            "_selection_display_cache",
+            "_whole_da_selection_cache",
+        ):
+            setattr(self, name, None)
+        self._alchemist_prepared_analyses = ()
         self.export_grid_frame = None
         self.cancel_pending()
         self.cursor_point = self.copy_cursor_point = None
         self.native_preview.clear()
         self.scene().clear()
         self.session = self.preview = self.item = self.working_geometry = self.analysis = None
+        self.property_documents = ()
+        self.figure_line_ids = self.contour_line_ids = ()
+        self.figure_pivot = None
+        self.figure_pivot_edges = ()
+        self.resetTransform()
+        self.scene().setSceneRect(QRectF(0, 0, 1, 1))
+        self.centerOn(0, 0)
         self.raster_aids.restore()
         self.raster_brushes = brush_settings()
         self.geometry_key = None
@@ -350,6 +414,9 @@ class MapView(QGraphicsView):
         self.source_layer = "all"
         self.image_rect = QRectF()
         self.selected_path = QPainterPath()
+        self.original_path = self.warning_path = self.join_path = QPainterPath()
+        self.offset_path = self.alchemist_reference_path = QPainterPath()
+        self.warning_geometry = GeometryCollection()
         self.viewport().update()
 
     def _line_anchor(self, point, modifiers=Qt.KeyboardModifier.NoModifier):
@@ -413,33 +480,134 @@ class MapView(QGraphicsView):
                 return destination
         return candidate
 
-    def selected_source_layer(self, geometry=None):
-        geometry = geometry or self.session.geometry()
-        key = (
-            geometry,
+    def source_layer_cache_key(self, geometry):
+        return (
+            None if self.session.alchemist else geometry,
             geometry.lineage,
             geometry.ancestry,
             geometry.wall_styles,
             self.property_documents,
+            self.session.alchemist.objects if self.session.alchemist else None,
         )
+
+    def selected_source_layer(self, geometry=None):
+        geometry = geometry or self.session.geometry()
+        key = self.source_layer_cache_key(geometry)
         cached = getattr(self, "_source_layers_cache", None)
         if cached is not None and cached[0] is self.session.source and cached[1] == key:
             choices = cached[2]
         else:
-            choices = source_layers(self.session.source, geometry, self.property_documents)
+            choices = source_layers(
+                self.session.source,
+                geometry,
+                self.property_documents,
+                alchemist=self.session.alchemist,
+            )
             self._source_layers_cache = self.session.source, key, choices
-        return next(
+        selected = next(
             (layer for layer in choices if layer.key == self.source_layer),
             choices[0] if self.source_layer == "all" else replace(choices[0], indices=()),
         )
+        if self.session.alchemist:
+            visible = self.alchemist_scope(geometry)
+            if visible.lineage is geometry.lineage:
+                return selected
+            cached_scope = getattr(self, "_selected_da_layer", None)
+            if (
+                cached_scope
+                and cached_scope[0] is geometry
+                and cached_scope[1] is visible
+                and cached_scope[2] is selected
+            ):
+                return cached_scope[3]
+            allowed = {r.id for r in visible.lineage}
+            original = selected
+            selected = replace(
+                selected,
+                indices=tuple(i for i in selected.indices if geometry.lineage[i].id in allowed),
+            )
+            self._selected_da_layer = geometry, visible, original, selected
+        return selected
+
+    def alchemist_scope(self, geometry, scope=None):
+        from dale.alchemist import scoped_geometry
+
+        scope = scope or (
+            "alchemist"
+            if self.selection_section == "alchemist"
+            else "combined"
+            if self.selection_section in ("regions", "pixels")
+            else "regular"
+        )
+        data = self.session.alchemist
+        category = (
+            self.alchemist_isolated_category if self.selection_section == "alchemist" else None
+        )
+        key = id(geometry), id(data), category
+        cached = getattr(self, "_alchemist_scope_cache", None)
+        if cached is None or cached[0] != key or cached[1] is not geometry or cached[2] is not data:
+            cached = key, geometry, data, {}
+            self._alchemist_scope_cache = cached
+        if scope not in cached[3]:
+            cached[3][scope] = scoped_geometry(self.session, geometry, scope, category=category)
+        return cached[3][scope]
+
+    def snapping_geometry(self, geometry=None):
+        geometry = geometry or self.session.geometry()
+        if (
+            self.session.alchemist
+            and self.selection_section == "alchemist"
+            and self.session.alchemist.show_regular
+        ):
+            combined = self.alchemist_scope(geometry, "combined")
+            if self.safe_json_repair and self.source_layer != "all":
+                self.selected_source_layer(geometry)
+                layer = next(
+                    (x for x in self._source_layers_cache[2] if x.key == self.source_layer),
+                    None,
+                )
+                if layer is not None:
+                    allowed = {geometry.lineage[i].id for i in layer.indices}
+                    return layer_geometry(
+                        combined,
+                        tuple(i for i, r in enumerate(combined.lineage) if r.id in allowed),
+                    )
+            return combined
+        return self.editing_geometry(geometry)
 
     def editing_geometry(self, geometry=None):
+        from dale.object_index import indexed_layer
+
         geometry = geometry or self.edit_preview or self.session.geometry()
-        return (
-            layer_geometry(geometry, self.selected_source_layer(geometry).indices)
+        key = (
+            id(self.session),
+            id(geometry),
+            self.session.alchemist,
+            self.selection_section,
+            self.alchemist_isolated_category,
+            self.source_layer,
+            self.safe_json_repair,
+            self.property_documents,
+        )
+        cached = getattr(self, "_editing_geometry_cache", None)
+        if self.session.alchemist and cached and cached[0] == key and cached[1] is geometry:
+            return cached[2]
+        result = (
+            (
+                indexed_layer(
+                    self.session.alchemist, geometry, self.selected_source_layer(geometry).indices
+                )
+                if self.session.alchemist
+                else layer_geometry(geometry, self.selected_source_layer(geometry).indices)
+            )
             if self.safe_json_repair
+            else self.alchemist_scope(geometry)
+            if self.session.alchemist
             else geometry
         )
+        if self.session.alchemist:
+            self._editing_geometry_cache = key, geometry, result
+        return result
 
     def selectable_regions(self):
         """Return standard polygonized extraction cells in the visible height scope."""
@@ -462,27 +630,80 @@ class MapView(QGraphicsView):
         if not self.session:
             return ()
         geometry = self.editing_geometry()
+        if self.session.alchemist and self.selection_section == "alchemist":
+            from dale.alchemist_render import object_figures
+
+            data, gap = self.session.alchemist, self.session.gap_tolerance
+            cached = getattr(self, "_alchemist_object_figures", None)
+            if not (
+                cached and cached[0] is geometry and cached[1] is data.objects and cached[2] == gap
+            ):
+                cached = geometry, data.objects, gap, object_figures(data, geometry, gap)
+                self._alchemist_object_figures = cached
+            return cached[3]
         return contour_components(
             geometry_edges(geometry.walls, geometry.closures),
             tuple(record.id for record in geometry.lineage),
             groups(geometry),
+            simple_rings=bool(self.session.alchemist and self.selection_section == "alchemist"),
         )
+
+    def whole_da_selection(self, identifiers):
+        if not identifiers or self.selection_section != "alchemist":
+            return tuple(identifiers)
+        figures = self.contour_figures()
+        cached = getattr(self, "_whole_da_selection_cache", None)
+        if cached and cached[0] is figures and cached[1] == identifiers:
+            return cached[2]
+        selected = set(identifiers)
+        complete = {
+            identifier
+            for component in figures
+            if selected.intersection(component.line_ids)
+            for identifier in component.line_ids
+        }
+        # Preserve transaction tokens and the order held by an active slice worker.
+        result = tuple(identifiers) if complete == selected else tuple(sorted(complete))
+        self._whole_da_selection_cache = figures, tuple(identifiers), result
+        return result
+
+    def da_figures_in_bounds(self, bounds):
+        from shapely import STRtree, box
+
+        from dale.object_index import object_index
+
+        figures = self.contour_figures()
+        cached = getattr(self, "_alchemist_object_hit_index", None)
+        if cached is None or cached[0] is not figures:
+            values = object_index(self.session.alchemist, self.editing_geometry()).bounds
+            boxes = box(
+                values[:, 0] - 1e-7, values[:, 1] - 1e-7, values[:, 2] + 1e-7, values[:, 3] + 1e-7
+            )
+            cached = figures, STRtree(boxes)
+            self._alchemist_object_hit_index = cached
+        return tuple(figures[int(i)] for i in sorted(cached[1].query(box(*bounds))))
 
     def selected_figure_edges(self):
-        if not self.session:
+        if not self.session or not self.figure_line_ids:
             return ()
-        selected = set(self.figure_line_ids)
+        return self.selection_display().edges
+
+    def selection_display(self):
+        from dale.selection_display import SelectionDisplay
+
         geometry = self.editing_geometry()
-        return tuple(
-            edge
-            for edge, record in zip(
-                geometry_edges(geometry.walls, geometry.closures), geometry.lineage, strict=True
-            )
-            if record.id in selected
-        )
+        cached = getattr(self, "_selection_display_cache", None)
+        if (
+            cached is None
+            or cached.geometry is not geometry
+            or cached.identifiers != self.figure_line_ids
+        ):
+            cached = SelectionDisplay(geometry, self.figure_line_ids)
+            self._selection_display_cache = cached
+        return cached
 
     def figure_path(self):
-        return line_path(self.selected_figure_edges())
+        return self.selection_display().path if self.session else QPainterPath()
 
     def _move_point(self, destination, report=False):
         if not self.safe_json_repair:
@@ -522,11 +743,29 @@ class MapView(QGraphicsView):
             self.artwork_offset,
             self.safe_json_repair,
             self.source_layer,
+            self.selection_section if self.session.alchemist else None,
+            self.alchemist_isolated_category,
+            self.session.alchemist,
         )
         if key != self.geometry_key:
             self.working_geometry = self.editing_geometry(geometry)
             self.walls = self.working_geometry.walls
-            if self.safe_json_repair:
+            if self.session.alchemist and self.selection_section == "alchemist":
+                from dale.alchemist_render import display_analysis, display_key
+
+                analysis_key = display_key(
+                    self.session.alchemist, self.working_geometry, self.session.gap_tolerance
+                )
+                cached = getattr(self, "_alchemist_contour_analysis_cache", None)
+                self.analysis = (
+                    cached[1]
+                    if cached and cached[0] == analysis_key
+                    else display_analysis(
+                        self.session.alchemist, self.working_geometry, self.session.gap_tolerance
+                    )
+                )
+                self._alchemist_contour_analysis_cache = analysis_key, self.analysis
+            elif self.safe_json_repair and not self.session.alchemist:
                 analysis_geometry = flat_geometry(geometry)
                 layers, ambiguous = infer_layers(
                     self.session.source, geometry, self.property_documents
@@ -552,8 +791,18 @@ class MapView(QGraphicsView):
                     cells=tuple({p.wkb: p for a in analyses for p in a.cells}.values()),
                 )
             else:
-                self.analysis = analyze_regions(
-                    geometry.walls, geometry.closures, self.session.gap_tolerance
+                analysis_key = (
+                    self.working_geometry.walls,
+                    self.working_geometry.closures,
+                    self.session.gap_tolerance,
+                )
+                cached = getattr(self, "_alchemist_analysis_cache", None)
+                if not self.session.alchemist:
+                    cached = getattr(self.session, "_analysis_cache", None)
+                self.analysis = (
+                    cached[1]
+                    if cached and cached[0] == analysis_key
+                    else analyze_regions(*analysis_key)
                 )
             self.original_path = line_path(
                 (
@@ -578,6 +827,22 @@ class MapView(QGraphicsView):
                 except ValueError:
                     pass  # The mask action reports an offset that erases all enclosed areas.
             self.geometry_key = key
+            if self.session.alchemist and self.selection_section == "alchemist":
+                reference = self.alchemist_scope(geometry, "regular")
+                if self.safe_json_repair and self.source_layer != "all":
+                    self.selected_source_layer(geometry)
+                    layer = next(
+                        (x for x in self._source_layers_cache[2] if x.key == self.source_layer),
+                        None,
+                    )
+                    allowed = {geometry.lineage[i].id for i in (layer.indices if layer else ())}
+                    reference = layer_geometry(
+                        reference,
+                        tuple(i for i, r in enumerate(reference.lineage) if r.id in allowed),
+                    )
+                self.alchemist_reference_path = line_path(
+                    geometry_edges(reference.walls, reference.closures)
+                )
             self.update_hover()
         if render_image:
             self.update_image()
@@ -644,6 +909,28 @@ class MapView(QGraphicsView):
 
         area = offset_region(unary_union(plan.polygons), self.artwork_offset)
         entries = {polygon.wkb: cell for cell, polygon in self.raster_region_entries()}
+        parts = ()
+        if self.individual_transform_enabled() and ("scale" in values or "angle" in values):
+            parts = tuple(
+                (
+                    (
+                        p.buffer(self.artwork_offset, join_style="mitre")
+                        if self.artwork_offset
+                        else p
+                    ).wkb,
+                    affine_matrix(
+                        ((p.bounds[0] + p.bounds[2]) / 2, (p.bounds[1] + p.bounds[3]) / 2), **values
+                    ),
+                )
+                for p in plan.polygons
+            )
+            from dale.raster_transform import area_of
+
+            area = unary_union([area_of(data) for data, _ in parts])
+            if area.is_empty:
+                from shapely.geometry import Polygon
+
+                area = Polygon()
         return replace(
             plan.original,
             raster=RasterTransform(
@@ -651,6 +938,7 @@ class MapView(QGraphicsView):
                 affine_matrix(plan.pivot, **values),
                 tuple(p.wkb for p in plan.polygons),
                 tuple(entries[p.wkb] for p in plan.polygons),
+                parts,
             ),
         )
 
@@ -668,6 +956,14 @@ class MapView(QGraphicsView):
         )
 
     def set_mode(self, mode):
+        if self.selection_section == "alchemist" and mode not in (
+            "Pan",
+            "Move guides",
+            "Select figures",
+            "Rotate figures",
+            "Scale figures",
+        ):
+            mode = "Select figures"
         self.cancel_pending()
         self.mode = mode
         self.setCursor(self.idle_cursor())
@@ -980,6 +1276,8 @@ class MapView(QGraphicsView):
         return point
 
     def copy_selected_regions(self):
+        if self.selection_section == "alchemist":
+            return False
         if (
             not self.session
             or not (self.figure_line_ids if self.figure_selection else self.region_polygons)
@@ -1040,6 +1338,8 @@ class MapView(QGraphicsView):
         return True
 
     def begin_paste_regions(self):
+        if self.selection_section == "alchemist":
+            return False
         if (
             not self.session
             or not self.region_clipboard
@@ -1068,6 +1368,22 @@ class MapView(QGraphicsView):
         return None
 
     def _freeze_placement_targets(self, geometry, moving_ids=()):
+        if self.session.alchemist and self.selection_section == "alchemist":
+            # The caller already removed moving edges. Add only stationary ordinary
+            # references, never reintroduce the moving DA selection as snap targets.
+            reference = self.alchemist_scope(self.snapping_geometry(), "regular")
+            geometry = replace(
+                geometry,
+                walls=(*geometry_edges(geometry.walls, geometry.closures), *reference.walls),
+                closures=(),
+                lineage=(*geometry.lineage, *reference.lineage),
+                ancestry=tuple(
+                    {r.id: r for r in (*geometry.ancestry, *reference.ancestry)}.values()
+                ),
+                wall_styles=tuple(
+                    {**dict(geometry.wall_styles), **dict(reference.wall_styles)}.items()
+                ),
+            )
         self.guide_targets = GuideTargets(vertices(geometry))
         allowed = (
             connected_targets(self.editing_geometry(), moving_ids)
@@ -1156,7 +1472,10 @@ class MapView(QGraphicsView):
             if self.figure_pivot_edges != self.selected_figure_edges():
                 self.figure_pivot = None
             return plan_figure_transform(
-                self.session.geometry(), self.figure_line_ids, self.figure_pivot
+                self.session.geometry(),
+                self.figure_line_ids,
+                self.figure_pivot,
+                include_polygons=not bool(self.session.alchemist),
             )
         return plan_region_transform(
             self.session.geometry(),
@@ -1174,7 +1493,25 @@ class MapView(QGraphicsView):
             else None,
         )
 
+    def individual_transform_enabled(self, tool=None):
+        from dale.individual_transform import tool_key
+
+        if self.selection_section == "alchemist":
+            return True
+        key = tool_key(self.selection_section, tool or self.mode)
+        default = bool(
+            self.selection_section == "alchemist"
+            and self.session
+            and self.session.alchemist
+            and self.session.alchemist.individual_transforms
+        )
+        return self.individual_transform_settings.get(key, default) if key else False
+
     def transform_regions(self, scale=1.0, angle=0.0, mirror=None):
+        if self.selection_section == "alchemist":
+            if mirror is not None:
+                return
+            self.figure_line_ids = self.whole_da_selection(self.figure_line_ids)
         if (
             not self.session
             or not (self.figure_line_ids if self.figure_selection else self.region_polygons)
@@ -1192,22 +1529,87 @@ class MapView(QGraphicsView):
         )
         if not rotating:
             self.finish_rotation()
-        geometry, polygons = plan.apply(scale=scale, angle=angle, mirror=mirror)
+        individual_centers = None
+        individual = self.individual_transform_enabled() and mirror is None
+        if self.selection_section == "alchemist" and self.session.alchemist and individual:
+            from dale.alchemist import transform_individual_objects
+
+            geometry, individual_centers = transform_individual_objects(
+                self.session,
+                self.figure_line_ids,
+                scale=scale,
+                angle=angle,
+                centers=getattr(self, "individual_rotation_centers", None)
+                if continue_rotation
+                else None,
+            )
+            polygons = ()
+        elif individual and self.mode not in RASTER_TRANSFORM_TOOLS:
+            from dale.individual_transform import transform_contours
+
+            geometry, polygons, individual_centers = transform_contours(
+                plan,
+                figures=self.figure_selection,
+                scale=scale,
+                angle=angle,
+                centers=getattr(self, "individual_rotation_centers", None)
+                if continue_rotation
+                else None,
+            )
+        else:
+            geometry, polygons = plan.apply(scale=scale, angle=angle, mirror=mirror)
         geometry = self.raster_geometry(geometry, plan, scale=scale, angle=angle)
         if geometry != plan.original or (
             self.mode in RASTER_TRANSFORM_TOOLS and geometry.raster != plan.original.raster
         ):
+            preset_objects = set()
+            if (
+                self.selection_section == "alchemist"
+                and self.session.alchemist
+                and mirror is None
+                and (scale != 1 or angle != 0)
+            ):
+                from dale.alchemist_presets import transform_settings, whole_objects
+
+                preset_objects = whole_objects(self.session, identifiers)
+                if preset_objects:
+                    geometry = replace(
+                        geometry,
+                        alchemist_transforms=transform_settings(
+                            self.session, preset_objects, scale, angle
+                        ),
+                    )
             if continue_rotation:
                 if self.mode in RASTER_TRANSFORM_TOOLS:
                     from dale.raster_transform import affine_matrix
 
                     old = self.rotation_last.raster
                     matrix = affine_matrix(self.rotation_pivot, angle=self.rotation_angle + angle)
-                    geometry = replace(geometry, raster=replace(old, matrix=matrix))
+                    parts = old.parts
+                    if parts:
+                        from dale.raster_transform import area_of
+
+                        parts = tuple(
+                            (
+                                area,
+                                affine_matrix(
+                                    (
+                                        (p.bounds[0] + p.bounds[2]) / 2,
+                                        (p.bounds[1] + p.bounds[3]) / 2,
+                                    ),
+                                    angle=self.rotation_angle + angle,
+                                ),
+                            )
+                            for (area, _), p in zip(
+                                parts, (area_of(data) for data in old.regions), strict=True
+                            )
+                        )
+                    geometry = replace(geometry, raster=replace(old, matrix=matrix, parts=parts))
                 self.session.operations[-1] = geometry
             else:
                 self.session.add(geometry)
             if rotating:
+                self.individual_rotation_centers = individual_centers
                 self.rotation_last, self.rotation_ids = geometry, identifiers
                 self.rotation_angle = round(
                     self.rotation_angle + angle if continue_rotation else angle, 10
@@ -1224,8 +1626,19 @@ class MapView(QGraphicsView):
                     else (),
                 }
             )
+            if preset_objects:
+                self.alchemist_parameters_changed.emit(
+                    (
+                        self.session,
+                        preset_objects,
+                        tuple(
+                            (["scale"] if scale != 1 else []) + (["rotation"] if angle != 0 else [])
+                        ),
+                    )
+                )
 
     def finish_rotation(self):
+        self.individual_rotation_centers = None
         had_rotation = self.rotation_last is not None
         self.rotation_last = None
         self.rotation_ids = ()
@@ -1269,13 +1682,16 @@ class MapView(QGraphicsView):
             increment = alternate if modifiers & Qt.KeyboardModifier.AltModifier else normal
             self.transform_regions(angle=(round(steps) or (1 if steps > 0 else -1)) * increment)
 
-    def rotate_wheel_event(self, event):
+    @staticmethod
+    def wheel_amount(event):
         delta = event.angleDelta()
         # The Windows Qt platform moves vertical wheel deltas to X while Alt is held.
-        amount = delta.y() or (
+        return delta.y() or (
             delta.x() if event.modifiers() & Qt.KeyboardModifier.AltModifier else 0
         )
-        self.rotate_by_wheel(amount / 120, event.modifiers())
+
+    def rotate_wheel_event(self, event):
+        self.rotate_by_wheel(self.wheel_amount(event) / 120, event.modifiers())
 
     def _preview_region_move(self, point, modifiers=Qt.KeyboardModifier.NoModifier):
         candidate = tuple(
@@ -1291,6 +1707,11 @@ class MapView(QGraphicsView):
         self.refresh(render_image=self.mode in RASTER_TRANSFORM_TOOLS)
 
     def _hover_region_anchor(self, point):
+        if self.figure_selection and self.session and self.selection_section == "alchemist":
+            self.region_anchor = self.selection_display().nearest_vertex(
+                point, self.selection_center()
+            )
+            return
         points = (
             tuple(p for edge in self.selected_figure_edges() for p in edge)
             if self.figure_selection
@@ -1309,8 +1730,9 @@ class MapView(QGraphicsView):
     def selection_center(self):
         """Use the same stable common pivot as the transform, never individual centers."""
         if self.figure_selection:
-            edges = self.selected_figure_edges()
-            return (self.figure_pivot or contour_center(edges)) if edges else None
+            if not self.session or not self.figure_line_ids:
+                return None
+            return self.figure_pivot or self.selection_display().center
         if self.region_polygons:
             if self.region_pivot is not None:
                 return self.region_pivot
@@ -1326,6 +1748,33 @@ class MapView(QGraphicsView):
             return
         tolerance = self._handle_tolerance()
         center = self.selection_center()
+        if self.figure_selection and self.session and self.selection_section == "alchemist":
+            # DA has whole-object selection. Restrict all geometric hit work to
+            # object bounds near the pointer, never general map-wide components.
+            x, y = point
+            candidates = self.da_figures_in_bounds(
+                (x - tolerance, y - tolerance, x + tolerance, y + tolerance)
+            )
+            selection = self.selection_display().selected
+            hits, selected_edge_hit = [], False
+            for component in candidates:
+                edge_hit = any(
+                    math.dist(project(point, edge)[0], point) <= tolerance
+                    for edge in component.edges
+                )
+                if edge_hit or component.area.covers(Point(point)):
+                    hits.append(component)
+                if edge_hit and selection.intersection(component.line_ids):
+                    selected_edge_hit = True
+            if center is not None and (
+                math.dist(center, point) <= tolerance
+                or self.selected_path.contains(QPointF(*point))
+                or selected_edge_hit
+            ):
+                self.object_center = center
+            elif hits:
+                self.object_center = contour_center(min(hits, key=lambda c: len(c.edges)).edges)
+            return
         selected = (
             self.selected_figure_edges()
             if self.figure_selection
@@ -1644,7 +2093,7 @@ class MapView(QGraphicsView):
             if intervals is not None:
                 intervals = tuple(intervals[i] for i in indices)
         self.alignment_geometry = geometry
-        visible = self.editing_geometry(self.drag_base)
+        visible = self.snapping_geometry(self.drag_base)
         implicit_connections = self.connection_prompt is None and not any(groups(visible))
         stationary = tuple(
             i
@@ -1738,6 +2187,16 @@ class MapView(QGraphicsView):
                 geometry = self.region_clipboard.paste(original, dx, dy)
                 if geometry != original:
                     self.paste_committed.emit(self.clipboard_source)
+                    if self.selection_section == "alchemist":
+                        from dale.alchemist import register_pasted_objects
+
+                        geometry = register_pasted_objects(
+                            self.session,
+                            original,
+                            geometry,
+                            self.region_clipboard,
+                            getattr(self, "clipboard_alchemist", None),
+                        )
                     self.session.add(geometry)
                     self.changed.emit()
                     self.regions_transformed.emit(
@@ -2341,10 +2800,16 @@ class MapView(QGraphicsView):
             return
         if not self.session:
             return
+        amount = self.wheel_amount(event)
+        if not amount:
+            event.accept()
+            return
         before = self.mapToScene(event.position().toPoint())
-        factor = 1.2 if event.angleDelta().y() > 0 else 1 / 1.2
-        if 0.005 <= self.transform().m11() * factor <= 16:
-            self.scale(factor, factor)
+        factor = 1.2 if amount > 0 else 1 / 1.2
+        current = self.transform().m11()
+        target = self.bounded_zoom(current * factor)
+        if target != current:
+            self.scale(target / current, target / current)
             after = self.mapToScene(event.position().toPoint())
             delta = after - before
             self.translate(delta.x(), delta.y())
@@ -2513,24 +2978,20 @@ class MapView(QGraphicsView):
             path(self.original_path, "#58d9ec")
             path(self.warning_path, "#ff0000")
             path(self.offset_path, "#58d9ec", True)
+        if (
+            self.session.alchemist
+            and self.selection_section == "alchemist"
+            and self.session.alchemist.show_regular
+            and self.show_walls
+        ):
+            painter.save()
+            painter.setOpacity(0.7)
+            path(getattr(self, "alchemist_reference_path", QPainterPath()), "#58d9ec")
+            painter.restore()
         if self.figure_selection:
-            selected_edges = self.selected_figure_edges()
-            selected_path = line_path(selected_edges)
-            outlined(lambda: painter.drawPath(selected_path), "#58d9ec", backing="#ffffff")
-            key = selected_edges, self.geometry_key
-            if getattr(self, "figure_warning_key", None) != key:
-                intersection = unary_union([LineString(e) for e in selected_edges]).intersection(
-                    self.warning_geometry
-                )
-                pending, edges = [intersection], []
-                while pending:
-                    geometry = pending.pop()
-                    if geometry.geom_type == "LineString":
-                        edges.extend(pairwise(geometry.coords))
-                    elif hasattr(geometry, "geoms"):
-                        pending.extend(geometry.geoms)
-                self.figure_warning_key = key
-                self.figure_warning_path = line_path(edges)
+            selection = self.selection_display()
+            outlined(lambda: painter.drawPath(selection.path), "#58d9ec", backing="#ffffff")
+            self.figure_warning_path = selection.warning_path(self.warning_geometry)
             outlined(
                 lambda: painter.drawPath(self.figure_warning_path), "#ff0000", backing="#ffffff"
             )

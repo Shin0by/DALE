@@ -206,9 +206,12 @@ def overlay_region_plan(
     selected_polygons=None,
     merge_adjacent=False,
     cancelled=None,
+    allow_empty=False,
 ):
     """Freeze the same source regions and rendered parts for naming and PNG export."""
     analysis = session.analysis() if selected_polygons is None else None
+    if allow_empty and analysis is not None and analysis.area.is_empty:
+        return (), [], (), None, selection_number(())
     polygons = (
         tuple(selected_polygons)
         if selected_polygons is not None
@@ -217,6 +220,8 @@ def overlay_region_plan(
         )
     )
     if not polygons:
+        if allow_empty:
+            return (), [], (), None, selection_number(())
         raise ValueError("No closed contour is available for separate PNG export.")
     selected = tuple(enumerate(polygons))
     if region_index is not None and region_indices is not None:
@@ -288,6 +293,41 @@ def shared_export_group(matches):
     return group if group and all(g and g.id == group.id for g in matches) else None
 
 
+def da_export_regions(
+    session, selected_polygons=None, region_index=None, region_indices=None, cancelled=None
+):
+    """Filter image regions on an immutable DA-only snapshot, within the chosen area."""
+    from dale.alchemist import export_session
+
+    if selected_polygons is None and (region_index is not None or region_indices is not None):
+        plan = overlay_region_plan(
+            export_session(session),
+            region_index=region_index,
+            region_indices=region_indices,
+            individual_regions=True,
+            cancelled=cancelled,
+        )
+        selected_polygons = tuple(p for group in plan[2] for p in group)
+    filtered = export_session(session, only_alchemist=True)
+    if selected_polygons is None:
+        return filtered, None
+    area = unary_union(selected_polygons)
+    result = []
+    for polygon in export_regions(filtered, individual=True):
+        if cancelled and cancelled():
+            raise ExportCancelled("Separate PNG export cancelled.")
+        pending = [polygon.intersection(area)]
+        while pending:
+            part = pending.pop()
+            if part.is_empty:
+                continue
+            if part.geom_type == "Polygon":
+                result.append(part)
+            elif hasattr(part, "geoms"):
+                pending.extend(part.geoms)
+    return filtered, tuple(result)
+
+
 def export_overlays(
     session: Session,
     directory: Path,
@@ -305,10 +345,36 @@ def export_overlays(
     conflict=None,
     protected_sources=(),
     include_json=True,
+    include_png=True,
     export_groups=(),
     active_group=None,
+    json_contours="combined",
+    height_normalization=(False, 0, 10),
+    merge_contours=False,
 ) -> Path:
-    grid = export_grid(session, grid_size) if size_to_grid else None
+    from dale.alchemist import export_session
+    from dale.export_height import normalize_wall_heights, validate_height_normalization
+
+    height_normalization = validate_height_normalization(height_normalization)
+    if type(include_png) is not bool or type(include_json) is not bool:
+        raise ValueError("Invalid export file settings.")
+    if not (include_png or include_json):
+        raise ValueError("Enable PNG or JSON export.")
+    if json_contours not in ("all", "regular", "combined", "alchemist"):
+        raise ValueError("Invalid JSON contour export choice.")
+    if type(merge_contours) is not bool:
+        raise ValueError("Invalid contour merge export setting.")
+    merge_adjacent = merge_adjacent or merge_contours
+    only_da = json_contours == "alchemist"
+    json_session = export_session(session, json_contours != "regular", only_alchemist=only_da)
+    if only_da:
+        session, selected_polygons = da_export_regions(
+            session, selected_polygons, region_index, region_indices, cancelled
+        )
+        region_index = region_indices = None
+    else:
+        session = export_session(session)
+    grid = export_grid(session, grid_size) if size_to_grid and include_png else None
     directory = directory.resolve()
     plan = overlay_region_plan(
         session,
@@ -318,10 +384,11 @@ def export_overlays(
         selected_polygons=selected_polygons,
         merge_adjacent=merge_adjacent,
         cancelled=cancelled,
+        allow_empty=not include_png,
     )
     selected, selected_indices, identity_groups, region_groups, selection_id = plan
     source = session.source
-    stem = export_name or Path(source.image_name or source.image_path.name).stem
+    stem = export_name or Path(source.image_name or source.name).stem
     named_groups = (
         export_group_matches(session, export_groups, plan, active_group)
         if export_groups
@@ -398,7 +465,7 @@ def export_overlays(
         rendered = {}
         if staging.parent != directory or destination.parent != directory:
             raise ValueError("Export staging and destination must stay inside the selected folder.")
-        for part, (_index, polygon) in enumerate(selected):
+        for part, (_index, polygon) in enumerate(selected if include_png else ()):
             if cancelled and cancelled():
                 raise ExportCancelled("Separate PNG export cancelled.")
             bounds, object_operations, content = prepare_overlay(
@@ -460,20 +527,27 @@ def export_overlays(
                     "scene_height": (bottom - y) * sy,
                 }
             )
-        if not manifest["items"]:
+        if include_png and not manifest["items"]:
             raise ValueError("All contour regions are transparent; no PNGs were exported.")
         if include_json:
+            if merge_contours:
+                from dale.export_contours import merge_selected_perimeters
+
+                json_session = merge_selected_perimeters(json_session, identity_groups, cancelled)
             scene_name = export_file(f"{family}.json")
             payload = (
-                repaired_json_bytes(session)[0]
+                repaired_json_bytes(json_session)[0]
                 if source.json_bytes is not None
-                else current_contours_document(session).data
+                else current_contours_document(json_session).data
             )
-            (staging / scene_name).write_bytes(payload)
-            manifest_name = export_file(f"{family}-placement.json")
-            (staging / manifest_name).write_text(
-                json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+            (staging / scene_name).write_bytes(
+                normalize_wall_heights(payload, height_normalization)
             )
+            if include_png:
+                manifest_name = export_file(f"{family}-placement.json")
+                (staging / manifest_name).write_text(
+                    json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+                )
         if cancelled and cancelled():
             raise ExportCancelled("Separate PNG export cancelled.")
         _publish_overlay_set(staging, destination, cancelled, overwrites)

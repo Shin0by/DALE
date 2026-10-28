@@ -262,9 +262,13 @@ def test_circle_drag_shrinks_ctrl_wheel_cancels_and_round_trips(app, pair_factor
         assert loaded.session.geometry() == original
         assert loaded.session.geometry().lineage == original.lineage
         loaded.session.undo()
-        assert not loaded.session.walls
+        assert loaded.session.geometry() == original
         loaded.session.redo()
         assert loaded.session.geometry() == original
+    view.session.undo()
+    assert not view.session.walls
+    view.session.redo()
+    assert view.session.geometry() == original
     view.close()
 
 
@@ -334,7 +338,7 @@ def test_menu_grouping_replaces_general_toolbar_and_about_is_localized(app):
         "Delete contours",
     ]
     assert window.clear_selection_action in window.basic_toolbar.actions()
-    assert len(window.toolbars) == 14
+    assert len(window.toolbars) == 16
     assert window.toolbars[0] == window.tool_set_toolbar
     assert "New circle" in window.mode_actions
     for language in ("en", "ru"):
@@ -1291,7 +1295,12 @@ def test_image_only_png_project_opens_saves_and_reopens_without_semantic_pages(a
     first = MainWindow()
     assert first.load_sources(image_path, None)
     assert set(first.sidebar_pages) == {"project", "settings"}
-    assert set(first.tool_set_actions) == {"geometry", "figures", "regions", "pixels"}
+    assert {k for k, a in first.tool_set_actions.items() if a.isVisible()} == {
+        "geometry",
+        "figures",
+        "regions",
+        "pixels",
+    }
     assert not {"Select walls", "Paint wall properties", "Reset wall properties"}.intersection(
         first.mode_actions
     )
@@ -1392,7 +1401,7 @@ def test_json_opens_without_image_and_safe_close_export_keeps_native_records(
     assert second.load_project_file(window.project_path)
     assert second.view.safe_json_repair and second.view.session.source.image_path is None
     second.history(False)
-    assert second.view.session.walls[0][1] == (10, 0)
+    assert second.view.session.walls[0][1] == (12, 0)
     second.history(True)
     assert second.view.session.walls[0][1] == (12, 0)
     assert second.can_discard()
@@ -2404,6 +2413,13 @@ def test_scene_and_contour_terminology_in_all_visible_control_text(app, pair_fac
             *w.findChildren(QComboBox),
             *w.findChildren(QGroupBox),
         ]:
+            # DA has an intentional physical Wall category; it is not the retired Walls mode.
+            action = c.defaultAction() if hasattr(c, "defaultAction") else c
+            if action is not None and action.property("dale_tool_key") in (
+                "DA walls",
+                "DA contours",
+            ):
+                continue
             texts.append(c.toolTip())
             if hasattr(c, "text"):
                 texts.append(c.text())

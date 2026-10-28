@@ -39,6 +39,11 @@ from dale.session import Session
 MIME = "application/x-dale-dataset-component"
 
 BUTTON_HELP = {
+    "Load DAM": "Attach Dungeon Alchemist contours to the selected dataset.",
+    "Replace DAM": "Replace the attached Dungeon Alchemist file and its contours.",
+    "Delete DAM": (
+        "Remove the attached Dungeon Alchemist file and its contours. Keep the external file."
+    ),
     "+ New dataset": "Create an empty dataset for its own image and contours.",
     "Delete dataset": "Delete this dataset and its edits. External source files are kept.",
     "Load JSON": "Load contours from a JSON file or DALE project. Keep the current image.",
@@ -55,7 +60,7 @@ BUTTON_HELP = {
     "Import datasets": "Copy complete datasets from another .dale project into this project.",
     "Export dataset": "Add this dataset and its edits to an existing .dale project without opening "
     "it.",
-    "Cancel": "Close without applying pending changes. Previously applied changes remain.",
+    "Close": "Close without applying pending changes. Previously applied changes remain.",
     "Apply": "Apply changes to the editor and keep this window open. Save project writes them to "
     "disk.",
     "Open dataset": "Apply changes, open the selected dataset and close this window. Save project "
@@ -92,7 +97,7 @@ class DatasetTree(QTreeWidget):
     def startDrag(self, supported_actions):
         item = self.currentItem()
         value = item.data(0, Qt.ItemDataRole.UserRole) if item else None
-        if not value or not value[1]:
+        if not value or value[1] not in ("json", "image"):
             return
         data = QMimeData()
         data.setData(MIME, json.dumps([self.token, *value]).encode())
@@ -212,6 +217,9 @@ class DatasetManager(QDialog):
             actions.addWidget(remove)
             details.addLayout(actions)
             self.component_buttons[kind] = load, send, remove
+        from dale.alchemist_ui import add_manager_controls
+
+        add_manager_controls(self, details)
         details.addSpacing(18)
         details.addWidget(QLabel(self.t("Export filename prefix")))
         self.export_names = QLabel()
@@ -236,12 +244,12 @@ class DatasetManager(QDialog):
         self.status.setWordWrap(True)
         footer = QHBoxLayout()
         footer.addWidget(self.status, 1)
-        footer.addWidget(self.button("Cancel", self.reject))
         self.apply_button = self.button("Apply", lambda: self.apply(False))
         self.open_button = self.button("Open dataset", lambda: self.apply(True))
         self.open_button.setDefault(True)
         footer.addWidget(self.apply_button)
         footer.addWidget(self.open_button)
+        footer.addWidget(self.button("Close", self.reject))
         layout.addLayout(footer)
         self.rebuild()
 
@@ -264,7 +272,7 @@ class DatasetManager(QDialog):
         button.setText(self.t(text))
         button.setAccessibleName(self.t(text))
         keys = {
-            "Cancel": ["Escape: close without applying pending changes."],
+            "Close": ["Escape: close without applying pending changes."],
             "Open dataset": ["Enter: apply changes and open the selected dataset."],
         }.get(text, [])
         button.setToolTip(
@@ -318,7 +326,14 @@ class DatasetManager(QDialog):
                     )
                     child.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
                     root.addChild(child)
-            if not view.has_json and not view.has_image:
+            if view.session.alchemist:
+                child = QTreeWidgetItem([view.filename("alchemist")])
+                child.setData(0, Qt.ItemDataRole.UserRole, (key, "alchemist"))
+                child.setToolTip(0, self.t("Dungeon Alchemist project"))
+                child.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                child.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                root.addChild(child)
+            if not view.has_json and not view.has_image and not view.session.alchemist:
                 root.addChild(QTreeWidgetItem([self.t("Empty dataset")]))
             root.setExpanded(True)
             if key == self.selected:
@@ -340,6 +355,11 @@ class DatasetManager(QDialog):
     def refresh_fields(self):
         self._refreshing = True
         view = self.catalog.views[self.selected]
+        da = view.session.alchemist
+        self.file_fields["alchemist"].setText(Path(da.name).stem if da else "")
+        self.file_fields["alchemist"].setEnabled(bool(da))
+        self.describe_button(self.alchemist_load_button, "Replace DAM" if da else "Load DAM")
+        self.alchemist_remove_button.setEnabled(bool(da))
         self.name_edit.setText(view.name)
         self.add_json_button.setEnabled(view.has_json)
         names = []

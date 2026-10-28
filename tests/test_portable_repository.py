@@ -75,6 +75,9 @@ def test_git_portable_delivery_is_complete_and_contains_no_user_data():
         "DALE/_internal/PySide6/QtCore.pyd",
         "DALE/_internal/PySide6/Qt6Widgets.dll",
         "DALE/_internal/PySide6/plugins/platforms/qwindows.dll",
+        # Texture2DConverter imports these even when no audio/ASTC texture is used.
+        "DALE/_internal/fmod_toolkit/libfmod/Windows/x64/fmod.dll",
+        "DALE/_internal/archspec/json/cpu/microarchitectures.json",
     }
     assert required <= entries.keys()
     for name in entries:

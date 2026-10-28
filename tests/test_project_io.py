@@ -158,8 +158,10 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_fa
     with load_project(path) as loaded:
         assert loaded.session.source.image_path.read_bytes() == original[0]
         assert loaded.session.source.json_path.read_bytes() == original[1]
-        assert loaded.session.operations == session.operations
-        assert loaded.session.future == session.future
+        assert loaded.session.geometry().walls == session.geometry().walls
+        assert loaded.session.geometry().lineage == session.geometry().lineage
+        assert loaded.session.history_floor == len(loaded.session.operations)
+        assert not loaded.session.future
         assert loaded.session.gap_tolerance == 3
         assert loaded.session.contour_offset == 2
         assert loaded.ui_state["mode"] == "Edit points"
@@ -170,7 +172,7 @@ def test_portable_archive_preserves_sources_operations_redo_and_settings(pair_fa
             == expected_alpha
         )
         loaded.session.redo()
-        assert len(loaded.session.operations) == 5
+        assert len(loaded.session.operations) == loaded.session.history_floor
         extracted = loaded.session.source.image_path
     assert not extracted.exists()
 
@@ -330,8 +332,10 @@ def test_applied_contours_catalog_recovers_edits_without_decoding_image(
     assert current.image_walls() == geometry_edges(session.walls, session.closures)
     assert current.size == source.size and current.cell_pixels == source.cell_pixels
     with load_project(path) as loaded:
-        assert loaded.session.operations == session.operations
-        assert loaded.session.future == session.future
+        assert loaded.session.geometry().walls == session.geometry().walls
+        assert loaded.session.geometry().lineage == session.geometry().lineage
+        assert loaded.session.history_floor == len(loaded.session.operations)
+        assert not loaded.session.future
         assert loaded.session.json_documents == ()
         resaved = tmp_path / "resaved.dale"
         save_project(loaded.session, resaved)
@@ -346,12 +350,11 @@ def test_contours_cache_tracks_undo_redo_and_keeps_explicit_catalog_entries(pair
     save_project(session, path)
     documents = read_json_documents(path)
     assert documents[1] == stored and documents[-1].id == "current-contours-1"
-    with load_project(path) as loaded:
-        loaded.session.undo()
-        save_project(loaded.session, path)
-        assert read_json_documents(path)[1:] == (stored,)
-        loaded.session.redo()
-        save_project(loaded.session, path)
+    session.undo()
+    save_project(session, path)
+    assert read_json_documents(path)[1:] == (stored,)
+    session.redo()
+    save_project(session, path)
     assert read_json_documents(path)[-1] == documents[-1]
 
 

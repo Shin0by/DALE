@@ -277,7 +277,10 @@ def test_native_append_preserves_previous_repair_and_full_undo_redo(pair_factory
     with load_project(path) as loaded:
         assert loaded.session.geometry() == before
         loaded.session.redo()
-        assert repaired_json_bytes(loaded.session)[0] == payload
+        assert repaired_json_bytes(loaded.session)[0] == repaired_json_bytes(session)[0]
+        assert not loaded.session.future
+    session.redo()
+    assert repaired_json_bytes(session)[0] == payload
 
 
 def test_export_to_existing_project_keeps_datasets_and_raw_image_bytes(pair_factory, tmp_path):

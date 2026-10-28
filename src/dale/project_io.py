@@ -1,4 +1,4 @@
-"""Portable .dale ZIP projects with exact sources and complete undo/redo history."""
+"""Portable .dale ZIP projects with exact sources and applied editing state."""
 
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ SCHEMA_VERSION = 7
 DEFAULT_CUSTOM_COLORS = ("#ffffffff",) * 16
 LIMITS = {
     "manifest.json": 64 * 1024,
-    "history.json": 64 * 1024 * 1024,
+    "history.json": None,
     "sources/map.image": 1024 * 1024 * 1024,
-    "sources/scene.json": 32 * 1024 * 1024,
+    "sources/scene.json": None,
 }
 
 
@@ -179,10 +179,13 @@ def _archive_manifest(archive):
     ):
         raise ValueError("Invalid current contours JSON catalog reference.")
     for entry in entries:
-        if entry.flag_bits & 1 or not 0 <= entry.file_size <= expected[entry.filename]:
-            raise ValueError("Encrypted or oversized project member.")
-    if sum(archive.getinfo(member).file_size for member in members) > 128 * 1024 * 1024:
-        raise ValueError("Project JSON documents exceed the 128 MiB combined limit.")
+        limit = expected[entry.filename]
+        if entry.flag_bits & 1:
+            raise ValueError(f"Encrypted project member: {entry.filename}.")
+        if entry.file_size < 0:
+            raise ValueError(f"Invalid project member size: {entry.filename}.")
+        if limit is not None and entry.file_size > limit:
+            raise ValueError(f"Project member exceeds its size limit: {entry.filename}.")
     return manifest
 
 
@@ -266,9 +269,12 @@ def _catalog_from_archive(archive, manifest):
         ),
     )
     if manifest.get("catalog_views"):
-        catalog.restore(json.loads(_checked_bytes(archive, manifest, "catalog-views.json")))
+        from dale.project_state_reader import read_state_bytes
+
+        catalog.restore(read_state_bytes(_checked_bytes(archive, manifest, "catalog-views.json")))
     if manifest.get("datasets"):
         from dale.datasets import DatasetCatalog
+        from dale.project_state_reader import read_state_bytes
 
         image_inputs = (
             [CatalogImage(manifest["image_name"], "sources/map.image", None, size)]
@@ -284,7 +290,7 @@ def _catalog_from_archive(archive, manifest):
             ui,
             documents,
             image_inputs,
-            json.loads(_checked_bytes(archive, manifest, "datasets.json")),
+            read_state_bytes(_checked_bytes(archive, manifest, "datasets.json")),
         )
     return catalog
 
@@ -316,8 +322,6 @@ def append_project_document(project: Path, document: JsonDocument):
         raise ValueError("Choose an existing DALE project.")
     if not isinstance(document.name, str) or not 1 <= len(document.name) <= 256:
         raise ValueError("Invalid catalog set name.")
-    if len(document.data) > LIMITS["sources/scene.json"]:
-        raise ValueError("Scene JSON exceeds the project limit.")
     image_digest, image_size = None, None
     if document.image_path:
         if document.image_path.stat().st_size > LIMITS["sources/map.image"]:
@@ -360,8 +364,6 @@ def append_project_document(project: Path, document: JsonDocument):
                     return replace(existing, image_path=document.image_path), False
             if len(stored) >= 100:
                 raise ValueError("The project already contains 100 JSON documents.")
-            if sum(len(d.data) for d in stored) + len(document.data) > 128 * 1024 * 1024:
-                raise ValueError("Project JSON documents exceed the 128 MiB combined limit.")
             member = f"sources/json/{result.id}.json"
             entry = {"id": result.id, "name": result.name, "kind": result.kind, "member": member}
             if image_member:
@@ -486,14 +488,37 @@ def _encode(operation):
             "type": "source_repair" if isinstance(operation, SourceRepairEdit) else "geometry",
             "walls": operation.walls,
             "closures": operation.closures,
-            "lineage": [encode_record(record) for record in operation.lineage],
-            "ancestry": [encode_record(record) for record in operation.ancestry],
-            "vertices": operation.vertex_lineage,
+            "lineage": [
+                encode_record(record, compact=len(operation.lineage) > 10000)
+                for record in operation.lineage
+            ],
+            "ancestry": [
+                encode_record(record, compact=len(operation.lineage) > 10000)
+                for record in operation.ancestry
+            ],
         }
+        # Vertex diagnostics are derived from the exact walls and lineage on read.
+        # Large DA maps must not exhaust the archive budget by repeating those IDs.
+        if len(operation.lineage) <= 10_000:
+            result["vertices"] = operation.vertex_lineage
         if operation.wall_styles:
             from dale.wall_styles import encode_styles
 
             result["wall_styles"] = encode_styles(operation.wall_styles)
+        if operation.alchemist_slices is not None:
+            result["alchemist_slices"] = operation.alchemist_slices
+        if operation.alchemist_object_slices is not None:
+            result["alchemist_object_slices"] = operation.alchemist_object_slices
+        if operation.alchemist_complexity is not None:
+            result["alchemist_complexity"] = operation.alchemist_complexity
+        if operation.alchemist_transforms is not None:
+            result["alchemist_transforms"] = operation.alchemist_transforms
+        if operation.alchemist_detail_frames is not None:
+            result["alchemist_detail_frames"] = operation.alchemist_detail_frames
+        if operation.alchemist_empty_frames is not None:
+            result["alchemist_empty_frames"] = operation.alchemist_empty_frames
+        if operation.alchemist_thinning is not None:
+            result["alchemist_thinning"] = operation.alchemist_thinning
         if operation.raster is not None:
             from dale.raster_transform import area_of
 
@@ -507,6 +532,11 @@ def _encode(operation):
                 ]
                 result["raster_transform"]["cells"] = [
                     cell.encode() for cell in operation.raster.cells
+                ]
+            if operation.raster.parts:
+                result["raster_transform"]["parts"] = [
+                    {"area": mapping(area_of(area)), "matrix": matrix}
+                    for area, matrix in operation.raster.parts
                 ]
         if isinstance(operation, SourceRepairEdit):
             result["additions"] = [
@@ -636,6 +666,36 @@ def _decode(value):
             raise ValueError("Line provenance is required in the current project format.")
         operation_type = SourceRepairEdit if kind == "source_repair" else GeometryEdit
         extra = {}
+        if "alchemist_slices" in value:
+            from dale.alchemist_slices import validate_values
+
+            extra["alchemist_slices"] = validate_values(value["alchemist_slices"])
+        if "alchemist_object_slices" in value:
+            from dale.alchemist_slices import decode_object_values
+
+            extra["alchemist_object_slices"] = decode_object_values(
+                value["alchemist_object_slices"]
+            )
+        if "alchemist_complexity" in value:
+            from dale.alchemist_detail import decode_values
+
+            extra["alchemist_complexity"] = decode_values(value["alchemist_complexity"])
+        if "alchemist_thinning" in value:
+            from dale.alchemist_thinning import decode_state
+
+            extra["alchemist_thinning"] = decode_state(value["alchemist_thinning"])
+        if "alchemist_transforms" in value:
+            from dale.alchemist_presets import decode_transforms
+
+            extra["alchemist_transforms"] = decode_transforms(value["alchemist_transforms"])
+        if "alchemist_detail_frames" in value:
+            from dale.alchemist_detail_frames import decode_frames
+
+            extra["alchemist_detail_frames"] = decode_frames(value["alchemist_detail_frames"])
+        if "alchemist_empty_frames" in value:
+            from dale.alchemist_slices import decode_empty_frames
+
+            extra["alchemist_empty_frames"] = decode_empty_frames(value["alchemist_empty_frames"])
         if "raster_transform" in value:
             from dale.session import RasterTransform
 
@@ -643,15 +703,16 @@ def _decode(value):
             if not isinstance(raster, dict) or set(raster) not in (
                 {"area", "matrix"},
                 {"area", "matrix", "regions", "cells"},
+                {"area", "matrix", "regions", "cells", "parts"},
             ):
                 raise ValueError("Invalid raster transform fields.")
             area = shape(raster["area"])
             matrix = raster["matrix"]
             if (
                 area.geom_type not in ("Polygon", "MultiPolygon")
-                or area.is_empty
+                or (area.is_empty and "parts" not in raster)
                 or not area.is_valid
-                or not all(abs(v) <= 1e9 for v in area.bounds)
+                or (not area.is_empty and not all(abs(v) <= 1e9 for v in area.bounds))
                 or not isinstance(matrix, list)
                 or len(matrix) != 6
             ):
@@ -684,7 +745,10 @@ def _decode(value):
                 ):
                     raise ValueError("Invalid raster region objects.")
                 regions = tuple(p.wkb for p in regions)
-            extra["raster"] = RasterTransform(area.wkb, matrix, regions, cells)
+            from dale.individual_transform import raster_parts
+
+            parts = raster_parts(raster.get("parts"), len(regions))
+            extra["raster"] = RasterTransform(area.wkb, matrix, regions, cells, parts)
         if "wall_styles" in value:
             from dale.wall_styles import decode_styles
 
@@ -730,10 +794,12 @@ def _json_bytes(value):
 
 
 def _read_history(archive, manifest):
+    from dale.project_state_reader import read_state_bytes
+
     data = archive.read("history.json")
     if hashlib.sha256(data).hexdigest() != manifest.get("sha256", {}).get("history.json"):
         raise ValueError("Project checksum mismatch: history.json.")
-    return json.loads(data)
+    return read_state_bytes(data)
 
 
 def _session_json_documents(session, original=None):
@@ -790,6 +856,43 @@ def current_contours_document(session):
     )
 
 
+def snapshot_project(session, catalog=None):
+    """Detach mutable histories/UI before handing project serialization to a worker."""
+    frozen = replace(session, operations=list(session.operations), future=list(session.future))
+    if catalog is None:
+        return frozen, None
+    copied = copy(catalog)
+    copied.views = {
+        key: replace(
+            view,
+            session=replace(
+                view.session,
+                operations=list(view.session.operations),
+                future=list(view.session.future),
+            ),
+            ui=dict(view.ui),
+        )
+        for key, view in catalog.views.items()
+    }
+    if not getattr(copied, "managed", False):
+        copied.base_session = copied.views[copied.base_key].session
+    return frozen, copied
+
+
+def publish_saved_state(original_session, original_catalog, session, catalog):
+    targets = (
+        ((original_catalog.views[k].session, view.session) for k, view in catalog.views.items())
+        if original_catalog
+        else ((original_session, session),)
+    )
+    for target, _ in targets:
+        # Saving a checkpoint must not erase this working session's undo/redo.
+        target.trim_history()
+    if original_catalog:
+        for key, view in catalog.views.items():
+            original_catalog.views[key].ui = dict(view.ui)
+
+
 def save_project(
     session: Session,
     destination: Path,
@@ -797,7 +900,13 @@ def save_project(
     *,
     catalog=None,
     custom_colors=None,
+    progress=None,
 ):
+    from dale.project_state import checkpoint_session
+    from dale.selection_storage import pack_selection
+
+    report = progress or (lambda *_: None)
+    report(5, "Preparing project state")
     if custom_colors is not None:
         custom_colors = _custom_colors(custom_colors)
     original_session, original_catalog = session, catalog
@@ -822,46 +931,38 @@ def save_project(
             catalog.capture(ui_state)
         if getattr(catalog, "managed", False):
             catalog.prepare()
-        for keep in (100, 50, 25, 12, 6, 3, 1, 0):
-            for view in catalog.views.values():
-                view.session.trim_history(keep)
-            view_bytes = _json_bytes(catalog.encode())
-            if len(view_bytes) <= LIMITS["history.json"]:
-                break
+        for view in catalog.views.values():
+            view.session = checkpoint_session(view.session)
+        if not getattr(catalog, "managed", False):
+            catalog.base_session = catalog.views[catalog.base_key].session
+        report(15, "Serializing project datasets")
+        view_bytes = _json_bytes(catalog.encode())
         session = catalog.base_session
         ui_state = catalog.views[catalog.base_key].ui
         session = replace(
             session, contour_offset=ui_state.get("artwork_offset_px", session.contour_offset)
         )
-        if len(view_bytes) > LIMITS["history.json"]:
-            raise ValueError(
-                "Current dataset data exceeds the project limit even without undo history."
-            )
     else:
-        session = replace(session, operations=list(session.operations), future=list(session.future))
-        session.trim_history()
+        session = checkpoint_session(session)
     destination = destination.resolve()
     sources = tuple(path for path in (session.source.image_path, session.source.json_path) if path)
     if destination in (path.resolve() for path in sources) or (
         destination.exists() and any(os.path.samefile(destination, path) for path in sources)
     ):
         raise ValueError("Saving a project cannot replace an imported source file.")
-    for keep in (100, 50, 25, 12, 6, 3, 1, 0):
-        session.trim_history(keep)
-        history = {
-            "origin": session.origin,
-            "gap_tolerance": session.gap_tolerance,
-            "contour_offset": session.contour_offset,
-            "operations": [_encode(op) for op in session.operations],
-            "redo": [_encode(op) for op in session.future],
-            **({"undo_floor": session.history_floor} if session.history_floor else {}),
-            "ui": ui_state or {},
-        }
-        history_bytes = _json_bytes(history)
-        if len(history_bytes) <= LIMITS["history.json"]:
-            break
-    if len(history_bytes) > LIMITS["history.json"]:
-        raise ValueError("Editing history exceeds the 64 MiB project limit.")
+    report(30, "Serializing project state")
+    history = {
+        **({"alchemist": session.alchemist.encode()} if session.alchemist else {}),
+        "origin": session.origin,
+        "gap_tolerance": session.gap_tolerance,
+        "contour_offset": session.contour_offset,
+        "operations": [_encode(op) for op in session.operations],
+        "redo": [_encode(op) for op in session.future],
+        **({"undo_floor": session.history_floor} if session.history_floor else {}),
+        "ui": pack_selection(ui_state or {}, session),
+    }
+    history_bytes = _json_bytes(history)
+    report(45, "Preparing project assets")
     manifest = {
         "format": FORMAT,
         "schema_version": SCHEMA_VERSION,
@@ -972,14 +1073,20 @@ def save_project(
                     if path.stat().st_size > LIMITS[member]:
                         raise ValueError(f"Source exceeds the project limit for {member}.")
                     archive.write(path, member, compress_type=zipfile.ZIP_STORED)
-                for member, data in payloads.items():
+                report(60, "Writing project archive")
+                for index, (member, data) in enumerate(payloads.items()):
                     archive.writestr(member, data, zipfile.ZIP_DEFLATED)
+                    report(
+                        60 + int(20 * (index + 1) / max(1, len(payloads))),
+                        "Writing project archive",
+                    )
                 for member, image_path in image_payloads.items():
                     if image_path.stat().st_size > LIMITS["sources/map.image"]:
                         raise ValueError("Catalog image exceeds the project limit.")
                     archive.write(image_path, member, compress_type=zipfile.ZIP_STORED)
             stream.flush()
             os.fsync(stream.fileno())
+        report(85, "Verifying project archive")
         with zipfile.ZipFile(temporary) as verification:
             _archive_manifest(verification)
             for entry in verification.infolist():
@@ -989,20 +1096,10 @@ def save_project(
                     digest = hashlib.file_digest(payload, "sha256").hexdigest()
                 if digest != manifest["sha256"].get(entry.filename):
                     raise ValueError("A source asset changed while saving the project.")
+        report(95, "Publishing project archive")
         os.replace(temporary, destination)
         temporary = None
-        targets = (
-            ((original_catalog.views[k].session, view.session) for k, view in catalog.views.items())
-            if original_catalog
-            else ((original_session, session),)
-        )
-        for target, bounded in targets:
-            target.operations[:] = bounded.operations
-            target.future[:] = bounded.future
-            target.history_floor = bounded.history_floor
-        if original_catalog:
-            for key, view in catalog.views.items():
-                original_catalog.views[key].ui = dict(view.ui)
+        publish_saved_state(original_session, original_catalog, session, catalog)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -1027,6 +1124,7 @@ class LoadedProject:
 
 
 def _load_ui(value):
+    from dale.individual_transform import settings as individual_settings
     from dale.measurement import measurement_settings
     from dale.raster_brush import brush_settings
     from dale.selection_groups import group_ui_state
@@ -1116,7 +1214,7 @@ def _load_ui(value):
         raise ValueError("Invalid project editing preferences.")
     if language not in ("en", "ru"):
         raise ValueError("Invalid project interface language.")
-    if tool_set not in ("geometry", "pixels", "regions", "figures"):
+    if tool_set not in ("geometry", "pixels", "regions", "figures", "alchemist"):
         raise ValueError("Invalid project tool set.")
     if (
         any(
@@ -1180,7 +1278,6 @@ def _load_ui(value):
     figure_pivot = value.get("figure_pivot")
     if (
         not isinstance(figure_lines, list)
-        or len(figure_lines) > 100_000
         or any(not isinstance(i, str) or not 1 <= len(i) <= 256 for i in figure_lines)
         or len(set(figure_lines)) != len(figure_lines)
     ):
@@ -1224,6 +1321,9 @@ def _load_ui(value):
         "mode": mode,
         "figure_lines": figure_lines,
         "figure_move_double_click": figure_move_double_click,
+        "individual_transform_settings": individual_settings(
+            value.get("individual_transform_settings")
+        ),
         "figure_pivot": figure_pivot,
         "safe_json_repair": safe_repair,
         "source_layer": source_layer,
@@ -1256,6 +1356,9 @@ def _load_ui(value):
 
 
 def _restore_session(source, documents, manifest, history, *, provenance_documents=()):
+    from dale.alchemist import DAData
+    from dale.project_state import applied_operations
+
     source = replace(
         source,
         image_name=manifest.get("image_name", source.image_name),
@@ -1271,18 +1374,20 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
         raise ValueError("Invalid or excessive project history.")
     if type(undo_floor) is not int or not 0 <= undo_floor <= len(operations):
         raise ValueError("Invalid project undo checkpoint.")
+    operations = applied_operations(operations)
     gap = number(history.get("gap_tolerance", 0), "Gap tolerance")
     offset = number(history.get("contour_offset", 0), "Contour offset")
     if not 0 <= gap <= 4096 or not -4096 <= offset <= 4096:
         raise ValueError("Project contour settings exceed supported limits.")
     session = Session(
         source,
+        alchemist=DAData.decode(history["alchemist"]) if "alchemist" in history else None,
         origin=_point(history.get("origin", [0, 0])),
         operations=[_decode(op) for op in operations],
-        future=[_decode(op) for op in redo],
+        future=[],
         gap_tolerance=gap,
         contour_offset=offset,
-        history_floor=undo_floor,
+        history_floor=len(operations),
         json_documents=tuple(
             d for d in documents if d.id not in ("source", manifest.get("current_contours_id"))
         ),
@@ -1325,6 +1430,29 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
                     ):
                         raise ValueError("Wall properties do not match their declared provenance.")
     known_ids = set(catalog) | set(references)
+    if session.alchemist:
+        # Old schema7 files may declare pasted objects that exist only in redo.
+        # Read their identity labels without decoding any discarded operation.
+        discarded_ids = {
+            record["id"]
+            for operation in redo
+            if isinstance(operation, dict)
+            for key in ("lineage", "ancestry")
+            for record in operation.get(key, ())
+            if isinstance(record, dict) and isinstance(record.get("id"), str)
+        }
+        session.alchemist = replace(
+            session.alchemist,
+            objects=tuple(
+                obj
+                for obj in session.alchemist.objects
+                if not (set(obj.roots) - known_ids and set(obj.roots) - known_ids <= discarded_ids)
+            ),
+        )
+    if session.alchemist and any(
+        root not in known_ids for obj in session.alchemist.objects for root in obj.roots
+    ):
+        raise ValueError("Dungeon Alchemist objects reference unknown contour identities.")
     for operation in (*session.operations, *session.future):
         raster = getattr(operation, "raster", None)
         if raster is not None and any(
@@ -1346,9 +1474,17 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
         raise ValueError("Line provenance contains an unknown parent.")
     from dale.layer_repair import canonical_geometry
 
+    addition_sources = {
+        addition.source_ref.json_sha256
+        for operation in (*session.operations, *session.future)
+        if isinstance(operation, SourceRepairEdit)
+        for addition in operation.additions
+        if addition.source_ref is not None
+    }
     imported = {
         hashlib.sha256(d.data).hexdigest(): json.loads(d.data)
         for d in (*documents, *provenance_documents)
+        if addition_sources and hashlib.sha256(d.data).hexdigest() in addition_sources
     }
     if source.json_bytes is not None:
         imported[hashlib.sha256(source.json_bytes).hexdigest()] = source.raw
@@ -1364,16 +1500,20 @@ def _restore_session(source, documents, manifest, history, *, provenance_documen
                         raise ValueError(
                             "Imported contour properties do not match their exact source."
                         )
+    from dale.selection_storage import unpack_selection
     from dale.source_editing import source_layers
 
-    ui = _load_ui(history.get("ui", {}))
+    ui = _load_ui(unpack_selection(history.get("ui", {}), session))
     detached = ui["detached_region_selection"]
     if detached and not set(detached["lines"]).issubset({r.id for r in session.geometry().lineage}):
         raise ValueError("Detached selection references missing lines.")
     if session.source.json_bytes is not None and ui["source_layer"] not in {
         layer.key
         for layer in source_layers(
-            session.source, session.geometry(), (*documents, *provenance_documents)
+            session.source,
+            session.geometry(),
+            (*documents, *provenance_documents),
+            alchemist=session.alchemist,
         )
     }:
         raise ValueError("Invalid source height layer.")
@@ -1397,12 +1537,15 @@ def _empty_size(manifest):
     return tuple(size)
 
 
-def load_project(path: Path) -> LoadedProject:
+def load_project(path: Path, *, progress=None) -> LoadedProject:
+    report = progress or (lambda value, label: None)
+    report(5, "Reading project archive")
     workspace = tempfile.TemporaryDirectory(prefix="dale-project-")
     try:
         root = Path(workspace.name)
         with zipfile.ZipFile(path) as archive:
             manifest = _archive_manifest(archive)
+            report(10, "Checking project documents")
             documents = _read_json_documents(archive, manifest)
             members_to_extract = ["history.json"]
             if manifest["source_kind"] == "image":
@@ -1425,17 +1568,29 @@ def load_project(path: Path) -> LoadedProject:
                 members_to_extract.append("catalog-views.json")
             if manifest.get("datasets"):
                 members_to_extract.append("datasets.json")
+            total = max(1, sum(archive.getinfo(m).file_size for m in members_to_extract))
+            completed = 0
+            report(15, "Extracting and checking project files")
             for member in members_to_extract:
                 destination = root / Path(member).name
                 with archive.open(member) as source, destination.open("wb") as target:
-                    shutil.copyfileobj(source, target, length=1024 * 1024)
+                    while block := source.read(1024 * 1024):
+                        target.write(block)
+                        completed += len(block)
+                        report(
+                            15 + int(40 * completed / total),
+                            "Extracting and checking project files",
+                        )
                 if _hash(destination) != manifest.get("sha256", {}).get(member):
                     raise ValueError(f"Project checksum mismatch: {member}.")
         documents = tuple(
             replace(d, image_path=root / Path(d.image_member).name) if d.image_member else d
             for d in documents
         )
-        history = json.loads((root / "history.json").read_text(encoding="utf-8"))
+        report(58, "Loading project state")
+        from dale.project_state_reader import read_state_file
+
+        history = read_state_file(root / "history.json")
         source_document = next(
             (document for document in documents if document.id == "source"), None
         )
@@ -1458,6 +1613,7 @@ def load_project(path: Path) -> LoadedProject:
         )
         from dale.catalog import CatalogImage, SceneCatalog
 
+        report(65, "Loading project datasets")
         extra_images = []
         for item in manifest.get("catalog_images", []):
             image_path = root / Path(item["member"]).name
@@ -1466,7 +1622,7 @@ def load_project(path: Path) -> LoadedProject:
             extra_images.append(CatalogImage(item["name"], item["member"], image_path, size))
         catalog = SceneCatalog(session, ui, extra_images=extra_images)
         if manifest.get("catalog_views"):
-            catalog.restore(json.loads((root / "catalog-views.json").read_bytes()))
+            catalog.restore(read_state_file(root / "catalog-views.json"))
         if manifest.get("datasets"):
             from dale.datasets import DatasetCatalog
 
@@ -1485,7 +1641,7 @@ def load_project(path: Path) -> LoadedProject:
                 ui,
                 documents,
                 image_inputs,
-                json.loads((root / "datasets.json").read_bytes()),
+                read_state_file(root / "datasets.json"),
             )
         return LoadedProject(
             catalog.current.session,

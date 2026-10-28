@@ -61,6 +61,9 @@ def test_independent_point_move_archive_redo_and_global_cells(pair_factory, tmp_
         assert groups(loaded.session.geometry()) == groups(separate)
         assert len(components(loaded.session.geometry())) == 2
         loaded.session.redo()
-        assert len(components(loaded.session.geometry())) == 1
+        assert len(components(loaded.session.geometry())) == 2
+        assert not loaded.session.future
         loaded.session.undo()
         assert len(components(loaded.session.geometry())) == 2
+    session.redo()
+    assert len(components(session.geometry())) == 1

@@ -60,6 +60,7 @@ class NativeTileWorker(QThread):
                     top=y / factor,
                     left=x / factor,
                     scale=(1 / factor, 1 / factor),
+                    cancelled=self.isInterruptionRequested,
                 )
                 image.putalpha(ImageChops.multiply(image.getchannel("A"), alpha))
                 self.frames[(x, y)] = *size, image.tobytes()
@@ -281,7 +282,12 @@ class NativeRasterPreview(QObject):
             and self.decoded is None
         ):
             self.decoded = worker.decoded
-        if self.enabled and not self.closed and worker.base == self.base == self.current_base():
+        if (
+            self.enabled
+            and not self.closed
+            and not worker.isInterruptionRequested()
+            and worker.base == self.base == self.current_base()
+        ):
             self.decoded = worker.decoded
             for tile, frame in worker.frames.items():
                 self.cache[tile] = frame

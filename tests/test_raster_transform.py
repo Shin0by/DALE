@@ -555,7 +555,9 @@ def test_mode_tab_accent_is_clipped_and_leaves_no_ghosts(window, language):
     w.set_language(language, persist=False)
     QTest.mouseMove(w.view.viewport(), w.view.viewport().rect().center())
     toolbar = w.tool_set_toolbar
-    for section in w.tool_set_actions:
+    for section, action in w.tool_set_actions.items():
+        if not action.isVisible():
+            continue
         w.select_tool_set(section)
         QApplication.processEvents()
         reference = toolbar.grab().toImage()
@@ -684,7 +686,7 @@ def test_raster_marquee_cancel_noop_and_redo_branch(window):
     assert not session.future
 
 
-def test_raster_selection_interleaves_with_raster_edits_and_persists_redo(window, tmp_path):
+def test_raster_selection_interleaves_with_edits_but_archive_omits_redo(window, tmp_path):
     w, session = window, window.view.session
     selected = w.raster_selection_snapshot()
     stroke = Stroke(((200, 200),), 3)
@@ -698,11 +700,11 @@ def test_raster_selection_interleaves_with_raster_edits_and_persists_redo(window
     path = tmp_path / "selection-history.dale"
     save_project(session, path, w.ui_state())
     with load_project(path) as loaded:
-        assert loaded.session.future == session.future
+        assert not loaded.session.future
         loaded.session.redo()
-        assert raster_operations(loaded.session.operations) == (stroke,)
+        assert not raster_operations(loaded.session.operations)
         loaded.session.redo()
-        assert loaded.session.operations[-1].after == RegionSelection()
+        assert len(loaded.session.operations) == loaded.session.history_floor
     w.history(True)
     w.history(True)
     assert not w.view.region_polygons
@@ -712,7 +714,7 @@ def test_raster_selection_interleaves_with_raster_edits_and_persists_redo(window
     assert raster_operations(session.operations) == (stroke,)
     save_project(session, path, w.ui_state())
     with load_project(path) as loaded:
-        assert len(loaded.session.operations) - loaded.session.history_floor == 100
+        assert len(loaded.session.operations) == loaded.session.history_floor
 
 
 def test_raster_selection_undo_restores_detached_shape_and_isolates_other_sections(
@@ -746,7 +748,7 @@ def test_raster_selection_undo_restores_detached_shape_and_isolates_other_sectio
     path = tmp_path / "detached-selection-history.dale"
     save_project(session, path, w.ui_state())
     with load_project(path) as loaded:
-        assert loaded.session.future[-1].before == before
+        assert not loaded.session.future
         assert loaded.session.geometry().walls == geometry.walls
     w.history(True)
     assert not w.view.region_polygons

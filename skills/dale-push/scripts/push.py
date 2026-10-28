@@ -120,6 +120,8 @@ class Repository:
             raise PolicyError("A fresh explicit owner push request is required.")
         self.ensure_configured()
         head = self.clean_head()
+        if target == "release":
+            self.check_release_article()
         url = self.remote_url()
         old = self.remote_head(url, target)
         if old and self.git("merge-base", "--is-ancestor", old, head, check=False).returncode:
@@ -145,6 +147,24 @@ class Repository:
         write_json(self.plan_path(plan["id"]), plan)
         return self.public_plan(plan)
 
+    def check_release_article(self):
+        checker = self.root / "tools/build_article.py"
+        if not checker.is_file():
+            raise PolicyError("Release requires the versioned article/PDF checker.")
+        result = subprocess.run(
+            [sys.executable, str(checker), "--check"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode:
+            raise PolicyError(
+                "Release article/PDF is missing or stale. Update README and screenshots, "
+                "rebuild/review the PDF and commit the result before planning release."
+            )
+
     @staticmethod
     def public_plan(plan):
         return {
@@ -165,6 +185,8 @@ class Repository:
             raise PolicyError("Plan is expired, already attempted or belongs to another checkout.")
         if self.clean_head() != plan["head"] or self.remote_url() != plan["remote_url"]:
             raise PolicyError("HEAD or origin changed; prepare a new plan.")
+        if plan["target"] == "release":
+            self.check_release_article()
         if self.remote_head(plan["remote_url"], plan["target"]) != plan["remote_head"]:
             raise PolicyError("Remote target changed; prepare a new plan.")
         return plan

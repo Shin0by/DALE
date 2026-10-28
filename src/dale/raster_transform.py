@@ -19,8 +19,9 @@ def region_entries(geometry, polygons, transforms):
 
     entries = dict(zip(cell_references(geometry, polygons), polygons, strict=True))
     for transform in transforms:
-        for cell, data in zip(transform.cells, transform.regions, strict=True):
-            entries[cell] = affine_transform(area_of(data), transform.matrix)
+        for i, (cell, data) in enumerate(zip(transform.cells, transform.regions, strict=True)):
+            matrix = transform.parts[i][1] if transform.parts else transform.matrix
+            entries[cell] = affine_transform(area_of(data), matrix)
     return tuple(entries.items())
 
 
@@ -113,15 +114,17 @@ def crop_reader(source, native_size):
     return read
 
 
-def render_layered(reader, native_size, operations, box, size, cancelled=lambda: False):
+def render_layered(reader, native_size, operations, box, size, cancelled=None):
     """Evaluate immutable tile dependencies without Python recursion or full-image state."""
+    from dale.raster import ExportCancelled
+
     cache, used = OrderedDict(), 0
     key = len(operations), tuple(box), tuple(size)
-    stack = [(key, _render_layered(reader, native_size, operations, box, size))]
+    stack = [(key, _render_layered(reader, native_size, operations, box, size, cancelled))]
     result = None
     while stack:
-        if cancelled():
-            raise InterruptedError("Raster transform cancelled.")
+        if cancelled and cancelled():
+            raise ExportCancelled("Raster transform cancelled.")
         key, step = stack[-1]
         try:
             before, bounds, output_size = step.send(result)
@@ -131,7 +134,12 @@ def render_layered(reader, native_size, operations, box, size, cancelled=lambda:
                 result = cache[child_key].copy()
             else:
                 stack.append(
-                    (child_key, _render_layered(reader, native_size, before, bounds, output_size))
+                    (
+                        child_key,
+                        _render_layered(
+                            reader, native_size, before, bounds, output_size, cancelled
+                        ),
+                    )
                 )
                 result = None
         except StopIteration as finished:
@@ -147,14 +155,20 @@ def render_layered(reader, native_size, operations, box, size, cancelled=lambda:
     return result
 
 
-def _render_layered(reader, native_size, operations, box, size):
+def _render_layered(reader, native_size, operations, box, size, cancelled=None):
     from dale.raster import render_export_alpha
 
     sx, sy = size[0] / (box[2] - box[0]), size[1] / (box[3] - box[1])
 
     def mask(ops):
         return render_export_alpha(
-            size, native_size, ops, top=box[1] * sy, left=box[0] * sx, scale=(sx, sy)
+            size,
+            native_size,
+            ops,
+            top=box[1] * sy,
+            left=box[0] * sx,
+            scale=(sx, sy),
+            cancelled=cancelled,
         )
 
     last = next(
@@ -177,97 +191,101 @@ def _render_layered(reader, native_size, operations, box, size):
         Image.new("RGBA", size) if cut.getextrema() == (255, 255) else (yield (before, box, size))
     )
     image.putalpha(ImageChops.multiply(image.getchannel("A"), ImageChops.invert(cut)))
-    a, b, d, e, tx, ty = operation.matrix
-    det = a * e - b * d
-    inverse = (
-        e / det,
-        -b / det,
-        -d / det,
-        a / det,
-        (b * ty - e * tx) / det,
-        (d * tx - a * ty) / det,
-    )
-    destination = affine_transform(area, operation.matrix).bounds
-    # Subdivide output so rotations do not allocate full-scene diagonal stripes.
-    for output_y in range(
-        math.floor(box[1] * sy / 256) * 256, math.ceil(box[3] * sy / 256) * 256, 256
-    ):
-        for output_x in range(
-            math.floor(box[0] * sx / 256) * 256, math.ceil(box[2] * sx / 256) * 256, 256
+    for data, matrix in operation.parts or ((operation.area_wkb, operation.matrix),):
+        area = area_of(data)
+        if area.is_empty:
+            continue
+        a, b, d, e, tx, ty = matrix
+        det = a * e - b * d
+        inverse = (
+            e / det,
+            -b / det,
+            -d / det,
+            a / det,
+            (b * ty - e * tx) / det,
+            (d * tx - a * ty) / det,
+        )
+        destination = affine_transform(area, matrix).bounds
+        # Subdivide output so rotations do not allocate full-scene diagonal stripes.
+        for output_y in range(
+            math.floor(box[1] * sy / 256) * 256, math.ceil(box[3] * sy / 256) * 256, 256
         ):
-            left, top = round(output_x - box[0] * sx), round(output_y - box[1] * sy)
-            width = height = 256
-            target = (
-                output_x / sx,
-                output_y / sy,
-                (output_x + width) / sx,
-                (output_y + height) / sy,
-            )
-            if (
-                target[2] < destination[0] - 3 / sx
-                or target[0] > destination[2] + 3 / sx
-                or target[3] < destination[1] - 3 / sy
-                or target[1] > destination[3] + 3 / sy
+            for output_x in range(
+                math.floor(box[0] * sx / 256) * 256, math.ceil(box[2] * sx / 256) * 256, 256
             ):
-                continue
-            ia, ib, id_, ie, ix, iy = inverse
-            corners = [
-                (ia * x + ib * y + ix, id_ * x + ie * y + iy)
-                for x in (target[0], target[2])
-                for y in (target[1], target[3])
-            ]
-            sampling = min(1, max(sx, sy) * math.sqrt(abs(det)))
-            halo = 3 / sampling
-            source_box = (
-                math.floor((min(p[0] for p in corners) - halo) * sampling) / sampling,
-                math.floor((min(p[1] for p in corners) - halo) * sampling) / sampling,
-                math.ceil((max(p[0] for p in corners) + halo) * sampling) / sampling,
-                math.ceil((max(p[1] for p in corners) + halo) * sampling) / sampling,
-            )
-            x0, y0, x1, y1 = area.bounds
-            source_box = (
-                max(source_box[0], math.floor((x0 - halo) * sampling) / sampling),
-                max(source_box[1], math.floor((y0 - halo) * sampling) / sampling),
-                min(source_box[2], math.ceil((x1 + halo) * sampling) / sampling),
-                min(source_box[3], math.ceil((y1 + halo) * sampling) / sampling),
-            )
-            if source_box[0] >= source_box[2] or source_box[1] >= source_box[3]:
-                continue
-            source_size = (
-                max(1, round((source_box[2] - source_box[0]) * sampling)),
-                max(1, round((source_box[3] - source_box[1]) * sampling)),
-            )
-            fragment = yield before, source_box, source_size
-            fx = source_size[0] / (source_box[2] - source_box[0])
-            fy = source_size[1] / (source_box[3] - source_box[1])
-            capture = render_export_alpha(
-                source_size,
-                native_size,
-                (ContourMask(area, "outside"),),
-                top=source_box[1] * fy,
-                left=source_box[0] * fx,
-                scale=(fx, fy),
-            )
-            fragment.putalpha(ImageChops.multiply(fragment.getchannel("A"), capture))
-            coefficients = (
-                ia * fx / sx,
-                ib * fx / sy,
-                (ia * target[0] + ib * target[1] + ix - source_box[0]) * fx,
-                id_ * fy / sx,
-                ie * fy / sy,
-                (id_ * target[0] + ie * target[1] + iy - source_box[1]) * fy,
-            )
-            moved = (
-                fragment.convert("RGBa")
-                .transform(
-                    (width, height),
-                    Image.Transform.AFFINE,
-                    coefficients,
-                    Image.Resampling.BICUBIC,
+                left, top = round(output_x - box[0] * sx), round(output_y - box[1] * sy)
+                width = height = 256
+                target = (
+                    output_x / sx,
+                    output_y / sy,
+                    (output_x + width) / sx,
+                    (output_y + height) / sy,
                 )
-                .convert("RGBA")
-            )
-            image.alpha_composite(moved, (left, top))
+                if (
+                    target[2] < destination[0] - 3 / sx
+                    or target[0] > destination[2] + 3 / sx
+                    or target[3] < destination[1] - 3 / sy
+                    or target[1] > destination[3] + 3 / sy
+                ):
+                    continue
+                ia, ib, id_, ie, ix, iy = inverse
+                corners = [
+                    (ia * x + ib * y + ix, id_ * x + ie * y + iy)
+                    for x in (target[0], target[2])
+                    for y in (target[1], target[3])
+                ]
+                sampling = min(1, max(sx, sy) * math.sqrt(abs(det)))
+                halo = 3 / sampling
+                source_box = (
+                    math.floor((min(p[0] for p in corners) - halo) * sampling) / sampling,
+                    math.floor((min(p[1] for p in corners) - halo) * sampling) / sampling,
+                    math.ceil((max(p[0] for p in corners) + halo) * sampling) / sampling,
+                    math.ceil((max(p[1] for p in corners) + halo) * sampling) / sampling,
+                )
+                x0, y0, x1, y1 = area.bounds
+                source_box = (
+                    max(source_box[0], math.floor((x0 - halo) * sampling) / sampling),
+                    max(source_box[1], math.floor((y0 - halo) * sampling) / sampling),
+                    min(source_box[2], math.ceil((x1 + halo) * sampling) / sampling),
+                    min(source_box[3], math.ceil((y1 + halo) * sampling) / sampling),
+                )
+                if source_box[0] >= source_box[2] or source_box[1] >= source_box[3]:
+                    continue
+                source_size = (
+                    max(1, round((source_box[2] - source_box[0]) * sampling)),
+                    max(1, round((source_box[3] - source_box[1]) * sampling)),
+                )
+                fragment = yield before, source_box, source_size
+                fx = source_size[0] / (source_box[2] - source_box[0])
+                fy = source_size[1] / (source_box[3] - source_box[1])
+                capture = render_export_alpha(
+                    source_size,
+                    native_size,
+                    (ContourMask(area, "outside"),),
+                    top=source_box[1] * fy,
+                    left=source_box[0] * fx,
+                    scale=(fx, fy),
+                )
+                fragment.putalpha(ImageChops.multiply(fragment.getchannel("A"), capture))
+                coefficients = (
+                    ia * fx / sx,
+                    ib * fx / sy,
+                    (ia * target[0] + ib * target[1] + ix - source_box[0]) * fx,
+                    id_ * fy / sx,
+                    ie * fy / sy,
+                    (id_ * target[0] + ie * target[1] + iy - source_box[1]) * fy,
+                )
+                moved = (
+                    fragment.convert("RGBa")
+                    .transform(
+                        (width, height),
+                        Image.Transform.AFFINE,
+                        coefficients,
+                        Image.Resampling.BICUBIC,
+                    )
+                    .convert("RGBA")
+                )
+                image.alpha_composite(moved, (left, top))
     for trailing in operations[last + 1 :]:
         if isinstance(trailing, Stroke) and trailing.restore:
             from dale.raster_brush import stroke_coverage

@@ -209,14 +209,13 @@ def test_repair_project_undo_redo_reopens_without_image_or_external_json(scene, 
     session = scene([wall([0, 0, 10, 0]), wall([12, -5, 12, 5])])
     repair(session)
     expected = repaired_json_bytes(session)
-    session.undo()
     path = tmp_path / "repair.dale"
     save_project(session, path, {"safe_json_repair": True})
     session.source.json_path.unlink()
     with load_project(path) as project:
         assert project.session.source.image_path is None
         assert project.ui_state["safe_json_repair"] is True
-        assert repaired_json_bytes(project.session)[1] == ()
+        assert repaired_json_bytes(project.session) == expected
         project.session.redo()
         assert isinstance(project.session.operations[-1], SourceRepairEdit)
         assert repaired_json_bytes(project.session) == expected
@@ -419,7 +418,6 @@ def test_manual_creation_move_auto_close_archive_undo_redo_keeps_new_ids(scene, 
     expected = repaired_json_bytes(session)
     native_id = session.geometry().additions[0].native_id
     path = tmp_path / "manual.dale"
-    session.undo()
     save_project(session, path, {"safe_json_repair": True, "source_layer": layer.key})
     session.source.json_path.unlink()
     with load_project(path) as project:
@@ -430,7 +428,8 @@ def test_manual_creation_move_auto_close_archive_undo_redo_keeps_new_ids(scene, 
         project.session.undo()
         project.session.undo()
         project.session.undo()
-        assert repaired_json_bytes(project.session) == (session.source.json_bytes, ())
+        assert repaired_json_bytes(project.session) == expected
+        assert not project.session.future
 
 
 def test_filtered_auto_close_does_not_repair_unrelated_hidden_floor(scene):
@@ -586,7 +585,6 @@ def test_trim_survives_project_redo_with_new_manual_wall_identity(scene, tmp_pat
     plan = repair(session, 2)
     assert len(plan.retractions) == 2
     expected = repaired_json_bytes(session)
-    session.undo()
     path = tmp_path / "trim.dale"
     save_project(session, path, {"safe_json_repair": True})
     with load_project(path) as loaded:

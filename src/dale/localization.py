@@ -18,7 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dale.alchemist_localization import RUSSIAN as ALCHEMIST_RUSSIAN
+
 RUSSIAN = {
+    **ALCHEMIST_RUSSIAN,
     "View": "Вид",
     "Top panels": "Верхние панели",
     "Regions is active, a region is selected and no gesture or export is in progress.": (
@@ -1428,9 +1431,7 @@ RUSSIAN = {
         "Предпросмотр контура обновлён. Примените «Удалить снаружи/внутри», чтобы изменить маску."
     ),
     "Save changes?": "Сохранить изменения?",
-    "Save the project and editing history before continuing?": (
-        "Сохранить проект и историю изменений перед продолжением?"
-    ),
+    "Save the project before continuing?": ("Сохранить проект перед продолжением?"),
     "Save DALE project": "Сохранить проект DALE",
     "Open DALE project": "Открыть проект DALE",
     "DALE projects (*.dale)": "Проекты DALE (*.dale)",
@@ -1823,14 +1824,14 @@ RUSSIAN.update(
         "Dataset manager: create, rename, combine or transfer datasets.": (
             "Менеджер наборов: создать, переименовать, объединить или перенести наборы."
         ),
-        "Open a .dale project with its files, edits and undo history.": (
-            "Открыть проект .dale с файлами, правками и историей отмены."
+        "Open a .dale project with its files and applied edits.": (
+            "Открыть проект .dale с файлами и применёнными правками."
         ),
-        "Save every dataset and its editing history in the current .dale project.": (
-            "Сохранить все наборы и историю правок в текущем проекте .dale."
+        "Save every dataset and its applied edits in the current .dale project.": (
+            "Сохранить все наборы и применённые правки в текущем проекте .dale."
         ),
-        "Save all datasets and editing history to a new .dale project file.": (
-            "Сохранить все наборы и историю правок в новый файл проекта .dale."
+        "Save all datasets and applied edits to a new .dale project file.": (
+            "Сохранить все наборы и применённые правки в новый файл проекта .dale."
         ),
         ("Save closed regions as separate transparent PNGs with a coordinate manifest."): (
             "Сохранить замкнутые области отдельными PNG с прозрачностью и файлом координат."

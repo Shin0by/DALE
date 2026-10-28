@@ -145,7 +145,7 @@ def contour_center(edges):
     return tuple((min(p[i] for p in points) + max(p[i] for p in points)) / 2 for i in (0, 1))
 
 
-def plan_figure_transform(geometry, line_ids, pivot=None):
+def plan_figure_transform(geometry, line_ids, pivot=None, *, include_polygons=True):
     """Transform the exact selected lines, including open and disconnected contours."""
     from dale.geometry import structural_regions
 
@@ -167,7 +167,7 @@ def plan_figure_transform(geometry, line_ids, pivot=None):
         geometry,
         tuple(fixed),
         tuple(moving),
-        structural_regions(tuple(moving)),
+        structural_regions(tuple(moving)) if include_polygons else (),
         pivot if pivot is not None else contour_center(moving),
         noded,
     )

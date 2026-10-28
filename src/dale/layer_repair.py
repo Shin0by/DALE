@@ -70,7 +70,15 @@ def wall_intervals(source, geometry=None, documents=()):
 
         styles, documents = geometry_styles(geometry), source_documents(source, documents)
         bounds, ambiguous = [], []
+        cached = {}
         for i, record in enumerate(geometry.lineage):
+            key = styles[record.id]
+            if key in cached:
+                value = cached[key]
+                bounds.append(value)
+                if value is None:
+                    ambiguous.append(i)
+                continue
             try:
                 ranges = [
                     wall_bounds(resolve_style(style, documents)) for style in styles[record.id]
@@ -82,9 +90,11 @@ def wall_intervals(source, geometry=None, documents=()):
                         raise ValueError("Disjoint wall height ranges require separate walls.")
                     top = max(top, next_top)
                 bounds.append((bottom, top))
+                cached[key] = bottom, top
             except ValueError:
                 bounds.append(None)
                 ambiguous.append(i)
+                cached[key] = None
         return tuple(bounds), tuple(ambiguous)
     bounds, ambiguous = [], []
     for index, ref in enumerate(source.wall_sources):

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from dale.geometry import analyze_regions, offset_region
 from dale.provenance import LineRecord, SourceWall, geometry_edges, vertex_records
 from dale.scene import Point, SceneInput
+
+if TYPE_CHECKING:
+    from dale.alchemist import DAData
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,7 @@ class RasterTransform:
     matrix: tuple[float, float, float, float, float, float]
     regions: tuple[bytes, ...] = ()
     cells: tuple = ()
+    parts: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,13 @@ class GeometryEdit:
     ancestry: tuple[LineRecord, ...] = field(default=(), compare=False)
     wall_styles: tuple = field(default=(), compare=False, kw_only=True)
     raster: RasterTransform | None = field(default=None, compare=False, kw_only=True)
+    alchemist_slices: tuple | None = field(default=None, kw_only=True)
+    alchemist_object_slices: tuple | None = field(default=None, kw_only=True)
+    alchemist_complexity: tuple | None = field(default=None, kw_only=True)
+    alchemist_transforms: tuple | None = field(default=None, kw_only=True)
+    alchemist_detail_frames: tuple | None = field(default=None, kw_only=True)
+    alchemist_empty_frames: tuple | None = field(default=None, kw_only=True)
+    alchemist_thinning: tuple | None = field(default=None, kw_only=True)
     connection_state: tuple = field(default=(), init=False)
 
     def __post_init__(self):
@@ -126,6 +137,7 @@ class Session:
     contour_offset: float = 0.0
     json_documents: tuple = ()
     history_floor: int = field(default=0, kw_only=True)
+    alchemist: DAData | None = field(default=None, kw_only=True)
 
     @property
     def walls(self):
@@ -136,11 +148,24 @@ class Session:
         return self.geometry().closures
 
     def geometry(self) -> GeometryEdit:
-        walls = self.source.image_walls(self.origin)
-        records = tuple(LineRecord.source(ref) for ref in self.source.wall_sources)
-        geometry = GeometryEdit(walls, lineage=records)
-        closures = []
-        for operation in self.operations:
+        start = next(
+            (
+                i
+                for i in range(len(self.operations) - 1, -1, -1)
+                if isinstance(self.operations[i], GeometryEdit)
+            ),
+            None,
+        )
+        if start is None:
+            walls = self.source.image_walls(self.origin)
+            records = tuple(LineRecord.source(ref) for ref in self.source.wall_sources)
+            geometry = GeometryEdit(walls, lineage=records)
+            closures, pending = [], self.operations
+        else:
+            geometry = self.operations[start]
+            walls, closures = geometry.walls, list(geometry.closures)
+            pending = self.operations[start + 1 :]
+        for operation in pending:
             if isinstance(operation, Closure):
                 closures.append(operation.points)
                 records = (
@@ -161,6 +186,10 @@ class Session:
 
     def analysis(self):
         geometry = self.geometry()
+        if self.alchemist:
+            from dale.alchemist import scoped_geometry
+
+            geometry = scoped_geometry(self, geometry)
         key = geometry.walls, geometry.closures, self.gap_tolerance
         cached = getattr(self, "_analysis_cache", None)
         if cached is None or cached[0] != key:
@@ -177,11 +206,26 @@ class Session:
         self.future.clear()
         self.trim_history()
 
+    def _prune_alchemist_metadata(self):
+        if self.alchemist is None:
+            return
+        known = {
+            record.id
+            for operation in (*self.operations, *self.future)
+            for record in (*getattr(operation, "lineage", ()), *getattr(operation, "ancestry", ()))
+        }
+        objects = tuple(
+            obj for obj in self.alchemist.objects if all(root in known for root in obj.roots)
+        )
+        if objects != self.alchemist.objects:
+            self.alchemist = replace(self.alchemist, objects=objects)
+
     def trim_history(self, keep=HISTORY_LIMIT):
         """Checkpoint old geometry while retaining exact ordered raster state and lineage."""
         self.future[:] = self.future[-keep:] if keep else []
         cut = max(self.history_floor, len(self.operations) - max(0, keep - len(self.future)))
         if cut <= self.history_floor:
+            self._prune_alchemist_metadata()
             return
         prefix = self.operations[:cut]
         baseline = [
@@ -201,12 +245,72 @@ class Session:
             baseline.append(
                 replace(
                     geometry,
+                    alchemist_slices=next(
+                        (
+                            op.alchemist_slices
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit) and op.alchemist_slices is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_object_slices=next(
+                        (
+                            op.alchemist_object_slices
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit)
+                            and op.alchemist_object_slices is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_complexity=next(
+                        (
+                            op.alchemist_complexity
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit) and op.alchemist_complexity is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_transforms=next(
+                        (
+                            op.alchemist_transforms
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit) and op.alchemist_transforms is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_thinning=next(
+                        (
+                            op.alchemist_thinning
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit) and op.alchemist_thinning is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_empty_frames=next(
+                        (
+                            op.alchemist_empty_frames
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit)
+                            and op.alchemist_empty_frames is not None
+                        ),
+                        None,
+                    ),
+                    alchemist_detail_frames=next(
+                        (
+                            op.alchemist_detail_frames
+                            for op in reversed(prefix)
+                            if isinstance(op, GeometryEdit)
+                            and op.alchemist_detail_frames is not None
+                        ),
+                        None,
+                    ),
                     ancestry=tuple(r for i, r in records.items() if i not in live),
                     raster=None,
                 )
             )
         self.operations[:] = [*baseline, *self.operations[cut:]]
         self.history_floor = len(baseline)
+        self._prune_alchemist_metadata()
 
     def undo(self):
         if len(self.operations) > self.history_floor:

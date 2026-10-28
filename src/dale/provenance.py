@@ -178,8 +178,19 @@ class LineageBuilder:
         )
 
 
-def encode_record(record):
-    return asdict(record)
+def encode_record(record, *, compact=False):
+    if not compact:
+        return asdict(record)
+    # Current schema7 already defaults absent parents/sources to empty and group
+    # to None. Avoid repeating those empty fields on every detailed model edge.
+    result = {"id": record.id, "origin": record.origin}
+    if record.parents:
+        result["parents"] = record.parents
+    if record.sources:
+        result["sources"] = [asdict(source) for source in record.sources]
+    if record.connection_group is not None:
+        result["connection_group"] = record.connection_group
+    return result
 
 
 def decode_record(value):

@@ -86,7 +86,8 @@ def test_split_move_delete_add_and_archive_preserve_scene_and_wall_settings(nati
     with load_project(path) as loaded:
         assert repaired_json_bytes(loaded.session)[0] == repaired_json_bytes(native)[0]
         loaded.session.undo()
-        assert len(assert_scene_preserved(loaded.session)["walls"]) == 1
+        assert len(assert_scene_preserved(loaded.session)["walls"]) == 2
+        assert not loaded.session.future
         loaded.session.redo()
         assert repaired_json_bytes(loaded.session)[0] == repaired_json_bytes(native)[0]
 
@@ -126,10 +127,12 @@ def test_erase_middle_at_intersections_preserves_each_wall_property_owner_and_re
     edited = session.geometry()
     assert all(r.parents == (initial.lineage[0].id,) for r in edited.lineage[:2])
     session.undo()
+    session.redo()
+    assert repaired_json_bytes(session)[0] == payload
     archive = tmp_path / "eraser-redo.dale"
     save_project(session, archive)
     with load_project(archive) as loaded:
-        assert loaded.session.geometry() == initial
+        assert loaded.session.geometry().lineage == edited.lineage
         loaded.session.redo()
         assert repaired_json_bytes(loaded.session)[0] == payload
         assert loaded.session.geometry().lineage == edited.lineage

@@ -1,5 +1,7 @@
 # External research
 
+Current performance investigation: [project storage, shared data and object processing](project-storage-research.md), with local prototype measurements and primary format/index references.
+
 Owner scope replacement2026-10-17 (ADR-020): DALE edits one scene image and its optional source contour JSON, repairs/joins/closes contours, cleans alpha and exports separate native RGBA PNGs for all connected closed objects or selected minimum cells. Every PNG filename includes its exact final width and height in pixels. Levels, wall/floor presets, composition, portals, native Scene export and Foundry runtime configuration are cancelled; the owner configures these manually in Foundry. Earlier plans are historical, not a backlog.
 
 The following historical decisions/evidence do not authorize removed product features.

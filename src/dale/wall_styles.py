@@ -68,9 +68,12 @@ def geometry_styles(geometry):
         styles[record.id] = tuple(value)
         return styles[record.id]
 
-    for record in geometry.lineage:
-        resolve(record)
-    return styles
+    try:
+        for record in geometry.lineage:
+            resolve(record)
+        return styles
+    finally:
+        resolve = None
 
 
 def source_documents(source, documents=()):

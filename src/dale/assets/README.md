@@ -7,3 +7,6 @@ The owner supplied `shin0by.png` and the ready-made `favicon.ico` on 2026-10-16 
 - Qt loads the ICO relative to the application module, independent of the current working directory.
 - PyInstaller embeds the supplied ICO directly in `DALE.exe`; it must not regenerate or redraw it from the PNG.
 - Include both formats in Python package data, the standalone bundle, and portable source fingerprints.
+
+
+`alchemist-slicing.png` is a static low-poly tree/bush/rock sprite sheet created with the built-in imagegen tool for the passive slice indicator. The generation prompt requested three transparent, texture-free flat-shaded objects without UI, numbers, ground or guides. Draw all marks in QPainter; never use generated scale positions. Tight silhouette rectangles anchor0 and10, excluding the transparent antialias halo. The source icon files above remain unchanged.

@@ -12,7 +12,7 @@ from shapely.geometry import LineString, box
 
 from dale.provenance import EPSILON, geometry_edges
 
-GROUP_SECTIONS = ("geometry", "figures", "regions", "pixels")
+GROUP_SECTIONS = ("geometry", "figures", "regions", "pixels", "alchemist")
 
 
 def group_ui_state(value):

@@ -28,48 +28,13 @@ try {
     & $projectPython -m PyInstaller --noconfirm --windowed "--$Mode" --noupx `
         --name DALE --paths src --distpath $distributionPath --workpath $buildPath `
         --icon $appIconPath --add-data "${appAssetPath}:dale/assets" `
-        --specpath $buildPath --collect-binaries shapely --collect-all pyvips `
+        --specpath $buildPath --collect-binaries shapely --collect-all pyvips --collect-all UnityPy `
+        --collect-all fmod_toolkit --collect-data archspec `
         --copy-metadata pyvips-binary --hidden-import _cffi_backend tools/desktop_entry.py
     if ($LASTEXITCODE -ne 0) { throw 'Windows application build failed.' }
     if ($Mode -eq 'onedir') {
-        New-Item -ItemType Directory -Path $portablePath -Force | Out-Null
-        # Avoid rewriting identical loaded DLLs and preserve a running editor's process.
         $bundlePath = [System.IO.Path]::GetFullPath((Join-Path $distributionPath 'DALE'))
-        Get-ChildItem -LiteralPath $bundlePath -File -Recurse | ForEach-Object {
-            $sourceFile = $_.FullName
-            $relativePath = $sourceFile.Substring($bundlePath.Length + 1)
-            $destinationFile = [System.IO.Path]::GetFullPath((Join-Path $portablePath $relativePath))
-            if (-not $destinationFile.StartsWith($portablePath + '\')) { throw 'Invalid runtime destination.' }
-            $unchanged = (Test-Path -LiteralPath $destinationFile -PathType Leaf) -and (
-                (Get-FileHash -LiteralPath $sourceFile).Hash -eq (Get-FileHash -LiteralPath $destinationFile).Hash
-            )
-            if (-not $unchanged) {
-                New-Item -ItemType Directory -Path (Split-Path -Parent $destinationFile) -Force | Out-Null
-                try {
-                    Copy-Item -LiteralPath $sourceFile -Destination $destinationFile -Force
-                }
-                catch {
-                    if ($relativePath -ne 'DALE.exe') { throw }
-                    $previousDirectory = [System.IO.Path]::GetFullPath((Join-Path $artifactRoot ('previous-runtime\' + [guid]::NewGuid().ToString('N'))))
-                    if (-not $previousDirectory.StartsWith($artifactRoot + '\')) { throw 'Invalid previous runtime destination.' }
-                    New-Item -ItemType Directory -Path $previousDirectory -Force | Out-Null
-                    $previousExecutable = Join-Path $previousDirectory 'DALE.exe'
-                    Move-Item -LiteralPath $destinationFile -Destination $previousExecutable
-                    try {
-                        Copy-Item -LiteralPath $sourceFile -Destination $destinationFile
-                    }
-                    catch {
-                        if (Test-Path -LiteralPath $destinationFile -PathType Leaf) {
-                            Remove-Item -LiteralPath $destinationFile
-                        }
-                        Move-Item -LiteralPath $previousExecutable -Destination $destinationFile
-                        throw
-                    }
-                    Write-Output 'Updated executable; an already running editor keeps its current version until restarted.'
-                }
-            }
-        }
-        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\portable-start.txt') -Destination (Join-Path $portablePath 'START-HERE.txt') -Force
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\portable-start.txt') -Destination (Join-Path $bundlePath 'START-HERE.txt') -Force
         $sourceFiles = @(
             foreach ($directory in @('src\dale', 'docs', 'tools', 'tests', 'project', '.github', 'skills')) {
                 Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse | Where-Object { $_.Extension -in @('.py', '.ps1', '.cmd', '.json', '.md', '.txt', '.yml', '.png', '.ico') }
@@ -88,7 +53,7 @@ try {
             $relative = $_.FullName.Substring($bundlePath.Length + 1).Replace([char]92, [char]47)
             $runtimeFingerprints[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         }
-        $runtimeFingerprints['START-HERE.txt'] = (Get-FileHash -LiteralPath (Join-Path $portablePath 'START-HERE.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
+        $runtimeFingerprints['START-HERE.txt'] = (Get-FileHash -LiteralPath (Join-Path $bundlePath 'START-HERE.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
         $buildInfo = [ordered]@{
             format = 'dale-portable-build'
             version = $buildVersion
@@ -97,8 +62,8 @@ try {
             source_sha256 = $fingerprints
             runtime_sha256 = $runtimeFingerprints
         }
-        $buildInfo | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $portablePath 'build-info.json') -Encoding UTF8
-        Write-Output (Join-Path $portablePath 'DALE.exe')
+        $buildInfo | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $bundlePath 'build-info.json') -Encoding UTF8
+        & (Join-Path $PSScriptRoot 'publish_windows.ps1') -BundlePath $bundlePath
     }
     else {
         Write-Output (Join-Path $distributionPath 'DALE.exe')

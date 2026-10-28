@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
+from test_release_article import write_article_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = "skills/dale-push/scripts/push.py"
@@ -78,6 +79,7 @@ def checkout(tmp_path):
     instance.git("config", "user.email", "dale-test@example.invalid")
     instance.git("config", "commit.gpgsign", "false")
     shutil.copytree(ROOT / "skills/dale-push", root / "skills/dale-push")
+    write_article_fixture(root)
     shutil.copytree(ROOT / ".githooks", root / ".githooks")
     (root / ".githooks/pre-push").chmod(0o755)
     (root / ".gitattributes").write_text("* text eol=lf\n")
@@ -220,3 +222,14 @@ def test_reconfiguration_preserves_existing_custom_hooks(checkout):
     assert "Existing custom hooksPath" in checkout.helper("configure", check=False)
     assert checkout.git("config", "core.hooksPath").stdout.strip() == "owner-hooks"
     assert "Configure the local" in checkout.helper("plan", "--request", "Push", check=False)
+
+
+def test_release_plan_rejects_stale_article_before_any_push(checkout):
+    (checkout.root / "README.md").write_text("Changed article\n")
+    checkout.git("add", "README.md")
+    checkout.git("commit", "-m", "Update article without its PDF")
+    message = checkout.helper(
+        "plan", "--request", "Push release", "--target", "release", check=False
+    )
+    assert "article/PDF is missing or stale" in message
+    assert checkout.tip("release") is None

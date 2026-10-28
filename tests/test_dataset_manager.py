@@ -63,6 +63,18 @@ def test_manager_opens_from_left_square_button_and_cancel_keeps_editor(window, r
     assert window.catalog is None and window.view.session is None
 
 
+def test_manager_construction_failure_is_reported(window, monkeypatch):
+    errors = []
+    monkeypatch.setattr(window, "warning", lambda *args: errors.append(args))
+
+    def broken(_):
+        raise ValueError("Synthetic manager preparation failure")
+
+    monkeypatch.setattr("dale.dataset_manager.DatasetManager", broken)
+    window.manager_button.click()
+    assert errors == [("Dataset manager", "Synthetic manager preparation failure")]
+
+
 def test_new_project_creates_one_empty_dataset_and_saves_it(window, tmp_path):
     window.new_project_action.trigger()
     assert window.catalog and len(window.catalog.views) == 1
@@ -783,3 +795,43 @@ def test_camera_roundtrip_keeps_inactive_dataset_views_and_sidebar_changes(
     assert window.project_path.read_bytes() == before
     assert source.json_path.read_bytes() == source.json_bytes
     assert not view.session.operations
+
+
+def test_new_after_large_project_empty_json_then_png_fits_real_image(
+    window, pair_factory, tmp_path, monkeypatch
+):
+    source = pair_factory(size=(3000, 2000))
+    window.load_sources(source.image_path, source.json_path)
+    window.view.setTransform(QTransform.fromScale(12, 12))
+    window.view.centerOn(2500, 1500)
+    window.new_project()
+    assert window.view.transform().m11() == 1
+    assert window.view.horizontalScrollBar().maximum() == 0
+    assert window.view.verticalScrollBar().maximum() == 0
+    pixels = window.view.viewport().grab().toImage()
+    colors = {pixels.pixelColor(x, 40).name() for x in range(40, 104)}
+    assert colors == {"#303030", "#3b3b3b"}
+    assert not window.view.native_preview.cache
+    assert window.view.native_preview.decoded is None
+    empty = tmp_path / "blank.json"
+    empty.write_text('{"walls": []}', encoding="utf-8")
+    image = tmp_path / "new-background.png"
+    artwork = Image.new("RGB", (1024, 768), "green")
+    artwork.paste("red", (512, 0, 1024, 768))
+    artwork.save(image)
+    paths = iter((empty, image))
+    monkeypatch.setattr(
+        "dale.dataset_manager.QFileDialog.getOpenFileName", lambda *args: (str(next(paths)), "")
+    )
+    window.catalog.capture(window.project_ui_state())
+    manager = DatasetManager(window)
+    for kind in ("json", "image"):
+        manager.component_buttons[kind][0].click()
+    manager.apply(False)
+    manager.close()
+    QApplication.processEvents()
+    assert window.view.session.source.size == (1024, 768)
+    assert window.view.preview.getpixel((window.view.preview.width - 1, 0))[:3] == (255, 0, 0)
+    assert window.view.transform().m11() < 2
+    center = window.view.camera_center()
+    assert (center.x(), center.y()) == pytest.approx((512, 384), abs=3)

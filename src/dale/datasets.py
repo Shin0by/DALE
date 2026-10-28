@@ -104,6 +104,8 @@ class Dataset(CatalogView):
         return bool(self.session.source.image_path or self.session.source.image_name)
 
     def filename(self, kind):
+        if kind == "alchemist":
+            return self.session.alchemist.name if self.session.alchemist else None
         if kind == "json":
             return self.json_name or self.session.source.json_name or f"{self.name}.json"
         return self.image_name or self.session.source.image_name
@@ -310,10 +312,7 @@ class DatasetCatalog:
             for digest, d in known.items()
             if digest in needed and digest != root_hash
         )
-        if (
-            len(documents) + bool(root_hash) > 99
-            or sum(len(d.data) for d in documents) + len(root.json_bytes or b"") > 128 * 1024 * 1024
-        ):
+        if len(documents) + bool(root_hash) > 99:
             raise ValueError("The project JSON catalog is full. Export to a different project.")
         self._source_documents = documents
         self.base_session.json_documents = documents
@@ -354,6 +353,15 @@ class DatasetCatalog:
 
     def capture(self, ui):
         self.current.ui = dict(ui)
+        session = self.current.session
+        if (
+            not session.source.image_path
+            and not session.source.json_bytes
+            and not session.geometry().lineage
+        ):
+            # A blank placeholder does not have a meaningful camera to inherit.
+            self.current.ui.pop("zoom", None)
+            self.current.ui.pop("center", None)
 
     def activate(self, identifier):
         if identifier not in self.views:
@@ -404,6 +412,10 @@ class DatasetCatalog:
     def rename_file(self, identifier, kind, stem):
         view = self.views[identifier]
         name = valid_name(stem)
+        if kind == "alchemist":
+            if view.session.alchemist:
+                view.session.alchemist = replace(view.session.alchemist, name=name + ".dam")
+            return
         suffix = (
             Path(view.filename(kind)).suffix
             if view.filename(kind)
@@ -444,11 +456,14 @@ class DatasetCatalog:
                 json.dumps(v.ui.get("groups", []), sort_keys=True),
                 json.dumps(v.ui.get("group_sections", {}), sort_keys=True),
                 v.ui.get("figure_move_double_click", True),
+                v.session.alchemist,
             )
             for key, v in self.views.items()
         )
 
     def encode(self):
+        from dale.selection_storage import pack_selection
+
         self.prepare()
         documents = {hashlib.sha256(d.data).hexdigest(): d.id for d in self.documents}
         root = self.base_session.source
@@ -477,6 +492,11 @@ class DatasetCatalog:
                     "json_label": view.json_name,
                     "image_label": view.image_name,
                     "history": {
+                        **(
+                            {"alchemist": view.session.alchemist.encode()}
+                            if view.session.alchemist
+                            else {}
+                        ),
                         "origin": view.session.origin,
                         "gap_tolerance": view.session.gap_tolerance,
                         "contour_offset": view.ui.get(
@@ -489,7 +509,7 @@ class DatasetCatalog:
                             if view.session.history_floor
                             else {}
                         ),
-                        "ui": view.ui,
+                        "ui": pack_selection(view.ui, view.session),
                     },
                 }
             )
@@ -582,6 +602,16 @@ class DatasetCatalog:
         raster = [op for op in target.operations if isinstance(op, (Stroke, ContourMask))]
         self._source_documents = self.documents
         if kind == "json":
+            from dale.alchemist import scoped_geometry
+
+            da_geometry = (
+                scoped_geometry(target, before, "alchemist_all") if target.alchemist else None
+            )
+            if incoming is not None and incoming.alchemist:
+                incoming = copy_session(incoming)
+                incoming.operations.append(scoped_geometry(incoming, scope="regular"))
+                incoming.alchemist = None
+                incoming.trim_history(0)
             view.ui.update(
                 groups=[], active_group=None, group_sections={}, section_active_groups={}
             )
@@ -626,6 +656,23 @@ class DatasetCatalog:
                 else 0,
             )
             view.ui.update(safe_json_repair=safe, source_layer="all", export_regions=None)
+            if da_geometry is not None:
+                from dale.wall_styles import geometry_styles
+
+                fresh = view.session.geometry()
+                records = {r.id: r for r in (*fresh.ancestry, *da_geometry.ancestry)}
+                view.session.alchemist = target.alchemist
+                view.session.add(
+                    GeometryEdit(
+                        (*geometry_edges(fresh.walls, fresh.closures), *da_geometry.walls),
+                        lineage=(*fresh.lineage, *da_geometry.lineage),
+                        ancestry=tuple(records.values()),
+                        wall_styles=tuple(
+                            {**geometry_styles(fresh), **geometry_styles(da_geometry)}.items()
+                        ),
+                    )
+                )
+                view.ui["safe_json_repair"] = True
         elif kind == "image":
             source = replace(
                 target.source,

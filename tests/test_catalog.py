@@ -76,7 +76,7 @@ def test_independent_drafts_rename_redo_and_creation_pair_roundtrip(pair_factory
         view.session.add(Stroke(((30, 40),), 5))
         view.session.undo()
         catalog.rename("Second floor draft")
-        edited, future = list(view.session.operations), list(view.session.future)
+        edited = list(view.session.operations)
         assert catalog.activate(None, image_id).session.source.json_bytes is None
         assert catalog.activate(doc.id, None).session.source.image_path is None
         assert catalog.activate(doc.id, image_id).session.operations == edited
@@ -87,10 +87,11 @@ def test_independent_drafts_rename_redo_and_creation_pair_roundtrip(pair_factory
         assert catalog.current.session.source.name == "source.json"
         view = catalog.activate(doc.id, image_id)
         assert view.name == "Second floor draft"
-        assert view.session.operations == edited and view.session.future == future
+        assert view.session.geometry().walls == edited[-1].walls
+        assert not view.session.future
         assert view.ui["mode"] == "New rectangle"
         view.session.redo()
-        assert len(view.session.operations) == len(edited) + 1
+        assert len(view.session.operations) == view.session.history_floor
         assert catalog.snapshot().name == "Second floor draft.json"
     snapshots = read_json_documents(path)
     assert any(d.name == "Second floor draft.json" and d.is_current for d in snapshots)

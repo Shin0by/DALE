@@ -245,3 +245,60 @@ Normal packaged launches update the current user's Shin0by/DALE product metadata
 ## Run the repository's portable copy
 
 The development and release branches include the complete Windows x64 DALE runtime. Clone or download the repository and run DALE/DALE.exe without Python, build scripts or LFS downloads. Keep the complete _internal folder. UserData, Cache, imported assets and projects remain local and ignored. Git preserves every bundled file byte for byte, including vendor code/licenses. Maintainers run source checks against authored source and verify the refreshed portable payload before committing it.
+
+
+## Dungeon Alchemist obstacles
+
+In Dataset manager, attach a DAM file to a dataset with a Scene image or Scene JSON and Apply/Open. DALE first checks its metadata cache, then local game/Workshop files. Set Dungeon Alchemist.exe in global Settings if automatic Steam discovery cannot find it. If objects are missing, open the DAM in Dungeon Alchemist, let that application load its resources, then retry attachment. DALE does not download Workshop content. Clear Alchemist cache in Settings asks for confirmation; existing projects remain usable.
+
+The new DA contours tab follows Contours. Display contours overlays ordinary lines at70% opacity for snapping. Edit only DA geometry in this mode. Wall, Tree, Bush and Rock toggle their category. Right-click a category for Size and Minimum original size: Size is a relative percentage of each current contour around its current center;100% leaves it unchanged. The minimum is measured in original DAM grid cells, independent of later edits;0 includes every object. Lowering it restores filtered geometry and its edits. Apply commits the size operation in one undo step; Cancel discards the popup.
+
+Regions and Raster include visible DA contours. Export settings offer All, Contours and Contours plus DA. All and Contours plus DA include ordinary and visible DA geometry; Contours exports ordinary geometry alone. Hidden or size-filtered DA objects never enter JSON. This choice does not change PNG output. The existing Scene JSON keeps its non-wall data and receives additional geometry in its walls array. Save the DALE project to retain attachment bytes, edited contours and category preferences for offline reopening.
+
+
+DA contours has its own Groups manager and group dropdown. Create, rename, color, assign/remove members, select and sort groups independently of ordinary Contours. Group membership, order and active choice are saved with the dataset/project.
+
+In export settings, Height normalization optionally assigns one Base height and Top height to every contour included in JSON. Each slider/native number field advances by1 foot and supports -10000..10000 feet. Defaults are0/10ft with normalization off. Top must exceed base before Apply. The preference affects standalone JSON and JSON accompanying PNGs; it leaves source/project heights and PNGs unchanged and never restores hidden DA objects. Cancel discards changes to these settings.
+
+The attached DAM appears as a file row in the dataset tree beside JSON and image. Its name field follows the same editable-label convention, preserving the .dam suffix and original contents. Load/Replace/Delete controls use the same staged manager workflow and remember the input folder. Applying attachment/removal or switching datasets immediately resizes the Modes panel when the DA tab appears/disappears.
+
+
+DA category settings also offer Minimum height above surface, from0 to10 feet in1-foot steps. Zero disables this filter. The estimate uses the original top relative to local terrain/floor, so resizing a contour or normalizing export heights does not change which objects qualify. Apply commits the staged filters; Cancel leaves them unchanged. A progress window remains for initial DA import. Ordinary category changes update directly.
+
+
+Opening a DALE project shows one progress window for archive reading, document validation, file extraction, history/dataset loading, image preparation and display. This also applies to Recent projects and opening a .dale file at startup. The editor processes UI events during background preparation. An invalid archive or failed image preparation reports an error and keeps the current project open; it never changes the input archive.
+
+
+In DA contours, select part or all of an object and press Select same object type, immediately after Select contours. This selects visible instances of that exact source type, not all trees/plants. With several selected types it selects instances of each type. Double-click a DA contour to answer whether to select all visible objects of that exact type. Check Do not ask again to remember Yes or No. Cancel leaves the pre-click selection intact. Right-click Select contours or Move contours to change/reset that answer. Other modes do not offer same-type selection.
+
+Right-click a rotation or scale button and enable Individual object centers, then Apply. Rotation and scaling have separate settings in each dataset and mode: Contours, DA contours, Regions and Raster. In Regions, scaling uses Ctrl+wheel in Move regions, whose settings contain the checkbox. The DA toolbar no longer has a center toggle. Select whole contours to transform whole objects. Ordinary connected contours and connected region boundaries use their own bounds centers; holes stay with their outer boundary. DA uses object ownership; Raster uses each selected raster cell. Cancel leaves the settings unchanged.
+
+DA editing updates drawing without opening progress windows or calculating PNG dimensions. Regions/Raster calculates the region cells it needs and reuses them while geometry and visibility remain unchanged. Export computes current output geometry and dimensions when requested. Progress remains for opening/importing substantial inputs and actual export.
+
+### Surface-dependent local model contours
+
+When attaching DAM, answer Load object geometry? Yes to read installed native/Workshop models and cache ten horizontal bands, each10% of model height. Each instance selects its own terrain/floor band, including foliage if the surface reaches its crown. No keeps circles; Cancel leaves the manager draft unchanged. Missing/unsupported models retain circles with a report; DALE does not download assets. The progress window retains the previous completed preview while calculating the next: binary mask, translucent shaded model without textures, outline and tree base marker. Cached imports reuse the profiles/previews.
+
+Exact-type selection still selects peers, but editing one object's shape does not change other instances. Individual rotation/scale center options remain independent. Right-click Wall/Tree/Bush/Rock and use the separate JSON wall settings block for export restrictions, directions, thresholds, doors/animation and nullable heights. Apply commits only this category in this dataset; Cancel discards changes. These values do not change display/height/size filters. Global Height normalization, when enabled, overrides all category heights at export.
+
+Entering DA contours shows progress through category/height preparation, contour analysis, selection preparation and final display publication. The editor reuses unchanged analysis on repeated entry. Project opening can prepare the preview image and contours concurrently after validation; failed preparation leaves the current project open.
+
+Clicking a slider track sets the value at that position directly. Dragging its handle and using wheel/arrow keys retain their normal behavior. This applies to sliders in all settings windows, including object slicing.
+
+
+Project saves retain applied work, including current contours, raster edits and selection. Undo/redo belongs to the running editing session and starts empty after reopening. Saving alone does not clear the live undo/redo stack.
+
+In Export selected regions settings, Merge adjacent contours merges neighboring selected regions into PNG groups and removes their internal JSON lines during export only. The project remains editable with its original separate contours.
+
+
+Object parameters edited in DALE are remembered per exact DA asset type in the portable cache. A later DAM import with matching types asks whether to use saved size, additional rotation, slices and contour complexity or retain the original settings. Values apply relative to each object's original placement. Opening an existing .dale keeps its own state without that question. Clear Alchemist cache also removes the remembered parameters after confirmation; saved project contours remain intact.
+
+After clearing the cache, an attached DAM in the current dataset prompts to load object slices again. Yes rebuilds the local model cache with cancellable progress, using the embedded attachment without choosing the DAM again. No leaves the cache cleared. Current contours, edits, selection and history are kept in both cases; cleared user parameter defaults are not restored.
+
+DA contours selects whole placed objects, including separate pieces of one asset. Rotate and Scale keep each object's center fixed. Movement, point/line editing, mirrors and contour clipboard/deletion tools are unavailable in this section. Object slices still changes size, slice range and complexity for the selected objects; its explicit outside-map cleanup remains available. Ordinary Contours retains its editing tools.
+
+Dataset manager Apply shows its own preparation progress after file import has completed. The progress remains visible until the map has been updated. Close is the rightmost footer button and discards unapplied manager changes.
+
+Export selected regions settings has independent Export PNG files and Export Scene JSON checkboxes. Keep at least one checked. Only DA contours also restricts PNG cutting areas to visible DA contours within the chosen regions; hidden and thinned objects remain excluded. With PNG disabled, export writes only Scene JSON and skips image rendering.
+
+New project starts with the normal checkerboard at1x. Adding the first image/JSON fits its real dimensions instead of retaining the empty placeholder's camera. Map zoom is bounded both during navigation and when opening saved projects: maximum16x, with a size-aware minimum keeping the map visible. Existing reasonable dataset cameras remain unchanged.

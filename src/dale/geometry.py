@@ -9,7 +9,7 @@ from functools import lru_cache
 from itertools import pairwise
 
 from shapely import STRtree
-from shapely.geometry import GeometryCollection, LineString, MultiPoint, Point, box
+from shapely.geometry import GeometryCollection, LineString, MultiPoint, Point, Polygon, box
 from shapely.ops import polygonize_full, snap, unary_union
 
 from dale.scene import Point as PixelPoint
@@ -51,7 +51,7 @@ class ContourComponent:
 
 
 @lru_cache(maxsize=8)
-def contour_components(edges, line_ids, groups=()):
+def contour_components(edges, line_ids, groups=(), *, simple_rings=False):
     """Group current lines only by shared stored vertices, without geometric noding."""
     parents = list(range(len(edges)))
 
@@ -79,10 +79,28 @@ def contour_components(edges, line_ids, groups=()):
             ContourComponent(
                 tuple(line_ids[i] for i in indices),
                 lines,
-                unary_union(structural_regions(lines)),
+                _contour_area(lines, simple_rings),
             )
         )
     return tuple(result)
+
+
+@lru_cache(maxsize=2048)
+def _contour_area(edges, simple_rings=False):
+    polygon = simple_contour_polygon(edges) if simple_rings else None
+    if polygon is not None:
+        return polygon
+    return unary_union(structural_regions(edges))
+
+
+def simple_contour_polygon(edges):
+    """Recognize an already ordered, valid ring without noding unrelated geometry."""
+    if len(edges) < 3 or any(
+        a[1] != b[0] for a, b in zip(edges, (*edges[1:], edges[0]), strict=True)
+    ):
+        return None
+    polygon = Polygon([edge[0] for edge in edges])
+    return polygon if polygon.is_valid and polygon.area > 0 else None
 
 
 def open_contour_count(segments: tuple[Segment, ...]) -> int:

@@ -165,10 +165,11 @@ class BoundsPreview(QObject):
         if self.worker is not worker:
             return
         self.worker = None
-        if not self.closed and worker.result is not None:
+        if not self.closed and not worker.isInterruptionRequested() and worker.result is not None:
             self._remember(worker.key, worker.result)
             if worker.key == self.current_key:
                 self.changed.emit()
+        worker.session = worker.polygons = worker.result = None
         worker.deleteLater()
         self._start_pending()
 

@@ -114,8 +114,6 @@ def load_pair(image_path: Path | None, json_path: Path | None = None) -> SceneIn
         return SceneInput(
             image_path, None, size, {}, (), size, (0, 0), (), image_name=image_path.name
         )
-    if json_path.stat().st_size > 32 * 1024 * 1024:
-        raise ValueError("JSON exceeds the 32 MiB prototype input limit.")
     source_bytes = json_path.read_bytes()
     return scene_from_json(
         source_bytes, size if image_path else None, image_path=image_path, json_path=json_path
@@ -124,8 +122,6 @@ def load_pair(image_path: Path | None, json_path: Path | None = None) -> SceneIn
 
 def scene_from_json(source_bytes, image_size=None, *, image_path=None, json_path=None):
     """Parse frozen JSON with an optional image header size, without decoding raster pixels."""
-    if len(source_bytes) > 32 * 1024 * 1024:
-        raise ValueError("JSON exceeds the 32 MiB prototype input limit.")
     size = image_size or (1, 1)
     digest = hashlib.sha256(source_bytes).hexdigest()
     raw = json.loads(source_bytes.decode("utf-8-sig"))

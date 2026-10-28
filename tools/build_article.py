@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import sys
-from html import escape
+from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -93,9 +93,7 @@ def inline(node):
         return "<br/>"
     if node.tag == "a" and body:
         href = node.attrs.get("href", "")
-        if href.startswith("#"):
-            return body
-        if not href.startswith(("https://", "http://")):
+        if not href.startswith(("#", "https://", "http://")):
             href = "https://github.com/Shin0by/DALE/blob/release/" + href
         return f'<a href="{escape(href, quote=True)}" color="#176b86">{body}</a>'
     return body
@@ -122,6 +120,7 @@ def build(root, deps=None, reviewed=False):
         Table,
         TableStyle,
     )
+    from reportlab.platypus.tableofcontents import TableOfContents
 
     old = root / MANIFEST
     if not reviewed and (
@@ -185,6 +184,30 @@ def build(root, deps=None, reviewed=False):
         )
     )
     width = A4[0] - 88
+    headings = {}
+    language = "english"
+    chapter = 0
+    for node in parser.root.children:
+        if not isinstance(node, Node):
+            continue
+        if node.tag == "h2":
+            language = "russian" if "Русский" in inline(node) else "english"
+            chapter = 0
+            headings[id(node)] = (0, language)
+        elif node.tag == "details":
+            summary = next(c for c in node.children if isinstance(c, Node) and c.tag == "summary")
+            chapter += 1
+            headings[id(summary)] = (1, f"{language}-{chapter}")
+
+    class ArticleTemplate(SimpleDocTemplate):
+        def afterFlowable(self, flowable):
+            heading = getattr(flowable, "article_heading", None)
+            if heading:
+                level, key = heading
+                title = unescape(re.sub(r"<[^>]+>", "", flowable.text))
+                self.canv.bookmarkPage(key)
+                self.canv.addOutlineEntry(title, key, level, closed=False)
+                self.notify("TOCEntry", (level, escape(title), self.page, key))
 
     def convert(node, available=width, depth=0):
         if isinstance(node, str):
@@ -240,7 +263,10 @@ def build(root, deps=None, reviewed=False):
                 else ("sub" if tag == "summary" else "caption" if tag == "em" else "body")
             )
             output = [PageBreak()] if tag == "h2" and "Русский" in text else []
-            output.append(Paragraph(text, styles[kind], bulletText="-" if tag == "li" else None))
+            paragraph = Paragraph(text, styles[kind], bulletText="-" if tag == "li" else None)
+            if id(node) in headings:
+                paragraph.article_heading = headings[id(node)]
+            output.append(paragraph)
             return output
         if tag in ("a", "br"):
             return []
@@ -253,7 +279,20 @@ def build(root, deps=None, reviewed=False):
             return [KeepTogether(children)]
         return children
 
-    story = convert(parser.root)
+    toc = TableOfContents()
+    toc.levelStyles = [
+        ParagraphStyle("toc-language", fontName="Bold", fontSize=11, leading=15, spaceBefore=10),
+        ParagraphStyle("toc-chapter", fontName="Body", fontSize=9, leading=13, leftIndent=12),
+    ]
+    story = [
+        Paragraph('<a name="contents"/>Contents / Оглавление', styles["heading"]),
+        Paragraph(
+            '<a href="#english">English</a> / <a href="#russian">Русский</a>', styles["body"]
+        ),
+        toc,
+        PageBreak(),
+        *convert(parser.root),
+    ]
     destination = root / PDF
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tmp.pdf")
@@ -263,11 +302,22 @@ def build(root, deps=None, reviewed=False):
         canvas.saveState()
         canvas.setFont("Body", 8)
         canvas.setFillColor(colors.HexColor("#536978"))
-        canvas.drawString(44, 24, f"DALE {current} | English / Русский")
+        x = 44
+        for label, target in (
+            (f"DALE {current} | ", None),
+            ("Contents / Оглавление", "contents"),
+            (" | English", "english"),
+            (" / Русский", "russian"),
+        ):
+            canvas.drawString(x, 24, label)
+            size = pdfmetrics.stringWidth(label, "Body", 8)
+            if target:
+                canvas.linkRect("", target, (x, 22, x + size, 33), relative=0, thickness=0)
+            x += size
         canvas.drawRightString(A4[0] - 44, 24, str(doc.page))
         canvas.restoreState()
 
-    doc = SimpleDocTemplate(
+    doc = ArticleTemplate(
         str(temporary),
         pagesize=A4,
         leftMargin=44,
@@ -278,7 +328,7 @@ def build(root, deps=None, reviewed=False):
         author="DALE",
         invariant=True,
     )
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    doc.multiBuild(story, onFirstPage=footer, onLaterPages=footer)
     reader = PdfReader(temporary)
     text = "\n".join(p.extract_text() for p in reader.pages)
     for phrase in ("DA contours", "Object slices", "Thinning", "Нарезка объектов", "Прореживание"):

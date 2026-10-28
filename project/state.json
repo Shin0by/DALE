@@ -5269,30 +5269,34 @@
     "owner_request": "Push development and release; update article/screenshots and track matching PDF, maintained on release pushes.",
     "article": "README.md",
     "pdf": "docs/DALE-guide.pdf",
-    "screenshots": 22,
+    "screenshots": 24,
     "languages": [
       "en",
       "ru"
     ],
     "remaining": [
-      "guarded development push",
-      "separate pinned release confirmation and push"
+      "Fresh authorization for updated documentation development push",
+      "Separate updated-commit release confirmation and push"
     ],
     "validation": {
       "focused_tests": 98,
       "private_projects_unchanged": true,
-      "pdf_pages": 26,
+      "pdf_pages": 29,
       "full_source_tests": 2188,
       "packaged_tests": 326,
       "article_guard_tests": 23,
       "installed_exe_smoke": "1.4.137",
-      "pdf_sha256": "92c7e2df5f724753b25a5f208bf1fa7654c40ffabb5efc317390f6367b161355",
+      "pdf_sha256": "02948efb84159571caef2d44abe0db4abb7b9e4b3e075652b09d0c6935c06add",
       "rendered_pages_reviewed": true,
       "ruff": "passed",
       "formatter": "passed",
-      "repository_check": "passed"
+      "repository_check": "passed",
+      "internal_pdf_links": 143,
+      "chapter_language_bookmarks": 26
     },
     "policy": "Single-attempt guarded pushes. No tags, GitHub Release creation or remote cleanup requested.",
-    "version": "1.4.137"
+    "version": "1.4.137",
+    "development_published_commit": "41505c0cba029868f52b3b7bc13d870eb325659e",
+    "owner_followup": "Linked contents and language navigation; DA topics last in both languages; user-facing prose without database implementation details; matched palm complexity and visible thinning comparisons."
   }
 }

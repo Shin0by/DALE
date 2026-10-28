@@ -2,7 +2,9 @@
   "format": "dale-article-v1",
   "version": "1.4.137",
   "inputs": {
-    "README.md": "8b7feec18511a34d12edfaba027f496500b9d6ea5f9f9d272b586870737205d8",
+    "README.md": "a75bc8afd615f7e52f017fe5247f494cfee2ea908db39c8c538385ef20dafaeb",
+    "docs/images/readme/complexity-full.png": "3ce5015a5863c9f2f5f4594553dec43c92bd9f701b29ec2a1de513bc4f9d7d54",
+    "docs/images/readme/complexity-simple.png": "1b4e1dcd1fdfb29ad31ce47cf3b3c181d508fdd8b2e317e736b6ed8220ad3277",
     "docs/images/readme/contours-rotate.png": "003831731dcfbf2f6021af98aa5fc21c4ccf87d5012526ac20932414da308499",
     "docs/images/readme/da-overview.png": "c6880dd34a8b3c205b63e8f670de6da92faef05b65d8e9e6aaa2553ec94333d3",
     "docs/images/readme/da-slices.png": "2c1f845825f770397ad2e120b8b887c4eb80c842b378f41f08a252293a6b676a",
@@ -20,13 +22,13 @@
     "docs/images/readme/regions.png": "8e6e217fd606e8e2e402584920015b12f911a1e5dc42e0973cc100a960c258fb",
     "docs/images/readme/settings-trigger.png": "38229f9624f3a65fb0ee7b1c9abbe8832d2d5c037aa81e5ce371e2ec13f8f00c",
     "docs/images/readme/settings.png": "4cb162a3267134aa358c7760f34d93c3659e75a15af3e49ad10a587dab08118e",
-    "docs/images/readme/thinning-after.png": "406096fd4cf279ab46dc5716ad7b51569a19f408c759bb47a07d05984893805a",
-    "docs/images/readme/thinning-before.png": "a1849a4bff8ef2b3517a190a8af85488e75cd0d1a5a276aaa6cb5b5000a589f7",
+    "docs/images/readme/thinning-after.png": "cb9a1edab80459e70289bd9f4568eefb2966cd737616a4d21540ff6e57a05cd9",
+    "docs/images/readme/thinning-before.png": "5d4c9c0d429fc779b7324d196e588727cc4cacb971d62832aa8a902614435d2c",
     "docs/images/readme/vertices-align.png": "a176ce86c592f017018255a2aab476449fc093c57560997d18f0e045ecc42e67",
     "docs/images/readme/vertices-before.png": "3848aaf9e1bc1d1f7895ffdfeb7c116d3ae1b49108c57122f455ff09f4239425",
     "docs/images/readme/view.png": "29ac6387e45b2f4375bd6373b32bad025f77ee2b7b071834859a6c10e72c3a11",
     "tools/article-requirements.txt": "1ceb0ed1268778f249c8009a980a158ce852997edd500ac49154e7ce024d5965",
-    "tools/build_article.py": "5aeba64c4037317ceb5d032065bc0957447fbe11799f1d9188da4693e9c069ee"
+    "tools/build_article.py": "a65999f46a8e3c2a71b47fbbcda55c3b6b04d571441c401203789c854bbacb3e"
   },
   "reviewed_interface": {
     "src/dale/__main__.py": "b3b7859323d2171c8a57c85d4e514b51a2fb11ae4f0b3375c44ac14806a643cb",
@@ -108,6 +110,6 @@
     "src/dale/ui.py": "03588740e336496108a14dfcf9a83c6f8493cd7155e5648e5fbc5c762ab5e153",
     "src/dale/wall_styles.py": "59f93c5278e6a428120404e09d6f25ef19718b38357ad27250629cf1d7c28e39"
   },
-  "pdf_sha256": "92c7e2df5f724753b25a5f208bf1fa7654c40ffabb5efc317390f6367b161355",
-  "pages": 26
+  "pdf_sha256": "02948efb84159571caef2d44abe0db4abb7b9e4b3e075652b09d0c6935c06add",
+  "pages": 29
 }

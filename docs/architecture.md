@@ -1643,3 +1643,5 @@ used at startup and cover the direct clear/leave sequence. This preserves the ca
 and does not alter source geometry. Formatter-only changes bring existing code into CI style.
 
 Prepared1.4.137: all2188 source tests and326 packaged-code tests pass, along with23 article/push-guard checks. Actual installed EXE smoke confirms the version. All26 PDF pages and22 refreshed screenshots were reviewed; owner project hashes are unchanged. Publication remains governed by the separately pinned release confirmation.
+
+ADR-141 owner follow-up: start the PDF with linked bilingual contents, chapter bookmarks and footer language/contents links. Keep DA additions last in each language; omit implementation technology from the user article. Compare maximum-detail and simplified palm contours at the same camera/slice settings, and make thinning contours clearly visible in matched native captures. Documentation-only revisions keep the runtime version unchanged.

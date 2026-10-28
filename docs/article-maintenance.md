@@ -6,6 +6,13 @@ and Russian second. Both languages share actual English UI captures in
 docs/images/readme. docs/DALE-guide.pdf is tracked in Git and linked from README.
 This supersedes the earlier policy of keeping the README PDF preview local only.
 
+The PDF starts with a linked bilingual contents page and provides chapter bookmarks
+and footer links to contents and both languages. Keep the new DA topics at the end
+of each language. Describe user actions and results, without implementation details
+such as database technology. Show complexity using the same palm at maximum detail
+and a simplified value, with identical camera and slice settings. Thinning comparisons
+must have clearly visible native contour outlines and identical camera settings.
+
 1. Review functionality since the previous release and update both README sections.
    Correct removed behavior as well as adding new functions. Keep source maps private.
 2. Capture current application states in an isolated process with temporary settings.
@@ -23,7 +30,7 @@ This supersedes the earlier policy of keeping the README PDF preview local only.
    The renderer reads README directly, expands all sections and creates the PDF and
    docs/article-build.json. Do not hand-edit its recorded hashes.
 5. Render every PDF page with Poppler or PyMuPDF and inspect text, images, captions,
-   page breaks and footers. Check extracted text in both languages. Keep page PNGs,
+   page breaks and footers. Check internal link destinations and extracted text in both languages. Keep page PNGs,
    temporary dependency folders and diagnostic reports in ignored artifacts.
 6. Run `.venv/Scripts/python.exe tools/build_article.py --check`, repository checks and
    relevant tests. Commit README, screenshots, PDF and manifest with intended changes.
